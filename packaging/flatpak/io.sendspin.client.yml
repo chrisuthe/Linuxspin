@@ -1,0 +1,95 @@
+# =============================================================================
+# Sendspin Linux Client - Flatpak Manifest
+# =============================================================================
+# Build on Linux (Fedora):
+#   cd packaging/flatpak
+#   flatpak-builder --user --force-clean --repo=repo build-dir io.sendspin.client.yml
+#   flatpak build-bundle repo sendspin.flatpak io.sendspin.client
+#
+# Install:
+#   flatpak install --user sendspin.flatpak
+#
+# Run:
+#   flatpak run io.sendspin.client
+# =============================================================================
+
+app-id: io.sendspin.client
+runtime: org.freedesktop.Platform
+runtime-version: '23.08'
+sdk: org.freedesktop.Sdk
+
+command: SendspinClient.Linux
+
+# Sandbox permissions
+finish-args:
+  # Display access (X11 and Wayland)
+  - --share=ipc
+  - --socket=x11
+  - --socket=wayland
+  - --socket=fallback-x11
+
+  # Audio access (PipeWire/PulseAudio)
+  - --socket=pulseaudio
+
+  # Network access (for mDNS discovery and streaming)
+  - --share=network
+
+  # GPU acceleration for Avalonia
+  - --device=dri
+
+  # System notifications via D-Bus
+  - --talk-name=org.freedesktop.Notifications
+
+  # Discord Rich Presence (optional)
+  - --filesystem=xdg-run/discord-ipc-0:ro
+
+  # Portal access for native dialogs
+  - --talk-name=org.freedesktop.portal.*
+
+modules:
+  - name: sendspin
+    buildsystem: simple
+    build-commands:
+      # Create app directory
+      - mkdir -p /app/lib/sendspin
+
+      # Copy all application files
+      - cp -r sendspin-app/* /app/lib/sendspin/
+
+      # Make main executable runnable
+      - chmod +x /app/lib/sendspin/SendspinClient.Linux
+
+      # Create wrapper script in bin
+      - |
+        cat > /app/bin/SendspinClient.Linux << 'EOF'
+        #!/bin/sh
+        exec /app/lib/sendspin/SendspinClient.Linux "$@"
+        EOF
+      - chmod +x /app/bin/SendspinClient.Linux
+
+      # Install desktop file
+      - install -Dm644 io.sendspin.client.desktop /app/share/applications/io.sendspin.client.desktop
+
+      # Install AppStream metadata
+      - install -Dm644 io.sendspin.client.appdata.xml /app/share/metainfo/io.sendspin.client.appdata.xml
+
+      # Install icon (placeholder - add real icon later)
+      - |
+        mkdir -p /app/share/icons/hicolor/256x256/apps
+        if [ -f sendspin-256.png ]; then
+          install -Dm644 sendspin-256.png /app/share/icons/hicolor/256x256/apps/io.sendspin.client.png
+        fi
+
+    sources:
+      # Published .NET application (all files)
+      - type: dir
+        path: ../../publish/linux-x64
+        dest: sendspin-app
+
+      # Desktop file
+      - type: file
+        path: io.sendspin.client.desktop
+
+      # AppStream metadata
+      - type: file
+        path: io.sendspin.client.appdata.xml

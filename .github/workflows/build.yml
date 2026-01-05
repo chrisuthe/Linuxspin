@@ -1,0 +1,572 @@
+# =============================================================================
+# Sendspin Linux Client - CI/CD Pipeline
+# =============================================================================
+# This workflow builds, tests, and packages the Sendspin Linux client.
+# It supports:
+#   - Building for linux-x64 and linux-arm64
+#   - Running unit tests on Linux runners
+#   - Creating AppImage, Flatpak, and .deb packages
+#   - Security scanning with CodeQL and dependency review
+# =============================================================================
+
+name: Build and Package
+
+on:
+  push:
+    branches: [master, main, develop]
+    tags: ['v*']
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Create a release'
+        required: false
+        type: boolean
+        default: false
+
+# Prevent concurrent builds on the same branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_NOLOGO: true
+
+jobs:
+  # ===========================================================================
+  # Build Matrix - Compile for all target platforms
+  # ===========================================================================
+  build:
+    name: Build (${{ matrix.rid }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: linux-x64
+            arch: x86_64
+          - rid: linux-arm64
+            arch: aarch64
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for versioning
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ matrix.rid }}-${{ hashFiles('**/*.csproj', '**/Directory.Build.props') }}
+          restore-keys: |
+            nuget-${{ matrix.rid }}-
+            nuget-
+
+      - name: Restore dependencies
+        run: dotnet restore --runtime ${{ matrix.rid }}
+
+      - name: Build
+        run: |
+          dotnet build --no-restore \
+            --configuration Release \
+            --runtime ${{ matrix.rid }} \
+            -p:Version=${{ github.run_number }}
+
+      - name: Publish self-contained
+        run: |
+          dotnet publish src/SendspinClient.Linux/SendspinClient.Linux.csproj \
+            --no-build \
+            --configuration Release \
+            --runtime ${{ matrix.rid }} \
+            --self-contained true \
+            --output ./publish/${{ matrix.rid }} \
+            -p:PublishSingleFile=true \
+            -p:IncludeNativeLibrariesForSelfExtract=true \
+            -p:EnableCompressionInSingleFile=true
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.rid }}
+          path: ./publish/${{ matrix.rid }}
+          retention-days: 7
+          if-no-files-found: error
+
+  # ===========================================================================
+  # Unit Tests - Run on Linux runner
+  # ===========================================================================
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    needs: []  # Run in parallel with build
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-test-${{ hashFiles('**/*.csproj') }}
+          restore-keys: nuget-test-
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Run tests with coverage
+        run: |
+          dotnet test --no-build \
+            --configuration Release \
+            --logger "trx;LogFileName=test-results.trx" \
+            --collect:"XPlat Code Coverage" \
+            --results-directory ./TestResults \
+            -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: ./TestResults
+          retention-days: 7
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        with:
+          files: ./TestResults/**/coverage.opencover.xml
+          fail_ci_if_error: false
+          verbose: true
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  # ===========================================================================
+  # Security Scanning
+  # ===========================================================================
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: csharp
+          queries: security-and-quality
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Build for analysis
+        run: |
+          dotnet restore
+          dotnet build --configuration Release
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:csharp"
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        if: github.event_name == 'pull_request'
+        with:
+          fail-on-severity: high
+          deny-licenses: GPL-3.0, AGPL-3.0
+
+  # ===========================================================================
+  # Create AppImage Package
+  # ===========================================================================
+  package-appimage:
+    name: Package AppImage (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    needs: [build, test]
+    strategy:
+      matrix:
+        include:
+          - rid: linux-x64
+            arch: x86_64
+          - rid: linux-arm64
+            arch: aarch64
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-${{ matrix.rid }}
+          path: ./publish/${{ matrix.rid }}
+
+      - name: Install AppImage tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfuse2 file
+          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool-x86_64.AppImage
+
+      - name: Create AppDir structure
+        run: |
+          mkdir -p AppDir/usr/bin
+          mkdir -p AppDir/usr/share/applications
+          mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+          mkdir -p AppDir/usr/share/metainfo
+
+          # Copy binary
+          cp -r ./publish/${{ matrix.rid }}/* AppDir/usr/bin/
+          chmod +x AppDir/usr/bin/sendspin || chmod +x AppDir/usr/bin/SendspinClient.Linux
+
+          # Create desktop entry
+          cat > AppDir/usr/share/applications/sendspin.desktop << 'EOF'
+          [Desktop Entry]
+          Name=Sendspin
+          Comment=Synchronized multi-room audio playback
+          Exec=sendspin
+          Icon=sendspin
+          Type=Application
+          Categories=Audio;AudioVideo;Player;
+          Keywords=audio;music;sync;multiroom;
+          StartupNotify=true
+          Terminal=false
+          EOF
+
+          # Copy icon (use placeholder if not exists)
+          if [ -f src/SendspinClient.Linux/Assets/sendspin.png ]; then
+            cp src/SendspinClient.Linux/Assets/sendspin.png AppDir/usr/share/icons/hicolor/256x256/apps/sendspin.png
+          else
+            # Create a placeholder icon
+            convert -size 256x256 xc:navy -fill white -gravity center \
+              -pointsize 48 -annotate 0 'S' AppDir/usr/share/icons/hicolor/256x256/apps/sendspin.png 2>/dev/null || \
+            echo "Icon not created - ImageMagick not available"
+          fi
+
+          # Create AppStream metadata
+          cat > AppDir/usr/share/metainfo/io.sendspin.client.appdata.xml << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <component type="desktop-application">
+            <id>io.sendspin.client</id>
+            <name>Sendspin</name>
+            <summary>Synchronized multi-room audio playback</summary>
+            <metadata_license>MIT</metadata_license>
+            <project_license>MIT</project_license>
+            <description>
+              <p>
+                Sendspin is a desktop client for synchronized multi-room audio playback.
+                Play audio in perfect sync with other Sendspin clients across your network.
+              </p>
+            </description>
+            <url type="homepage">https://github.com/your-org/sendspin-linux</url>
+            <categories>
+              <category>Audio</category>
+              <category>AudioVideo</category>
+            </categories>
+            <provides>
+              <binary>sendspin</binary>
+            </provides>
+          </component>
+          EOF
+
+          # Create AppRun script
+          cat > AppDir/AppRun << 'EOF'
+          #!/bin/bash
+          SELF=$(readlink -f "$0")
+          HERE=${SELF%/*}
+          export PATH="${HERE}/usr/bin:${PATH}"
+          export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
+          exec "${HERE}/usr/bin/sendspin" "$@" || exec "${HERE}/usr/bin/SendspinClient.Linux" "$@"
+          EOF
+          chmod +x AppDir/AppRun
+
+          # Symlink desktop file and icon to root
+          ln -sf usr/share/applications/sendspin.desktop AppDir/sendspin.desktop
+          ln -sf usr/share/icons/hicolor/256x256/apps/sendspin.png AppDir/sendspin.png 2>/dev/null || true
+
+      - name: Build AppImage
+        run: |
+          ARCH=${{ matrix.arch }} ./appimagetool-x86_64.AppImage AppDir Sendspin-${{ matrix.arch }}.AppImage
+          chmod +x Sendspin-${{ matrix.arch }}.AppImage
+
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: appimage-${{ matrix.arch }}
+          path: Sendspin-${{ matrix.arch }}.AppImage
+          retention-days: 30
+
+  # ===========================================================================
+  # Create Debian Package
+  # ===========================================================================
+  package-deb:
+    name: Package .deb (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    needs: [build, test]
+    strategy:
+      matrix:
+        include:
+          - rid: linux-x64
+            arch: amd64
+          - rid: linux-arm64
+            arch: arm64
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-${{ matrix.rid }}
+          path: ./publish/${{ matrix.rid }}
+
+      - name: Get version
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+          else
+            echo "version=1.0.${{ github.run_number }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create .deb package structure
+        run: |
+          PKG_NAME="sendspin"
+          PKG_VERSION="${{ steps.version.outputs.version }}"
+          PKG_ARCH="${{ matrix.arch }}"
+          PKG_DIR="${PKG_NAME}_${PKG_VERSION}_${PKG_ARCH}"
+
+          mkdir -p ${PKG_DIR}/DEBIAN
+          mkdir -p ${PKG_DIR}/usr/bin
+          mkdir -p ${PKG_DIR}/usr/share/applications
+          mkdir -p ${PKG_DIR}/usr/share/icons/hicolor/256x256/apps
+          mkdir -p ${PKG_DIR}/usr/share/doc/sendspin
+
+          # Copy binary
+          cp -r ./publish/${{ matrix.rid }}/* ${PKG_DIR}/usr/bin/
+          chmod +x ${PKG_DIR}/usr/bin/sendspin || chmod +x ${PKG_DIR}/usr/bin/SendspinClient.Linux
+
+          # Create control file
+          cat > ${PKG_DIR}/DEBIAN/control << EOF
+          Package: sendspin
+          Version: ${PKG_VERSION}
+          Section: sound
+          Priority: optional
+          Architecture: ${PKG_ARCH}
+          Depends: libx11-6, libfontconfig1, libfreetype6
+          Recommends: pipewire, pipewire-pulse
+          Maintainer: Sendspin Team <support@sendspin.io>
+          Description: Synchronized multi-room audio playback client
+           Sendspin is a desktop client for synchronized multi-room audio
+           playback. Play audio in perfect sync with other Sendspin clients
+           across your network.
+          Homepage: https://github.com/your-org/sendspin-linux
+          EOF
+
+          # Create desktop file
+          cat > ${PKG_DIR}/usr/share/applications/sendspin.desktop << 'EOF'
+          [Desktop Entry]
+          Name=Sendspin
+          Comment=Synchronized multi-room audio playback
+          Exec=/usr/bin/sendspin
+          Icon=sendspin
+          Type=Application
+          Categories=Audio;AudioVideo;Player;
+          Keywords=audio;music;sync;multiroom;
+          StartupNotify=true
+          Terminal=false
+          EOF
+
+          # Copy icon if exists
+          if [ -f src/SendspinClient.Linux/Assets/sendspin.png ]; then
+            cp src/SendspinClient.Linux/Assets/sendspin.png ${PKG_DIR}/usr/share/icons/hicolor/256x256/apps/
+          fi
+
+          # Create copyright file
+          cat > ${PKG_DIR}/usr/share/doc/sendspin/copyright << 'EOF'
+          Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+          Upstream-Name: sendspin
+          Source: https://github.com/your-org/sendspin-linux
+
+          Files: *
+          Copyright: 2024-2025 Sendspin Team
+          License: MIT
+          EOF
+
+          # Build package
+          dpkg-deb --build --root-owner-group ${PKG_DIR}
+          mv ${PKG_DIR}.deb sendspin_${PKG_VERSION}_${PKG_ARCH}.deb
+
+      - name: Upload .deb package
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-${{ matrix.arch }}
+          path: sendspin_*.deb
+          retention-days: 30
+
+  # ===========================================================================
+  # Create Flatpak Package (x64 only for now)
+  # ===========================================================================
+  package-flatpak:
+    name: Package Flatpak
+    runs-on: ubuntu-latest
+    needs: [build, test]
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-linux-x64
+          path: ./publish/linux-x64
+
+      - name: Install Flatpak tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y flathub org.freedesktop.Platform//23.08 org.freedesktop.Sdk//23.08
+
+      - name: Create Flatpak manifest
+        run: |
+          mkdir -p flatpak-build
+          cat > io.sendspin.client.yml << 'EOF'
+          app-id: io.sendspin.client
+          runtime: org.freedesktop.Platform
+          runtime-version: '23.08'
+          sdk: org.freedesktop.Sdk
+          command: sendspin
+          finish-args:
+            - --share=ipc
+            - --socket=x11
+            - --socket=wayland
+            - --socket=pulseaudio
+            - --share=network
+            - --device=dri
+            - --filesystem=xdg-music:ro
+            - --talk-name=org.freedesktop.Notifications
+            - --talk-name=org.mpris.MediaPlayer2.*
+          modules:
+            - name: sendspin
+              buildsystem: simple
+              build-commands:
+                - install -Dm755 sendspin /app/bin/sendspin
+                - install -Dm644 sendspin.desktop /app/share/applications/io.sendspin.client.desktop
+              sources:
+                - type: dir
+                  path: ./publish/linux-x64
+                - type: file
+                  path: ./packaging/flatpak/sendspin.desktop
+          EOF
+
+      - name: Create Flatpak desktop file
+        run: |
+          mkdir -p packaging/flatpak
+          cat > packaging/flatpak/sendspin.desktop << 'EOF'
+          [Desktop Entry]
+          Name=Sendspin
+          Comment=Synchronized multi-room audio playback
+          Exec=sendspin
+          Icon=io.sendspin.client
+          Type=Application
+          Categories=Audio;AudioVideo;Player;
+          EOF
+
+      - name: Build Flatpak
+        run: |
+          flatpak-builder --user --force-clean --repo=repo flatpak-build io.sendspin.client.yml
+          flatpak build-bundle repo sendspin.flatpak io.sendspin.client
+
+      - name: Upload Flatpak
+        uses: actions/upload-artifact@v4
+        with:
+          name: flatpak
+          path: sendspin.flatpak
+          retention-days: 30
+
+  # ===========================================================================
+  # Create Release
+  # ===========================================================================
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [package-appimage, package-deb, package-flatpak]
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Prepare release files
+        run: |
+          mkdir -p release
+          find ./artifacts -type f \( -name "*.AppImage" -o -name "*.deb" -o -name "*.flatpak" \) -exec cp {} release/ \;
+          ls -la release/
+
+      - name: Generate checksums
+        run: |
+          cd release
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Get version
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          else
+            echo "version=1.0.${{ github.run_number }}" >> $GITHUB_OUTPUT
+            echo "tag=v1.0.${{ github.run_number }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Sendspin Linux Client ${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
+          generate_release_notes: true
+          files: |
+            release/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

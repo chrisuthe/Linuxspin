@@ -1,0 +1,60 @@
+{
+    // .NET settings
+    "dotnet.defaultSolution": "SendspinClient.Linux.sln",
+    "omnisharp.enableRoslynAnalyzers": true,
+    "omnisharp.enableEditorConfigSupport": true,
+    "omnisharp.organizeImportsOnFormat": true,
+
+    // Editor settings
+    "editor.formatOnSave": true,
+    "editor.formatOnPaste": true,
+    "editor.defaultFormatter": "ms-dotnettools.csharp",
+    "[csharp]": {
+        "editor.defaultFormatter": "ms-dotnettools.csharp"
+    },
+
+    // File associations
+    "files.associations": {
+        "*.axaml": "xml"
+    },
+
+    // Exclude patterns
+    "files.exclude": {
+        "**/bin": true,
+        "**/obj": true,
+        "**/artifacts": true,
+        "**/.git": true
+    },
+
+    // Search exclusions
+    "search.exclude": {
+        "**/bin": true,
+        "**/obj": true,
+        "**/artifacts": true,
+        "**/node_modules": true
+    },
+
+    // PowerShell settings for scripts
+    "powershell.codeFormatting.preset": "Stroustrup",
+    "powershell.scriptAnalysis.enable": true,
+
+    // Terminal settings
+    "terminal.integrated.defaultProfile.windows": "PowerShell",
+
+    // Git settings
+    "git.autofetch": true,
+
+    // Problem matcher settings
+    "problemMatcher": [
+        "$msCompile"
+    ],
+
+    // Recommended extensions
+    "recommendations": [
+        "ms-dotnettools.csharp",
+        "ms-dotnettools.csdevkit",
+        "ms-vscode.powershell",
+        "eamodio.gitlens",
+        "EditorConfig.EditorConfig"
+    ]
+}

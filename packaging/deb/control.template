@@ -1,0 +1,22 @@
+Package: sendspin
+Version: ${VERSION}
+Section: sound
+Priority: optional
+Architecture: ${ARCHITECTURE}
+Depends: libx11-6, libfontconfig1, libfreetype6, libicu74 | libicu72 | libicu71 | libicu70
+Recommends: pipewire, pipewire-pulse
+Suggests: pipewire-alsa
+Conflicts: sendspin-git
+Replaces: sendspin-git
+Maintainer: Sendspin Team <support@sendspin.io>
+Description: Synchronized multi-room audio playback client
+ Sendspin is a desktop client for synchronized multi-room audio
+ playback. Play audio in perfect sync with other Sendspin clients
+ across your network.
+ .
+ Features:
+  - Sub-millisecond audio synchronization
+  - Native PipeWire and PulseAudio support
+  - Desktop notifications and media controls
+  - Discord Rich Presence integration
+Homepage: https://github.com/your-org/sendspin-linux

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=Sendspin
+Comment=Synchronized multi-room audio playback
+GenericName=Audio Player
+Exec=SendspinClient.Linux %U
+Icon=io.sendspin.client
+Type=Application
+Categories=Audio;AudioVideo;Player;
+Keywords=audio;music;sync;multiroom;pipewire;
+StartupNotify=true
+Terminal=false
+MimeType=audio/mpeg;audio/flac;audio/ogg;audio/wav;

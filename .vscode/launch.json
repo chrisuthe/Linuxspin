@@ -1,0 +1,79 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug (Local - Windows)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build",
+            "program": "${workspaceFolder}/src/SendspinClient.Linux/bin/Debug/net8.0/SendspinClient.Linux.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}/src/SendspinClient.Linux",
+            "console": "internalConsole",
+            "stopAtEntry": false,
+            "env": {
+                "DOTNET_ENVIRONMENT": "Development"
+            }
+        },
+        {
+            "name": "Attach to Sendspin (Remote - Fedora)",
+            "type": "coreclr",
+            "request": "attach",
+            "processName": "sendspin",
+            "pipeTransport": {
+                "pipeCwd": "${workspaceFolder}",
+                "pipeProgram": "ssh",
+                "pipeArgs": [
+                    "-o", "StrictHostKeyChecking=accept-new",
+                    "${env:SENDSPIN_DEPLOY_USER}@${env:SENDSPIN_DEPLOY_HOST}"
+                ],
+                "debuggerPath": "~/.vsdbg/vsdbg"
+            },
+            "sourceFileMap": {
+                "/home/${env:SENDSPIN_DEPLOY_USER}/sendspin": "${workspaceFolder}"
+            },
+            "justMyCode": true,
+            "requireExactSource": false
+        },
+        {
+            "name": "Attach to Process (Remote - Custom Host)",
+            "type": "coreclr",
+            "request": "attach",
+            "processName": "sendspin",
+            "pipeTransport": {
+                "pipeCwd": "${workspaceFolder}",
+                "pipeProgram": "ssh",
+                "pipeArgs": [
+                    "-o", "StrictHostKeyChecking=accept-new",
+                    "-p", "${input:sshPort}",
+                    "${input:sshUser}@${input:sshHost}"
+                ],
+                "debuggerPath": "~/.vsdbg/vsdbg"
+            },
+            "sourceFileMap": {
+                "/home/${input:sshUser}/sendspin": "${workspaceFolder}"
+            },
+            "justMyCode": true
+        }
+    ],
+    "inputs": [
+        {
+            "id": "sshHost",
+            "type": "promptString",
+            "description": "SSH hostname or IP address",
+            "default": "fedora.local"
+        },
+        {
+            "id": "sshUser",
+            "type": "promptString",
+            "description": "SSH username",
+            "default": "developer"
+        },
+        {
+            "id": "sshPort",
+            "type": "promptString",
+            "description": "SSH port",
+            "default": "22"
+        }
+    ]
+}

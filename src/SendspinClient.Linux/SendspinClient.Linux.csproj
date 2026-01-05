@@ -1,0 +1,56 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <!-- RuntimeIdentifier is set during publish: dotnet publish -r linux-x64 -self-contained -->
+    <!-- <RuntimeIdentifier>linux-x64</RuntimeIdentifier> -->
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <RootNamespace>SendspinClient.Linux</RootNamespace>
+    <AssemblyName>SendspinClient.Linux</AssemblyName>
+    <!-- ApplicationIcon can be set when an icon is available -->
+    <!-- <ApplicationIcon>Assets/sendspin.ico</ApplicationIcon> -->
+    <Version>1.0.0</Version>
+    <Authors>Sendspin Team</Authors>
+    <Description>Sendspin Linux Client - Synchronized multi-room audio playback</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Avalonia UI Framework -->
+    <PackageReference Include="Avalonia" Version="11.2.5" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.2.5" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.5" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.2.5" />
+
+    <!-- Avalonia Diagnostics (Debug only) -->
+    <PackageReference Condition="'$(Configuration)' == 'Debug'" Include="Avalonia.Diagnostics" Version="11.2.5" />
+
+    <!-- MVVM Framework -->
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+
+    <!-- Sendspin SDK - Uncomment when SDK is available on NuGet -->
+    <!-- <PackageReference Include="Sendspin.SDK" Version="3.1.0" /> -->
+
+    <!-- Dependency Injection -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="8.0.1" />
+
+    <!-- Configuration -->
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="8.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SendspinClient.Linux.Services\SendspinClient.Linux.Services.csproj" />
+  </ItemGroup>
+
+</Project>

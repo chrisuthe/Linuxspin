@@ -1,0 +1,28 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="SendspinClient.Linux.App"
+             RequestedThemeVariant="Dark">
+    <Application.Styles>
+        <FluentTheme />
+    </Application.Styles>
+
+    <Application.Resources>
+        <ResourceDictionary>
+            <!-- Application-wide color resources -->
+            <Color x:Key="SendspinAccentColor">#FF7B68EE</Color>
+            <Color x:Key="SendspinAccentColorDark">#FF5B48CE</Color>
+            <Color x:Key="SendspinAccentColorLight">#FF9B88FF</Color>
+
+            <!-- Status indicator colors -->
+            <Color x:Key="ConnectedColor">#FF4CAF50</Color>
+            <Color x:Key="DisconnectedColor">#FFF44336</Color>
+            <Color x:Key="ConnectingColor">#FFFFC107</Color>
+
+            <!-- Brushes -->
+            <SolidColorBrush x:Key="SendspinAccentBrush" Color="{StaticResource SendspinAccentColor}" />
+            <SolidColorBrush x:Key="ConnectedBrush" Color="{StaticResource ConnectedColor}" />
+            <SolidColorBrush x:Key="DisconnectedBrush" Color="{StaticResource DisconnectedColor}" />
+            <SolidColorBrush x:Key="ConnectingBrush" Color="{StaticResource ConnectingColor}" />
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

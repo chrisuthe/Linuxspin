@@ -1,0 +1,166 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build",
+            "command": "dotnet",
+            "type": "process",
+            "args": [
+                "build",
+                "${workspaceFolder}/SendspinClient.Linux.sln",
+                "--configuration",
+                "Debug",
+                "/property:GenerateFullPaths=true",
+                "/consoleloggerparameters:NoSummary"
+            ],
+            "problemMatcher": "$msCompile",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "build-release",
+            "command": "dotnet",
+            "type": "process",
+            "args": [
+                "build",
+                "${workspaceFolder}/SendspinClient.Linux.sln",
+                "--configuration",
+                "Release",
+                "--runtime",
+                "linux-x64",
+                "/property:GenerateFullPaths=true"
+            ],
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "publish-linux-x64",
+            "command": "dotnet",
+            "type": "process",
+            "args": [
+                "publish",
+                "${workspaceFolder}/src/SendspinClient.Linux/SendspinClient.Linux.csproj",
+                "--configuration",
+                "Release",
+                "--runtime",
+                "linux-x64",
+                "--self-contained",
+                "true",
+                "--output",
+                "${workspaceFolder}/artifacts/linux-x64",
+                "-p:PublishSingleFile=true"
+            ],
+            "problemMatcher": "$msCompile",
+            "group": "build"
+        },
+        {
+            "label": "test",
+            "command": "dotnet",
+            "type": "process",
+            "args": [
+                "test",
+                "${workspaceFolder}/SendspinClient.Linux.sln",
+                "--configuration",
+                "Debug"
+            ],
+            "problemMatcher": "$msCompile",
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "test-coverage",
+            "command": "dotnet",
+            "type": "process",
+            "args": [
+                "test",
+                "${workspaceFolder}/SendspinClient.Linux.sln",
+                "--configuration",
+                "Debug",
+                "--collect:\"XPlat Code Coverage\"",
+                "--results-directory",
+                "${workspaceFolder}/artifacts/test-results"
+            ],
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "clean",
+            "command": "dotnet",
+            "type": "process",
+            "args": [
+                "clean",
+                "${workspaceFolder}/SendspinClient.Linux.sln"
+            ],
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "restore",
+            "command": "dotnet",
+            "type": "process",
+            "args": [
+                "restore",
+                "${workspaceFolder}/SendspinClient.Linux.sln"
+            ],
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "deploy",
+            "type": "shell",
+            "command": "powershell",
+            "args": [
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                "${workspaceFolder}/scripts/deploy.ps1"
+            ],
+            "problemMatcher": [],
+            "dependsOn": "publish-linux-x64"
+        },
+        {
+            "label": "deploy-run",
+            "type": "shell",
+            "command": "powershell",
+            "args": [
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                "${workspaceFolder}/scripts/deploy.ps1",
+                "-Kill",
+                "-Run"
+            ],
+            "problemMatcher": [],
+            "dependsOn": "publish-linux-x64"
+        },
+        {
+            "label": "deploy-debug",
+            "type": "shell",
+            "command": "powershell",
+            "args": [
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                "${workspaceFolder}/scripts/deploy.ps1",
+                "-Kill",
+                "-Run",
+                "-Debug"
+            ],
+            "problemMatcher": [],
+            "dependsOn": "publish-linux-x64"
+        },
+        {
+            "label": "watch",
+            "command": "dotnet",
+            "type": "process",
+            "args": [
+                "watch",
+                "--project",
+                "${workspaceFolder}/src/SendspinClient.Linux/SendspinClient.Linux.csproj",
+                "build"
+            ],
+            "problemMatcher": "$msCompile",
+            "isBackground": true
+        }
+    ]
+}

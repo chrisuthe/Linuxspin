@@ -1,0 +1,7 @@
+{
+    "host": "your-fedora-machine.local",
+    "user": "your-username",
+    "path": "~/sendspin",
+    "port": 22,
+    "key": null
+}

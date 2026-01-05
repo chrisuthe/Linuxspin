@@ -3,6 +3,7 @@ bin/
 obj/
 publish/
 out/
+artifacts/
 
 # .NET
 *.user
@@ -12,13 +13,15 @@ out/
 *.vspscc
 .vs/
 *.nupkg
+TestResults/
 
 # IDE
 .idea/
 *.swp
 *.swo
 *~
-.vscode/
+# Keep .vscode for shared settings, but exclude local overrides
+.vscode/*.local.json
 
 # OS
 .DS_Store
@@ -38,3 +41,17 @@ appsettings.*.json
 *.deb
 *.rpm
 *.flatpak
+
+# Deployment configuration (contains host-specific settings)
+.deploy.json
+
+# AppImage build artifacts
+appimagetool*
+AppDir/
+
+# Secrets and credentials
+*.pem
+*.key
+.env
+.env.*
+!.env.example

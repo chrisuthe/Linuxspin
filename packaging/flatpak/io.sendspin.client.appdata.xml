@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.sendspin.client</id>
+
+  <name>Sendspin</name>
+  <summary>Synchronized multi-room audio playback</summary>
+
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+
+  <description>
+    <p>
+      Sendspin is a desktop client for synchronized multi-room audio playback.
+      Play audio in perfect sync with other Sendspin clients across your network
+      using advanced clock synchronization technology.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Sub-millisecond audio synchronization across devices</li>
+      <li>Native PipeWire and PulseAudio support</li>
+      <li>Low-latency audio streaming</li>
+      <li>Desktop notifications and media controls</li>
+      <li>Discord Rich Presence integration</li>
+    </ul>
+    <p>
+      Connect to Music Assistant or other Sendspin-compatible servers to enjoy
+      perfectly synchronized audio throughout your home.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">io.sendspin.client.desktop</launchable>
+
+  <url type="homepage">https://github.com/your-org/sendspin-linux</url>
+  <url type="bugtracker">https://github.com/your-org/sendspin-linux/issues</url>
+  <url type="help">https://github.com/your-org/sendspin-linux/wiki</url>
+
+  <developer_name>Sendspin Team</developer_name>
+
+  <provides>
+    <binary>sendspin</binary>
+    <dbus type="session">org.mpris.MediaPlayer2.sendspin</dbus>
+  </provides>
+
+  <requires>
+    <display_length compare="ge">800</display_length>
+    <internet>always</internet>
+  </requires>
+
+  <recommends>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </recommends>
+
+  <categories>
+    <category>Audio</category>
+    <category>AudioVideo</category>
+    <category>Player</category>
+  </categories>
+
+  <keywords>
+    <keyword>audio</keyword>
+    <keyword>music</keyword>
+    <keyword>sync</keyword>
+    <keyword>multiroom</keyword>
+    <keyword>pipewire</keyword>
+    <keyword>streaming</keyword>
+  </keywords>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>Main player interface</caption>
+      <image>https://github.com/your-org/sendspin-linux/raw/main/docs/screenshots/main.png</image>
+    </screenshot>
+  </screenshots>
+
+  <releases>
+    <release version="1.0.0" date="2025-01-01">
+      <description>
+        <p>Initial release of Sendspin Linux Client.</p>
+        <ul>
+          <li>Native Linux support with PipeWire audio</li>
+          <li>Sub-millisecond synchronization</li>
+          <li>Desktop integration with D-Bus notifications</li>
+        </ul>
+      </description>
+    </release>
+  </releases>
+
+  <content_rating type="oars-1.1" />
+</component>

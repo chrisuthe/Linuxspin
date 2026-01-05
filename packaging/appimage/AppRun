@@ -1,0 +1,16 @@
+#!/bin/bash
+# AppRun script for Sendspin Linux Client
+# This script is executed when the AppImage is run
+
+SELF=$(readlink -f "$0")
+HERE=${SELF%/*}
+
+# Set up environment
+export PATH="${HERE}/usr/bin:${PATH}"
+export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
+
+# Set XDG directories if not set
+export XDG_DATA_DIRS="${HERE}/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+
+# Run the application
+exec "${HERE}/usr/bin/SendspinClient.Linux" "$@"
