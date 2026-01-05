@@ -9,7 +9,7 @@
     <Company>Sendspin</Company>
     <Product>Sendspin Linux Client</Product>
     <Copyright>Copyright (c) 2024-2025 Sendspin</Copyright>
-    <RepositoryUrl>https://github.com/your-org/sendspin-linux</RepositoryUrl>
+    <RepositoryUrl>https://github.com/chrisuthe/Linuxspin</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
   </PropertyGroup>
 

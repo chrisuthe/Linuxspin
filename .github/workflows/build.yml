@@ -285,7 +285,7 @@ jobs:
                 Play audio in perfect sync with other Sendspin clients across your network.
               </p>
             </description>
-            <url type="homepage">https://github.com/your-org/sendspin-linux</url>
+            <url type="homepage">https://github.com/chrisuthe/Linuxspin</url>
             <categories>
               <category>Audio</category>
               <category>AudioVideo</category>
@@ -388,7 +388,7 @@ jobs:
            Sendspin is a desktop client for synchronized multi-room audio
            playback. Play audio in perfect sync with other Sendspin clients
            across your network.
-          Homepage: https://github.com/your-org/sendspin-linux
+          Homepage: https://github.com/chrisuthe/Linuxspin
           EOF
 
           # Create desktop file
@@ -414,7 +414,7 @@ jobs:
           cat > ${PKG_DIR}/usr/share/doc/sendspin/copyright << 'EOF'
           Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
           Upstream-Name: sendspin
-          Source: https://github.com/your-org/sendspin-linux
+          Source: https://github.com/chrisuthe/Linuxspin
 
           Files: *
           Copyright: 2024-2025 Sendspin Team

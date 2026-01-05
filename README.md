@@ -111,7 +111,7 @@ For scenarios requiring native Linux compilation:
 ```bash
 # SSH to Fedora and build there
 ssh user@fedora.local
-cd ~/sendspin-linux
+cd ~/Linuxspin
 ./scripts/build.sh --release
 ```
 
@@ -209,7 +209,7 @@ curl -sSL https://aka.ms/getvsdbgsh | bash /dev/stdin -v latest -l ~/.vsdbg
 dotnet test
 
 # Run tests on Linux (via SSH)
-ssh developer@fedora.local 'cd ~/sendspin-linux && ./scripts/test.sh'
+ssh developer@fedora.local 'cd ~/Linuxspin && ./scripts/test.sh'
 
 # Run with coverage
 ./scripts/test.sh --coverage
@@ -435,8 +435,8 @@ systemctl --user restart pipewire
 
 ## Related Projects
 
-- [Sendspin Windows Client](https://github.com/your-org/windowsSpin) - Windows WPF client
-- [Sendspin CLI](https://github.com/your-org/sendspin-cli) - Python CLI reference implementation
+- [Sendspin Windows Client](https://github.com/chrisuthe/windowsSpin) - Windows WPF client
+- [Sendspin CLI](https://github.com/chrisuthe/sendspin-cli) - Python CLI reference implementation
 - [Music Assistant](https://music-assistant.io/) - The server this client connects to
 
 ## License

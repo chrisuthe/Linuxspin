@@ -30,9 +30,9 @@
 
   <launchable type="desktop-id">io.sendspin.client.desktop</launchable>
 
-  <url type="homepage">https://github.com/your-org/sendspin-linux</url>
-  <url type="bugtracker">https://github.com/your-org/sendspin-linux/issues</url>
-  <url type="help">https://github.com/your-org/sendspin-linux/wiki</url>
+  <url type="homepage">https://github.com/chrisuthe/Linuxspin</url>
+  <url type="bugtracker">https://github.com/chrisuthe/Linuxspin/issues</url>
+  <url type="help">https://github.com/chrisuthe/Linuxspin/wiki</url>
 
   <developer_name>Sendspin Team</developer_name>
 
@@ -69,7 +69,7 @@
   <screenshots>
     <screenshot type="default">
       <caption>Main player interface</caption>
-      <image>https://github.com/your-org/sendspin-linux/raw/main/docs/screenshots/main.png</image>
+      <image>https://github.com/chrisuthe/Linuxspin/raw/main/docs/screenshots/main.png</image>
     </screenshot>
   </screenshots>
 

@@ -476,7 +476,7 @@ Description: Synchronized multi-room audio playback client
  Sendspin is a desktop client for synchronized multi-room audio
  playback. Play audio in perfect sync with other Sendspin clients
  across your network.
-Homepage: https://github.com/your-org/sendspin-linux
+Homepage: https://github.com/your-org/Linuxspin
 EOF
 
     # Create desktop file

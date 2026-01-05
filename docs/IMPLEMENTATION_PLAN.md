@@ -10,7 +10,7 @@ Port the Sendspin Windows client to Linux as a **separate repository** using:
 ## Architecture Overview
 
 ```
-sendspin-linux/
+Linuxspin/
 ├── src/
 │   ├── SendspinClient.Linux/           # Avalonia UI app
 │   │   ├── Configuration/              # XDG directory handling
