@@ -56,6 +56,21 @@
                            FontWeight="SemiBold"
                            IsVisible="{Binding IsConnected}" />
 
+                <!-- Server Selection (when disconnected) -->
+                <ComboBox Grid.Column="1"
+                          ItemsSource="{Binding DiscoveredServers}"
+                          SelectedItem="{Binding SelectedServer}"
+                          IsVisible="{Binding !IsConnected}"
+                          HorizontalAlignment="Stretch"
+                          Margin="12,0"
+                          PlaceholderText="Select a server...">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Name}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+
                 <!-- Connect/Disconnect Button -->
                 <Button Grid.Column="2"
                         Command="{Binding ConnectCommand}"

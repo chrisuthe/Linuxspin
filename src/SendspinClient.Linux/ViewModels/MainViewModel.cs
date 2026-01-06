@@ -1,9 +1,14 @@
 using System;
+using System.Collections.ObjectModel;
 using System.Threading.Tasks;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
+using Sendspin.SDK.Discovery;
+using SendspinClient.Linux.Services.Client;
+using SendspinClient.Linux.Services.Discord;
+using SendspinClient.Linux.Services.Notifications;
 
 namespace SendspinClient.Linux.ViewModels;
 
@@ -11,9 +16,12 @@ namespace SendspinClient.Linux.ViewModels;
 /// Main view model for the Sendspin Linux client.
 /// Manages server connection state, playback controls, and audio settings.
 /// </summary>
-public partial class MainViewModel : ObservableObject
+public partial class MainViewModel : ObservableObject, IAsyncDisposable
 {
     private readonly ILogger<MainViewModel>? _logger;
+    private readonly SendspinClientManager? _clientManager;
+    private readonly INotificationService? _notificationService;
+    private readonly IDiscordRichPresenceService? _discordService;
 
     #region Observable Properties
 
@@ -69,10 +77,28 @@ public partial class MainViewModel : ObservableObject
     private bool _isConnecting;
 
     /// <summary>
+    /// Gets or sets a value indicating whether discovery is running.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isDiscovering;
+
+    /// <summary>
     /// Gets or sets the currently selected audio output device identifier.
     /// </summary>
     [ObservableProperty]
     private string? _selectedDeviceId;
+
+    /// <summary>
+    /// Gets or sets the selected server for connection.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ConnectCommand))]
+    private DiscoveredServer? _selectedServer;
+
+    /// <summary>
+    /// Gets the list of discovered servers.
+    /// </summary>
+    public ObservableCollection<DiscoveredServer> DiscoveredServers { get; } = new();
 
     #endregion
 
@@ -114,51 +140,127 @@ public partial class MainViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="MainViewModel"/> class with logging support.
+    /// Initializes a new instance of the <see cref="MainViewModel"/> class with all services.
     /// </summary>
-    /// <param name="logger">The logger instance for this view model.</param>
-    public MainViewModel(ILogger<MainViewModel> logger)
+    public MainViewModel(
+        ILogger<MainViewModel> logger,
+        SendspinClientManager clientManager,
+        INotificationService notificationService,
+        IDiscordRichPresenceService discordService)
     {
         _logger = logger;
-        _logger.LogDebug("MainViewModel initialized");
+        _clientManager = clientManager;
+        _notificationService = notificationService;
+        _discordService = discordService;
+
+        // Subscribe to client manager events
+        _clientManager.ServerDiscovered += OnServerDiscovered;
+        _clientManager.ServerLost += OnServerLost;
+        _clientManager.ConnectionStateChanged += OnConnectionStateChanged;
+        _clientManager.TrackChanged += OnTrackChanged;
+
+        _logger.LogDebug("MainViewModel initialized with platform services");
+
+        _ = InitializeServicesAsync();
     }
+
+    /// <summary>
+    /// Initializes platform services asynchronously.
+    /// </summary>
+    private async Task InitializeServicesAsync()
+    {
+        try
+        {
+            var tasks = new[]
+            {
+                _notificationService?.InitializeAsync() ?? Task.CompletedTask,
+                _discordService?.InitializeAsync() ?? Task.CompletedTask
+            };
+            await Task.WhenAll(tasks);
+            _logger?.LogInformation("Platform services initialized");
+
+            // Start server discovery automatically
+            await StartDiscoveryAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Some platform services failed to initialize");
+        }
+    }
+
+    #region Discovery
+
+    /// <summary>
+    /// Starts discovering Sendspin servers on the local network.
+    /// </summary>
+    private async Task StartDiscoveryAsync()
+    {
+        if (_clientManager == null || IsDiscovering) return;
+
+        try
+        {
+            IsDiscovering = true;
+            await _clientManager.StartDiscoveryAsync();
+            _logger?.LogInformation("Server discovery started");
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Failed to start server discovery");
+            IsDiscovering = false;
+        }
+    }
+
+    private void OnServerDiscovered(object? sender, DiscoveredServer server)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (!DiscoveredServers.Contains(server))
+            {
+                DiscoveredServers.Add(server);
+                _logger?.LogInformation("Added server to list: {Name}", server.Name);
+            }
+        });
+    }
+
+    private void OnServerLost(object? sender, DiscoveredServer server)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            DiscoveredServers.Remove(server);
+            _logger?.LogInformation("Removed server from list: {Name}", server.Name);
+        });
+    }
+
+    #endregion
 
     #region Commands
 
     /// <summary>
-    /// Connects to a Sendspin server.
+    /// Connects to the selected Sendspin server.
     /// </summary>
-    /// <returns>A task representing the asynchronous operation.</returns>
     [RelayCommand(CanExecute = nameof(CanConnect))]
     private async Task ConnectAsync()
     {
-        if (IsConnected || IsConnecting)
+        if (IsConnected || IsConnecting || _clientManager == null)
             return;
+
+        var server = SelectedServer;
+        if (server == null)
+        {
+            _logger?.LogWarning("No server selected for connection");
+            return;
+        }
 
         try
         {
             IsConnecting = true;
-            _logger?.LogInformation("Attempting to connect to server...");
+            _logger?.LogInformation("Connecting to server: {Name}", server.Name);
 
-            // TODO: Implement actual server discovery and connection via Sendspin.SDK
-            // This is a placeholder that simulates the connection process
-            await Task.Delay(1000);
-
-            // Simulate successful connection
-            await DispatcherInvokeAsync(() =>
-            {
-                ServerName = "Music Assistant";
-                IsConnected = true;
-                IsConnecting = false;
-                IsPaused = true;
-            });
-
-            _logger?.LogInformation("Successfully connected to server: {ServerName}", ServerName);
+            await _clientManager.ConnectAsync(server);
         }
         catch (Exception ex)
         {
             _logger?.LogError(ex, "Failed to connect to server");
-
             await DispatcherInvokeAsync(() =>
             {
                 IsConnecting = false;
@@ -167,39 +269,21 @@ public partial class MainViewModel : ObservableObject
         }
     }
 
-    /// <summary>
-    /// Determines whether the connect command can execute.
-    /// </summary>
-    /// <returns><c>true</c> if the command can execute; otherwise, <c>false</c>.</returns>
-    private bool CanConnect() => !IsConnected && !IsConnecting;
+    private bool CanConnect() => !IsConnected && !IsConnecting && SelectedServer != null;
 
     /// <summary>
     /// Disconnects from the current Sendspin server.
     /// </summary>
-    /// <returns>A task representing the asynchronous operation.</returns>
     [RelayCommand(CanExecute = nameof(CanDisconnect))]
     private async Task DisconnectAsync()
     {
-        if (!IsConnected)
+        if (!IsConnected || _clientManager == null)
             return;
 
         try
         {
             _logger?.LogInformation("Disconnecting from server: {ServerName}", ServerName);
-
-            // TODO: Implement actual disconnection via Sendspin.SDK
-            await Task.Delay(100);
-
-            await DispatcherInvokeAsync(() =>
-            {
-                IsConnected = false;
-                ServerName = string.Empty;
-                TrackTitle = "No Track Playing";
-                Artist = string.Empty;
-                IsPaused = false;
-            });
-
-            _logger?.LogInformation("Disconnected from server");
+            await _clientManager.DisconnectAsync();
         }
         catch (Exception ex)
         {
@@ -207,35 +291,25 @@ public partial class MainViewModel : ObservableObject
         }
     }
 
-    /// <summary>
-    /// Determines whether the disconnect command can execute.
-    /// </summary>
-    /// <returns><c>true</c> if the command can execute; otherwise, <c>false</c>.</returns>
     private bool CanDisconnect() => IsConnected;
 
     /// <summary>
     /// Toggles playback between play and pause states.
     /// </summary>
-    /// <returns>A task representing the asynchronous operation.</returns>
     [RelayCommand(CanExecute = nameof(CanPlayPause))]
     private async Task PlayPauseAsync()
     {
-        if (!IsConnected)
+        if (!IsConnected || _clientManager == null)
             return;
 
         try
         {
             _logger?.LogDebug("Toggling playback state. Current state: {IsPaused}", IsPaused ? "Paused" : "Playing");
 
-            // TODO: Implement actual playback control via Sendspin.SDK
-            await Task.Delay(50);
-
-            await DispatcherInvokeAsync(() =>
-            {
-                IsPaused = !IsPaused;
-            });
-
-            _logger?.LogDebug("Playback state changed to: {IsPaused}", IsPaused ? "Paused" : "Playing");
+            if (IsPaused)
+                await _clientManager.PlayAsync();
+            else
+                await _clientManager.PauseAsync();
         }
         catch (Exception ex)
         {
@@ -243,74 +317,71 @@ public partial class MainViewModel : ObservableObject
         }
     }
 
-    /// <summary>
-    /// Determines whether the play/pause command can execute.
-    /// </summary>
-    /// <returns><c>true</c> if the command can execute; otherwise, <c>false</c>.</returns>
     private bool CanPlayPause() => IsConnected;
 
     #endregion
 
-    #region Public Methods
+    #region Event Handlers
 
-    /// <summary>
-    /// Updates the current track information from the server.
-    /// </summary>
-    /// <param name="title">The track title.</param>
-    /// <param name="artist">The artist name.</param>
-    public void UpdateTrackInfo(string title, string artist)
+    private void OnConnectionStateChanged(object? sender, ConnectionStateEventArgs e)
     {
-        DispatcherInvokeAsync(() =>
+        Dispatcher.UIThread.Post(() =>
         {
-            TrackTitle = string.IsNullOrWhiteSpace(title) ? "No Track Playing" : title;
-            Artist = artist ?? string.Empty;
-        }).ConfigureAwait(false);
+            IsConnected = e.IsConnected;
+            IsConnecting = false;
+            ServerName = e.ServerName ?? string.Empty;
 
-        _logger?.LogDebug("Track info updated: {Title} - {Artist}", title, artist);
-    }
-
-    /// <summary>
-    /// Updates the connection state.
-    /// </summary>
-    /// <param name="isConnected">Whether the client is connected.</param>
-    /// <param name="serverName">The name of the server, if connected.</param>
-    public void UpdateConnectionState(bool isConnected, string? serverName = null)
-    {
-        DispatcherInvokeAsync(() =>
-        {
-            IsConnected = isConnected;
-            ServerName = serverName ?? string.Empty;
-
-            if (!isConnected)
+            if (!e.IsConnected)
             {
                 TrackTitle = "No Track Playing";
                 Artist = string.Empty;
                 IsPaused = false;
             }
-        }).ConfigureAwait(false);
+        });
+
+        // Notify connection status change
+        _ = _notificationService?.ShowConnectionStatusAsync(e.ServerName ?? "Server", e.IsConnected);
+
+        // Update Discord presence
+        if (e.IsConnected)
+            _discordService?.UpdatePresence(null, null, e.ServerName, false);
+        else
+            _discordService?.ClearPresence();
     }
 
-    /// <summary>
-    /// Updates the playback state.
-    /// </summary>
-    /// <param name="isPaused">Whether playback is paused.</param>
-    public void UpdatePlaybackState(bool isPaused)
+    private void OnTrackChanged(object? sender, TrackMetadataEventArgs e)
     {
-        DispatcherInvokeAsync(() =>
+        Dispatcher.UIThread.Post(() =>
         {
-            IsPaused = isPaused;
-        }).ConfigureAwait(false);
+            TrackTitle = string.IsNullOrWhiteSpace(e.Title) ? "No Track Playing" : e.Title;
+            Artist = e.Artist ?? string.Empty;
+        });
+
+        _logger?.LogDebug("Track info updated: {Title} - {Artist}", e.Title, e.Artist);
+
+        // Fire-and-forget notification
+        _ = _notificationService?.ShowTrackChangeAsync(e.Title, e.Artist);
+
+        // Update Discord Rich Presence
+        _discordService?.UpdatePresence(e.Title, e.Artist, ServerName, !IsPaused);
+    }
+
+    #endregion
+
+    #region Volume Control
+
+    partial void OnVolumeChanged(double value)
+    {
+        if (_clientManager != null && IsConnected)
+        {
+            _ = _clientManager.SetVolumeAsync((int)value);
+        }
     }
 
     #endregion
 
     #region Private Helpers
 
-    /// <summary>
-    /// Invokes an action on the UI thread via the Avalonia dispatcher.
-    /// </summary>
-    /// <param name="action">The action to invoke.</param>
-    /// <returns>A task representing the asynchronous operation.</returns>
     private static Task DispatcherInvokeAsync(Action action)
     {
         if (Dispatcher.UIThread.CheckAccess())
@@ -320,6 +391,23 @@ public partial class MainViewModel : ObservableObject
         }
 
         return Dispatcher.UIThread.InvokeAsync(action).GetTask();
+    }
+
+    #endregion
+
+    #region Cleanup
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_clientManager != null)
+        {
+            _clientManager.ServerDiscovered -= OnServerDiscovered;
+            _clientManager.ServerLost -= OnServerLost;
+            _clientManager.ConnectionStateChanged -= OnConnectionStateChanged;
+            _clientManager.TrackChanged -= OnTrackChanged;
+
+            await _clientManager.DisposeAsync();
+        }
     }
 
     #endregion

@@ -5,8 +5,14 @@ using Avalonia.Data.Core.Plugins;
 using Avalonia.Markup.Xaml;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Sendspin.SDK.Audio;
 using SendspinClient.Linux.Configuration;
 using SendspinClient.Linux.ViewModels;
+using SendspinClient.Linux.Services.Audio;
+using SendspinClient.Linux.Services.Audio.Interfaces;
+using SendspinClient.Linux.Services.Client;
+using SendspinClient.Linux.Services.Discord;
+using SendspinClient.Linux.Services.Notifications;
 
 namespace SendspinClient.Linux;
 
@@ -87,6 +93,37 @@ public partial class App : Application
 
         // Configuration
         services.AddSingleton<AppPaths>();
+
+        // Audio services - Transient because AudioPipeline creates/disposes players per stream
+        services.AddTransient<IAudioPlayer>(sp =>
+        {
+            var logger = sp.GetRequiredService<ILogger<OpenALAudioPlayer>>();
+            return new OpenALAudioPlayer(logger);
+        });
+
+        // Device enumerator (singleton for UI queries)
+        services.AddSingleton<IAudioDeviceEnumerator>(sp =>
+        {
+            var logger = sp.GetRequiredService<ILogger<OpenALAudioPlayer>>();
+            return new OpenALAudioPlayer(logger);
+        });
+
+        // Sendspin client manager - orchestrates SDK components
+        services.AddSingleton<SendspinClientManager>(sp =>
+        {
+            var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+            // Player factory creates new players for each audio stream
+            IAudioPlayer PlayerFactory()
+            {
+                var logger = sp.GetRequiredService<ILogger<OpenALAudioPlayer>>();
+                return new OpenALAudioPlayer(logger);
+            }
+            return new SendspinClientManager(loggerFactory, PlayerFactory);
+        });
+
+        // Platform services
+        services.AddSingleton<INotificationService, DBusNotificationService>();
+        services.AddSingleton<IDiscordRichPresenceService, DiscordRichPresenceService>();
 
         // ViewModels
         services.AddTransient<MainViewModel>();

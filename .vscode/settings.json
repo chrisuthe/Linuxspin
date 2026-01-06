@@ -3,7 +3,6 @@
     "dotnet.defaultSolution": "SendspinClient.Linux.sln",
     "omnisharp.enableRoslynAnalyzers": true,
     "omnisharp.enableEditorConfigSupport": true,
-    "omnisharp.organizeImportsOnFormat": true,
 
     // Editor settings
     "editor.formatOnSave": true,
@@ -56,5 +55,6 @@
         "ms-vscode.powershell",
         "eamodio.gitlens",
         "EditorConfig.EditorConfig"
-    ]
+    ],
+    "dotnet.formatting.organizeImportsOnFormat": true
 }
