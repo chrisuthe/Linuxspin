@@ -72,6 +72,9 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     [NotifyPropertyChangedFor(nameof(PlayPauseButtonText))]
     [NotifyCanExecuteChangedFor(nameof(PlayPauseCommand))]
     [NotifyCanExecuteChangedFor(nameof(DisconnectCommand))]
+    [NotifyCanExecuteChangedFor(nameof(NextTrackCommand))]
+    [NotifyCanExecuteChangedFor(nameof(PreviousTrackCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SwitchGroupCommand))]
     private bool _isConnected;
 
     /// <summary>
@@ -173,6 +176,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         _clientManager.ConnectionStateChanged += OnConnectionStateChanged;
         _clientManager.TrackChanged += OnTrackChanged;
         _clientManager.ArtworkChanged += OnArtworkChanged;
+        _clientManager.PlaybackStateChanged += OnPlaybackStateChanged;
 
         _logger.LogDebug("MainViewModel initialized with platform services");
 
@@ -334,6 +338,70 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     private bool CanPlayPause() => IsConnected;
 
+    /// <summary>
+    /// Skips to the next track.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanSkipTrack))]
+    private async Task NextTrackAsync()
+    {
+        if (!IsConnected || _clientManager == null)
+            return;
+
+        try
+        {
+            _logger?.LogDebug("Skipping to next track");
+            await _clientManager.NextAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Error skipping to next track");
+        }
+    }
+
+    /// <summary>
+    /// Returns to the previous track.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanSkipTrack))]
+    private async Task PreviousTrackAsync()
+    {
+        if (!IsConnected || _clientManager == null)
+            return;
+
+        try
+        {
+            _logger?.LogDebug("Returning to previous track");
+            await _clientManager.PreviousAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Error returning to previous track");
+        }
+    }
+
+    private bool CanSkipTrack() => IsConnected;
+
+    /// <summary>
+    /// Switches to the next player group.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanSwitchGroup))]
+    private async Task SwitchGroupAsync()
+    {
+        if (!IsConnected || _clientManager == null)
+            return;
+
+        try
+        {
+            _logger?.LogDebug("Switching player group");
+            await _clientManager.SwitchGroupAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Error switching player group");
+        }
+    }
+
+    private bool CanSwitchGroup() => IsConnected;
+
     #endregion
 
     #region Event Handlers
@@ -414,6 +482,18 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         });
     }
 
+    private void OnPlaybackStateChanged(object? sender, PlaybackStateEventArgs e)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            IsPaused = !e.IsPlaying;
+            _logger?.LogDebug("Playback state updated: IsPaused={IsPaused}", IsPaused);
+        });
+
+        // Update Discord presence with correct playing state
+        _discordService?.UpdatePresence(TrackTitle, Artist, ServerName, e.IsPlaying);
+    }
+
     #endregion
 
     #region Volume Control
@@ -454,6 +534,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
             _clientManager.ConnectionStateChanged -= OnConnectionStateChanged;
             _clientManager.TrackChanged -= OnTrackChanged;
             _clientManager.ArtworkChanged -= OnArtworkChanged;
+            _clientManager.PlaybackStateChanged -= OnPlaybackStateChanged;
 
             await _clientManager.DisposeAsync();
         }

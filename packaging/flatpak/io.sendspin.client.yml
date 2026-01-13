@@ -82,7 +82,7 @@ modules:
     sources:
       # Published .NET application (all files)
       - type: dir
-        path: ../../publish/linux-x64
+        path: sendspin-app
         dest: sendspin-app
 
       # Desktop file

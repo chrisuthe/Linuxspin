@@ -96,18 +96,34 @@
                                    VerticalAlignment="Center" />
                     </StackPanel>
 
-                    <!-- Connect/Disconnect Button -->
-                    <Button Grid.Column="1"
-                            Classes="pill accent"
-                            Command="{Binding ConnectCommand}"
-                            Content="Connect"
-                            IsVisible="{Binding !IsConnected}" />
+                    <!-- Connect/Disconnect/Switch Group Buttons -->
+                    <StackPanel Grid.Column="1"
+                                Orientation="Horizontal"
+                                Spacing="8">
 
-                    <Button Grid.Column="1"
-                            Classes="pill"
-                            Command="{Binding DisconnectCommand}"
-                            Content="Disconnect"
-                            IsVisible="{Binding IsConnected}" />
+                        <!-- Switch Group Button (connected only) -->
+                        <Button Classes="icon"
+                                Command="{Binding SwitchGroupCommand}"
+                                IsVisible="{Binding IsConnected}"
+                                ToolTip.Tip="Switch Group">
+                            <!-- Group/Sync icon -->
+                            <Path Data="M12,6V9L16,5L12,1V4A8,8 0 0,0 4,12C4,13.57 4.46,15.03 5.24,16.26L6.7,14.8C6.25,13.97 6,13 6,12A6,6 0 0,1 12,6M18.76,7.74L17.3,9.2C17.74,10.04 18,11 18,12A6,6 0 0,1 12,18V15L8,19L12,23V20A8,8 0 0,0 20,12C20,10.43 19.54,8.97 18.76,7.74Z"
+                                  Fill="{StaticResource TextSecondaryBrush}"
+                                  Stretch="Uniform"
+                                  Width="16"
+                                  Height="16" />
+                        </Button>
+
+                        <Button Classes="pill accent"
+                                Command="{Binding ConnectCommand}"
+                                Content="Connect"
+                                IsVisible="{Binding !IsConnected}" />
+
+                        <Button Classes="pill"
+                                Command="{Binding DisconnectCommand}"
+                                Content="Disconnect"
+                                IsVisible="{Binding IsConnected}" />
+                    </StackPanel>
                 </Grid>
             </Border>
 
@@ -268,6 +284,19 @@
                             Spacing="16"
                             Margin="0,24,0,16">
 
+                    <!-- Previous Track Button -->
+                    <Button Classes="transport secondary"
+                            Command="{Binding PreviousTrackCommand}"
+                            IsEnabled="{Binding IsConnected}"
+                            ToolTip.Tip="Previous Track">
+                        <!-- Previous Icon (skip back) -->
+                        <Path Data="M6,18V6H8V18H6M9.5,12L18,6V18L9.5,12Z"
+                              Fill="{StaticResource BackgroundDeepBrush}"
+                              Stretch="Uniform"
+                              Width="18"
+                              Height="18" />
+                    </Button>
+
                     <!-- Play/Pause Button -->
                     <Button Classes="transport"
                             Command="{Binding PlayPauseCommand}"
@@ -289,6 +318,19 @@
                                   Height="20"
                                   IsVisible="{Binding !IsPaused}" />
                         </Panel>
+                    </Button>
+
+                    <!-- Next Track Button -->
+                    <Button Classes="transport secondary"
+                            Command="{Binding NextTrackCommand}"
+                            IsEnabled="{Binding IsConnected}"
+                            ToolTip.Tip="Next Track">
+                        <!-- Next Icon (skip forward) -->
+                        <Path Data="M16,18H18V6H16M6,18L14.5,12L6,6V18Z"
+                              Fill="{StaticResource BackgroundDeepBrush}"
+                              Stretch="Uniform"
+                              Width="18"
+                              Height="18" />
                     </Button>
                 </StackPanel>
             </Grid>

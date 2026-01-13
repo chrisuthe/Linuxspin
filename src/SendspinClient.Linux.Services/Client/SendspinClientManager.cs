@@ -24,6 +24,8 @@ public sealed class SendspinClientManager : IAsyncDisposable
     private IClockSynchronizer? _clockSync;
     private IAudioPipeline? _audioPipeline;
     private SendspinClientService? _client;
+    private HttpClient? _httpClient;
+    private string? _lastArtworkUrl;
     private bool _isDisposed;
 
     /// <summary>
@@ -50,6 +52,11 @@ public sealed class SendspinClientManager : IAsyncDisposable
     /// Fired when album artwork is received or cleared.
     /// </summary>
     public event EventHandler<ArtworkEventArgs>? ArtworkChanged;
+
+    /// <summary>
+    /// Fired when playback state changes (playing/paused/stopped).
+    /// </summary>
+    public event EventHandler<PlaybackStateEventArgs>? PlaybackStateChanged;
 
     /// <summary>
     /// Gets whether the client is currently connected to a server.
@@ -132,6 +139,11 @@ public sealed class SendspinClientManager : IAsyncDisposable
 
         try
         {
+            // Create HTTP client for artwork fetching
+            _httpClient = new HttpClient();
+            _httpClient.Timeout = TimeSpan.FromSeconds(10);
+            _lastArtworkUrl = null;
+
             // Create clock synchronizer
             _clockSync = new KalmanClockSynchronizer(_loggerFactory.CreateLogger<KalmanClockSynchronizer>());
 
@@ -144,6 +156,7 @@ public sealed class SendspinClientManager : IAsyncDisposable
             // Create client capabilities with artwork support
             var capabilities = new ClientCapabilities
             {
+                ClientId = $"sendspin-linux-{Environment.MachineName.ToLowerInvariant()}",
                 ClientName = "Sendspin Linux",
                 ProductName = "Sendspin Linux Client",
                 Manufacturer = "Sendspin Contributors",
@@ -268,6 +281,10 @@ public sealed class SendspinClientManager : IAsyncDisposable
                 _audioPipeline = null;
             }
 
+            _httpClient?.Dispose();
+            _httpClient = null;
+            _lastArtworkUrl = null;
+
             _connection = null;
             _clockSync = null;
 
@@ -296,6 +313,33 @@ public sealed class SendspinClientManager : IAsyncDisposable
     {
         if (_client != null)
             await _client.SendCommandAsync("pause");
+    }
+
+    /// <summary>
+    /// Sends a next track command to the server.
+    /// </summary>
+    public async Task NextAsync()
+    {
+        if (_client != null)
+            await _client.SendCommandAsync("next");
+    }
+
+    /// <summary>
+    /// Sends a previous track command to the server.
+    /// </summary>
+    public async Task PreviousAsync()
+    {
+        if (_client != null)
+            await _client.SendCommandAsync("previous");
+    }
+
+    /// <summary>
+    /// Sends a switch group command to the server.
+    /// </summary>
+    public async Task SwitchGroupAsync()
+    {
+        if (_client != null)
+            await _client.SendCommandAsync("switch_group");
     }
 
     /// <summary>
@@ -340,6 +384,12 @@ public sealed class SendspinClientManager : IAsyncDisposable
 
     private void OnGroupStateChanged(object? sender, GroupState group)
     {
+        // Update playback state
+        var isPlaying = group.PlaybackState == PlaybackState.Playing;
+        _logger.LogDebug("Playback state: {State} (isPlaying={IsPlaying})", group.PlaybackState, isPlaying);
+        PlaybackStateChanged?.Invoke(this, new PlaybackStateEventArgs(group.PlaybackState, isPlaying));
+
+        // Update track metadata
         if (group.Metadata != null)
         {
             _logger.LogDebug("Track: {Title} by {Artist}", group.Metadata.Title, group.Metadata.Artist);
@@ -347,6 +397,35 @@ public sealed class SendspinClientManager : IAsyncDisposable
                 group.Metadata.Title ?? "",
                 group.Metadata.Artist ?? "",
                 group.Metadata.Album));
+
+            // Fetch artwork from URL if changed
+            var artworkUrl = group.Metadata.ArtworkUrl;
+            if (!string.IsNullOrEmpty(artworkUrl) && artworkUrl != _lastArtworkUrl)
+            {
+                _lastArtworkUrl = artworkUrl;
+                _ = FetchArtworkAsync(artworkUrl);
+            }
+            else if (string.IsNullOrEmpty(artworkUrl) && _lastArtworkUrl != null)
+            {
+                // Artwork cleared
+                _lastArtworkUrl = null;
+                ArtworkChanged?.Invoke(this, new ArtworkEventArgs(0, null));
+            }
+        }
+    }
+
+    private async Task FetchArtworkAsync(string url)
+    {
+        try
+        {
+            _logger.LogDebug("Fetching artwork from: {Url}", url);
+            var imageData = await _httpClient!.GetByteArrayAsync(url);
+            _logger.LogDebug("Artwork fetched: {Size} bytes", imageData.Length);
+            ArtworkChanged?.Invoke(this, new ArtworkEventArgs(0, imageData));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to fetch artwork from {Url}", url);
         }
     }
 
@@ -423,5 +502,27 @@ public sealed class ArtworkEventArgs : EventArgs
     {
         Channel = channel;
         ImageData = imageData;
+    }
+}
+
+/// <summary>
+/// Event args for playback state changes.
+/// </summary>
+public sealed class PlaybackStateEventArgs : EventArgs
+{
+    /// <summary>
+    /// Gets the current playback state.
+    /// </summary>
+    public PlaybackState State { get; }
+
+    /// <summary>
+    /// Gets whether playback is currently active (playing).
+    /// </summary>
+    public bool IsPlaying { get; }
+
+    public PlaybackStateEventArgs(PlaybackState state, bool isPlaying)
+    {
+        State = state;
+        IsPlaying = isPlaying;
     }
 }

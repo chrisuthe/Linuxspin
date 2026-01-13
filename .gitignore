@@ -49,6 +49,12 @@ appsettings.*.json
 appimagetool*
 AppDir/
 
+# Flatpak build artifacts
+packaging/flatpak/.flatpak-builder/
+packaging/flatpak/build-dir/
+packaging/flatpak/repo/
+packaging/flatpak/sendspin-app/
+
 # Secrets and credentials
 *.pem
 *.key

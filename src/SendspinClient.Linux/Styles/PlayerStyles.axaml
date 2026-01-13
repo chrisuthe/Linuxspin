@@ -43,6 +43,23 @@
         <Setter Property="Opacity" Value="0.5" />
     </Style>
 
+    <!-- Secondary transport buttons (next/previous) - smaller size -->
+    <Style Selector="Button.transport.secondary">
+        <Setter Property="Width" Value="48" />
+        <Setter Property="Height" Value="48" />
+        <Setter Property="CornerRadius" Value="24" />
+        <Setter Property="Background" Value="{DynamicResource BackgroundSurfaceBrush}" />
+    </Style>
+
+    <Style Selector="Button.transport.secondary:pointerover">
+        <Setter Property="Background" Value="{DynamicResource BackgroundHoverBrush}" />
+    </Style>
+
+    <Style Selector="Button.transport.secondary:disabled">
+        <Setter Property="Background" Value="{DynamicResource BackgroundSurfaceBrush}" />
+        <Setter Property="Opacity" Value="0.3" />
+    </Style>
+
     <!-- ─────────────────────────────────────────────────────────────────────────
          GHOST BUTTON - Subtle, borderless buttons
          ───────────────────────────────────────────────────────────────────────── -->
