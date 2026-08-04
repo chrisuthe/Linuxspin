@@ -1,26 +1,19 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>Sendspin.Platform.Linux</RootNamespace>
     <AssemblyName>Sendspin.Platform.Linux</AssemblyName>
-    <Description>Linux platform implementations for Sendspin client (OpenAL audio, D-Bus notifications)</Description>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Description>Linux platform backend: OpenAL render loop with real device latency, MPRIS2, freedesktop notifications</Description>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Audio Playback (Silk.NET OpenAL) -->
-    <PackageReference Include="Silk.NET.OpenAL" Version="2.22.0" />
-    <PackageReference Include="Silk.NET.OpenAL.Soft.Native" Version="1.23.1" />
-
-    <!-- Logging -->
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.2" />
-
-    <!-- Sendspin SDK -->
-    <PackageReference Include="Sendspin.SDK" Version="6.*" />
+    <PackageReference Include="Silk.NET.OpenAL" />
+    <PackageReference Include="Silk.NET.OpenAL.Soft.Native" />
+    <PackageReference Include="Tmds.DBus.Protocol" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Sendspin.SDK" />
   </ItemGroup>
 
   <ItemGroup>

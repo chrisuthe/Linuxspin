@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Sendspin.Core/Sendspin.Core.csproj" />
+    <Project Path="src/Sendspin.Discord/Sendspin.Discord.csproj" />
+    <Project Path="src/Sendspin.Platform.Linux/Sendspin.Platform.Linux.csproj" />
+    <Project Path="src/Sendspin.Platform.MacOS/Sendspin.Platform.MacOS.csproj" />
+    <Project Path="src/Sendspin.Platform.Shared/Sendspin.Platform.Shared.csproj" />
+    <Project Path="src/Sendspin.Platform.Windows/Sendspin.Platform.Windows.csproj" />
+    <Project Path="src/Sendspin.Player/Sendspin.Player.csproj" />
+    <Project Path="src/Sendspin.Tests/Sendspin.Tests.csproj" />
+  </Folder>
+</Solution>

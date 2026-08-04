@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# Sendspin Linux Client - Build All Packages
+# Sendspin Player - Build All Packages
 # =============================================================================
 # Builds both AppImage and Flatpak packages
 #

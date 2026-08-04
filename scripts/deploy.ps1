@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Deploy Sendspin Linux Client to a remote Fedora test machine.
+    Deploy Sendspin Player to a remote Fedora test machine.
 
 .DESCRIPTION
     This script deploys the built application to a remote Linux machine for testing.
@@ -151,7 +151,7 @@ if (-not $SourcePath) {
 
     # Fall back to debug build if release doesn't exist
     if (-not (Test-Path $SourcePath)) {
-        $debugPath = Join-Path $RepoRoot 'src\Sendspin.Player\bin\Debug\net8.0\linux-x64'
+        $debugPath = Join-Path $RepoRoot 'src\Sendspin.Player\bin\Debug\net10.0\linux-x64'
         if (Test-Path $debugPath) {
             $SourcePath = $debugPath
             Write-Warn "Using debug build from: $SourcePath"
@@ -277,7 +277,7 @@ Write-Success "SSH connection established"
 if ($Kill -or $Run -or $Debug) {
     Write-Info "Checking for existing sendspin process..."
 
-    $killResult = Invoke-SshCommand -Command "pkill -f 'sendspin|SendspinClient' 2>/dev/null || true" -NoThrow
+    $killResult = Invoke-SshCommand -Command "pkill -f 'sendspin|Sendspin.Player' 2>/dev/null || true" -NoThrow
     if ($killResult) {
         Write-Info "Killed existing process"
     }

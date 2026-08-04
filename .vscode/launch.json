@@ -6,7 +6,7 @@
             "type": "coreclr",
             "request": "launch",
             "preLaunchTask": "build",
-            "program": "${workspaceFolder}/src/Sendspin.Player/bin/Debug/net8.0/Sendspin.Player.dll",
+            "program": "${workspaceFolder}/src/Sendspin.Player/bin/Debug/net10.0/Sendspin.Player.dll",
             "args": [],
             "cwd": "${workspaceFolder}/src/Sendspin.Player",
             "console": "internalConsole",

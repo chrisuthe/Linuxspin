@@ -3,47 +3,31 @@ using Sendspin.Core.Platform;
 namespace Sendspin.Platform.Windows.Platform;
 
 /// <summary>
-/// Windows implementation of platform paths using %LocalAppData%.
-/// All application data is stored under %LocalAppData%\Sendspin.
+/// Windows application directories, all under <c>%LocalAppData%\Sendspin</c>.
 /// </summary>
-public sealed class WindowsPaths : IPlatformPaths
+/// <remarks>
+/// Local rather than roaming <c>AppData</c>: everything persisted here is specific to this
+/// machine — the audio device id, the per-device latency calibration, the artwork cache — and
+/// roaming one room's speaker delay to a laptop somewhere else would be actively wrong.
+/// </remarks>
+public sealed class WindowsPaths : PlatformPathsBase
 {
-    private const string AppName = "Sendspin";
-    private readonly string _baseDirectory;
+    private const string ApplicationFolderName = "Sendspin";
+
+    private readonly string _root;
 
     public WindowsPaths()
     {
-        // Use LocalAppData for all app data (non-roaming)
-        // This is the standard location for Windows desktop apps
         var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        _baseDirectory = Path.Combine(localAppData, AppName);
+        _root = Path.Combine(localAppData, ApplicationFolderName);
     }
 
     /// <inheritdoc/>
-    public string ConfigDirectory => Path.Combine(_baseDirectory, "config");
+    public override string ConfigDirectory => Path.Combine(_root, "config");
 
     /// <inheritdoc/>
-    public string DataDirectory => Path.Combine(_baseDirectory, "data");
+    public override string DataDirectory => Path.Combine(_root, "data");
 
     /// <inheritdoc/>
-    public string CacheDirectory => Path.Combine(_baseDirectory, "cache");
-
-    /// <inheritdoc/>
-    public string LogDirectory => Path.Combine(_baseDirectory, "logs");
-
-    /// <inheritdoc/>
-    public string AlbumArtCacheDirectory => Path.Combine(CacheDirectory, "artwork");
-
-    /// <inheritdoc/>
-    public string ConfigFile => Path.Combine(ConfigDirectory, "settings.json");
-
-    /// <inheritdoc/>
-    public void EnsureDirectoriesExist()
-    {
-        Directory.CreateDirectory(ConfigDirectory);
-        Directory.CreateDirectory(DataDirectory);
-        Directory.CreateDirectory(CacheDirectory);
-        Directory.CreateDirectory(LogDirectory);
-        Directory.CreateDirectory(AlbumArtCacheDirectory);
-    }
+    public override string CacheDirectory => Path.Combine(_root, "cache");
 }

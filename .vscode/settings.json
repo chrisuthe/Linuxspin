@@ -1,6 +1,6 @@
 {
     // .NET settings
-    "dotnet.defaultSolution": "SendspinClient.Linux.sln",
+    "dotnet.defaultSolution": "Sendspin.Player.slnx",
     "omnisharp.enableRoslynAnalyzers": true,
     "omnisharp.enableEditorConfigSupport": true,
 

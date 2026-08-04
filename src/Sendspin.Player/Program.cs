@@ -1,38 +1,60 @@
-using System;
 using Avalonia;
 
 namespace Sendspin.Player;
 
 /// <summary>
-/// Entry point for the Sendspin Linux client.
+/// Entry point.
 /// </summary>
 internal static class Program
 {
     /// <summary>
-    /// Application entry point. Initialization code must not use any Avalonia,
-    /// third-party APIs or any SynchronizationContext-reliant code before
-    /// AppMain is called.
+    /// Starts the application.
     /// </summary>
-    /// <param name="args">Command line arguments.</param>
+    /// <remarks>
+    /// <see cref="PlatformSelection.PreInitializeHost"/> runs before anything else, including
+    /// before <see cref="AppBuilder.Configure{TApplication}()"/>: on macOS it has to, and
+    /// putting it first unconditionally means the ordering cannot be broken by a later edit on
+    /// a platform where it happens not to matter.
+    /// </remarks>
     [STAThread]
-    public static void Main(string[] args)
+    public static int Main(string[] args)
     {
-        BuildAvaloniaApp()
-            .StartWithClassicDesktopLifetime(args);
+        PlatformSelection.PreInitializeHost();
+
+        var singleInstance = SingleInstanceGuard.TryAcquire();
+
+        if (!singleInstance.IsPrimary && !singleInstance.AllowWithoutGuard)
+        {
+            // A second copy of an audio endpoint would advertise a duplicate client_id and
+            // contend for the output device. Ask the running instance to show itself, then exit
+            // quietly: the user launched the app, and the app appearing is the right outcome.
+            singleInstance.SignalPrimaryToShow();
+            singleInstance.Dispose();
+            return 0;
+        }
+
+        try
+        {
+            App.SingleInstance = singleInstance;
+            return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+        }
+        finally
+        {
+            singleInstance.Dispose();
+        }
     }
 
     /// <summary>
-    /// Builds the Avalonia application with platform-specific configuration.
+    /// Builds the Avalonia application.
     /// </summary>
-    /// <returns>The configured <see cref="AppBuilder"/> instance.</returns>
     /// <remarks>
-    /// This method is called by the visual designer and the entry point.
-    /// Do not perform any application initialization here as it may be called
-    /// multiple times by the designer.
+    /// Also called by the XAML designer, so it must not do application initialisation. The
+    /// windowing backend is chosen per platform — see
+    /// <see cref="PlatformSelection.ConfigureWindowing"/>, which is where the Linux head's
+    /// X11-by-default and opt-in Wayland decision lives.
     /// </remarks>
-    public static AppBuilder BuildAvaloniaApp()
-        => AppBuilder.Configure<App>()
-            .UsePlatformDetect()
+    public static AppBuilder BuildAvaloniaApp() =>
+        PlatformSelection.ConfigureWindowing(AppBuilder.Configure<App>())
             .WithInterFont()
             .LogToTrace();
 }

@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# Sendspin Linux Client - AppImage Build Script
+# Sendspin Player - AppImage Build Script
 # =============================================================================
 # Run this script on Linux (Fedora) after cross-compiling from Windows
 #

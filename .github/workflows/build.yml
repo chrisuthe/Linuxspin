@@ -1,4 +1,7 @@
-# Sendspin-Player CI/CD Pipeline
+# Sendspin Player CI
+#
+# Every action is pinned to a full commit SHA. A tag is a mutable reference the upstream owner can
+# repoint at any time, so `@v4` is an unreviewed dependency with write access to this build.
 name: Build
 
 on:
@@ -8,51 +11,108 @@ on:
     branches: [master, main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 env:
-  DOTNET_VERSION: '8.0.x'
+  DOTNET_VERSION: '10.0.x'
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
 
 jobs:
-  # =============================================================================
-  # Linux Track
-  # =============================================================================
+  # ---------------------------------------------------------------------------
+  # Tests run once, on Linux: the suite covers Sendspin.Core and
+  # Sendspin.Platform.Shared, which are plain net10.0 and platform-neutral by
+  # design, so running it three times would exercise the same code three times.
+  #
+  # There is deliberately no `continue-on-error` here. A gate that cannot fail is
+  # not a gate, and this repo previously ran `dotnet test` with it set on both
+  # platforms, which is how having zero tests went unnoticed.
+  # ---------------------------------------------------------------------------
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Test
+        run: >
+          dotnet test src/Sendspin.Tests/Sendspin.Tests.csproj
+          --configuration Release
+          --logger "trx;LogFileName=test-results.trx"
+          --results-directory ./test-results
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: test-results
+          path: ./test-results
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # Dependency audit. NU1903 already fails the build through TreatWarningsAsErrors;
+  # this reports the detail rather than leaving a maintainer to decode a restore
+  # error, and covers transitive packages explicitly.
+  # ---------------------------------------------------------------------------
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Report vulnerable packages
+        run: |
+          set -euo pipefail
+          dotnet restore src/Sendspin.Tests/Sendspin.Tests.csproj
+          dotnet list src/Sendspin.Tests/Sendspin.Tests.csproj package \
+            --vulnerable --include-transitive 2>&1 | tee audit.txt
+          if grep -qi 'has the following vulnerable packages' audit.txt; then
+            echo "::error::Vulnerable packages reported above"
+            exit 1
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Linux
+  # ---------------------------------------------------------------------------
   build-linux:
     name: Build Linux (${{ matrix.rid }})
     runs-on: ubuntu-latest
+    needs: test
     strategy:
       fail-fast: false
       matrix:
         rid: [linux-x64, linux-arm64]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: Restore
-        run: dotnet restore
-
-      - name: Build
-        run: dotnet build --configuration Release --no-restore
-
-      - name: Test
-        run: dotnet test --configuration Release --no-build --verbosity normal
-        continue-on-error: true
-
       - name: Publish
-        run: |
-          dotnet publish src/Sendspin.Player/Sendspin.Player.csproj \
-            --configuration Release \
-            --runtime ${{ matrix.rid }} \
-            --self-contained \
-            --output ./publish/${{ matrix.rid }}
+        run: >
+          dotnet publish src/Sendspin.Player/Sendspin.Player.csproj
+          --configuration Release
+          --framework net10.0
+          --runtime ${{ matrix.rid }}
+          --self-contained
+          --output ./publish/${{ matrix.rid }}
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: sendspin-player-${{ matrix.rid }}
           path: ./publish/${{ matrix.rid }}
@@ -65,65 +125,37 @@ jobs:
     if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Download build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: sendspin-player-linux-x64
           path: ./publish/linux-x64
 
       - name: Install Flatpak tools
         run: |
+          set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y flatpak flatpak-builder
-          sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-          sudo flatpak install -y flathub org.freedesktop.Platform//23.08 org.freedesktop.Sdk//23.08
+          sudo flatpak remote-add --if-not-exists flathub \
+            https://flathub.org/repo/flathub.flatpakrepo
+          sudo flatpak install -y flathub \
+            org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08
 
-      - name: Create Flatpak
+      # The manifest is the one committed under packaging/flatpak/. It is NOT
+      # regenerated inline here: this workflow used to carry its own copy, which
+      # silently won over the committed one, so the two drifted and only the
+      # workflow's version was ever built or reviewed.
+      - name: Build Flatpak
         run: |
-          cat > io.sendspin.client.yml << 'EOF'
-          app-id: io.sendspin.client
-          runtime: org.freedesktop.Platform
-          runtime-version: '23.08'
-          sdk: org.freedesktop.Sdk
-          command: Sendspin.Player
-          finish-args:
-            - --share=ipc
-            - --socket=x11
-            - --socket=fallback-x11
-            - --socket=pulseaudio
-            - --share=network
-            - --device=dri
-            - --talk-name=org.freedesktop.Notifications
-          modules:
-            - name: sendspin
-              buildsystem: simple
-              build-commands:
-                - mkdir -p /app/bin
-                - cp -r app-files/* /app/bin/
-                - chmod +x /app/bin/Sendspin.Player
-                - mkdir -p /app/share/applications
-                - |
-                  cat > /app/share/applications/io.sendspin.client.desktop << 'DESKTOP'
-                  [Desktop Entry]
-                  Name=Sendspin
-                  Exec=Sendspin.Player
-                  Icon=io.sendspin.client
-                  Type=Application
-                  Categories=Audio;
-                  DESKTOP
-              sources:
-                - type: dir
-                  path: publish/linux-x64
-                  dest: app-files
-          EOF
-
-          flatpak-builder --user --force-clean --repo=repo build-dir io.sendspin.client.yml
+          set -euo pipefail
+          flatpak-builder --user --force-clean --repo=repo build-dir \
+            packaging/flatpak/io.sendspin.client.yml
           flatpak build-bundle repo Sendspin-Player.flatpak io.sendspin.client
 
       - name: Upload Flatpak
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: sendspin-player-flatpak
           path: Sendspin-Player.flatpak
@@ -135,155 +167,200 @@ jobs:
     needs: build-linux
     if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
 
+    env:
+      # A pinned release verified by checksum, not `continuous` fetched and executed
+      # unverified — that hands whoever controls the URL arbitrary code execution
+      # inside this workflow. The digest is the one GitHub publishes for the
+      # 1.9.1 x86_64 asset; on an intentional upgrade both values change together.
+      APPIMAGETOOL_VERSION: '1.9.1'
+      APPIMAGETOOL_SHA256: 'ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0'
+
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Download build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: sendspin-player-linux-x64
           path: ./publish/linux-x64
 
-      - name: Install tools
+      - name: Fetch and verify appimagetool
         run: |
+          set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y libfuse2
-          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
-          chmod +x appimagetool-x86_64.AppImage
+          sudo apt-get install -y libfuse2t64 || sudo apt-get install -y libfuse2
+
+          url="https://github.com/AppImage/appimagetool/releases/download/${APPIMAGETOOL_VERSION}/appimagetool-x86_64.AppImage"
+          curl -fsSL "$url" -o appimagetool
+
+          actual="$(sha256sum appimagetool | cut -d' ' -f1)"
+          if [ "$actual" != "$APPIMAGETOOL_SHA256" ]; then
+            echo "::error::appimagetool checksum mismatch"
+            echo "  expected: ${APPIMAGETOOL_SHA256}"
+            echo "  actual:   ${actual}"
+            echo "If this is an intentional appimagetool upgrade, verify the release and"
+            echo "update APPIMAGETOOL_SHA256 in this workflow in the same commit."
+            exit 1
+          fi
+
+          chmod +x appimagetool
 
       - name: Create AppImage
         run: |
-          mkdir -p AppDir/usr/bin
+          set -euo pipefail
+          mkdir -p AppDir/usr/bin \
+                   AppDir/usr/share/applications \
+                   AppDir/usr/share/icons/hicolor/256x256/apps
+
           cp -r ./publish/linux-x64/* AppDir/usr/bin/
           chmod +x AppDir/usr/bin/Sendspin.Player
 
-          cat > AppDir/AppRun << 'EOF'
-          #!/bin/bash
-          HERE=$(dirname "$(readlink -f "$0")")
+          cat > AppDir/AppRun <<'RUNNER'
+          #!/bin/sh
+          HERE="$(dirname "$(readlink -f "$0")")"
           exec "$HERE/usr/bin/Sendspin.Player" "$@"
-          EOF
+          RUNNER
           chmod +x AppDir/AppRun
 
-          cat > AppDir/sendspin.desktop << 'EOF'
-          [Desktop Entry]
-          Name=Sendspin
-          Exec=Sendspin.Player
-          Icon=sendspin
-          Type=Application
-          Categories=Audio;
-          EOF
+          cp packaging/io.sendspin.client.desktop AppDir/
+          cp packaging/io.sendspin.client.desktop AppDir/usr/share/applications/
+          cp packaging/icons/io.sendspin.client.png AppDir/
+          cp packaging/icons/io.sendspin.client.png \
+             AppDir/usr/share/icons/hicolor/256x256/apps/
 
-          echo -n 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==' | base64 -d > AppDir/sendspin.png
-
-          ARCH=x86_64 ./appimagetool-x86_64.AppImage AppDir Sendspin-Player-x86_64.AppImage
+          ARCH=x86_64 ./appimagetool AppDir Sendspin-Player-x86_64.AppImage
 
       - name: Upload AppImage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: sendspin-player-appimage
           path: Sendspin-Player-x86_64.AppImage
           retention-days: 30
 
-  # =============================================================================
-  # Windows Track
-  # =============================================================================
+  # ---------------------------------------------------------------------------
+  # Windows — framework-dependent only.
+  #
+  # Self-contained buys less than it looks like it does here: the WindowsAppRuntime
+  # and the VC++ redistributable are installer prerequisites either way, and a
+  # self-contained unpackaged publish is exactly the configuration in which
+  # AppNotificationManager.Register() throws (WindowsAppSDK#6071). See
+  # docs/COMPLIANCE.md.
+  # ---------------------------------------------------------------------------
   build-windows:
     name: Build Windows (${{ matrix.rid }})
     runs-on: windows-latest
+    needs: test
     strategy:
       fail-fast: false
       matrix:
-        rid: [win-x64]
+        rid: [win-x64, win-arm64]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: Restore
-        run: dotnet restore
+      - name: Publish
+        run: >
+          dotnet publish src/Sendspin.Player/Sendspin.Player.csproj
+          --configuration Release
+          --framework net10.0-windows10.0.19041.0
+          --runtime ${{ matrix.rid }}
+          --no-self-contained
+          --output ./publish/${{ matrix.rid }}
 
-      - name: Build
-        run: dotnet build --configuration Release --no-restore
-
-      - name: Test
-        run: dotnet test --configuration Release --no-build --verbosity normal
-        continue-on-error: true
-
-      - name: Publish (self-contained)
-        run: |
-          dotnet publish src/Sendspin.Player/Sendspin.Player.csproj `
-            --configuration Release `
-            --framework net8.0-windows10.0.19041.0 `
-            --runtime ${{ matrix.rid }} `
-            --self-contained `
-            -p:PublishSingleFile=true `
-            --output ./publish/${{ matrix.rid }}
-
-      - name: Publish (framework-dependent)
-        run: |
-          dotnet publish src/Sendspin.Player/Sendspin.Player.csproj `
-            --configuration Release `
-            --framework net8.0-windows10.0.19041.0 `
-            --runtime ${{ matrix.rid }} `
-            --no-self-contained `
-            -p:PublishSingleFile=true `
-            --output ./publish/${{ matrix.rid }}-fdd
-
-      - name: Upload self-contained artifacts
-        uses: actions/upload-artifact@v4
+      - name: Upload artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: sendspin-player-${{ matrix.rid }}
           path: ./publish/${{ matrix.rid }}
           retention-days: 14
 
-      - name: Upload framework-dependent artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: sendspin-player-${{ matrix.rid }}-fdd
-          path: ./publish/${{ matrix.rid }}-fdd
-          retention-days: 14
-
-  package-windows:
-    name: Package Windows Portable
-    runs-on: windows-latest
-    needs: build-windows
-    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+  # ---------------------------------------------------------------------------
+  # macOS — arm64 only. .NET cannot emit a universal binary and the bundled
+  # libopenal.dylib is thin arm64 already.
+  #
+  # Signing and notarization are NOT done here, and ad-hoc signing is deliberately
+  # not used as a stand-in: TCC keys the local-network grant to the code signature,
+  # so an ad-hoc hash that changes on every rebuild produces a grant that silently
+  # stops applying — which makes discovery testing give false results rather than
+  # merely unsigned ones. The unsigned bundle is published so the build is
+  # verifiable. docs/COMPLIANCE.md records what stays blocked on a Developer ID
+  # certificate.
+  # ---------------------------------------------------------------------------
+  build-macos:
+    name: Build macOS (osx-arm64)
+    runs-on: macos-latest
+    needs: test
 
     steps:
-      - name: Download self-contained build
-        uses: actions/download-artifact@v4
-        with:
-          name: sendspin-player-win-x64
-          path: ./portable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Download framework-dependent build
-        uses: actions/download-artifact@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
-          name: sendspin-player-win-x64-fdd
-          path: ./portable-fdd
+          dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: Clean up non-essential files
+      - name: Install the macOS workload
+        run: dotnet workload install macos
+
+      - name: Publish
+        run: >
+          dotnet publish src/Sendspin.Player/Sendspin.Player.csproj
+          --configuration Release
+          --framework net10.0-macos
+          --runtime osx-arm64
+          --output ./publish/osx-arm64
+
+      # Three things that are silently wrong rather than loudly wrong, so they are
+      # checked rather than assumed: a symlinked executable breaks
+      # UNUserNotificationCenter, and a missing local-network key means discovery
+      # fails on macOS 15+ with no diagnostic.
+      - name: Check the bundle
         run: |
-          # Remove debug symbols and XML docs to reduce size
-          Remove-Item -Path ./portable/*.pdb -ErrorAction SilentlyContinue
-          Remove-Item -Path ./portable/*.xml -ErrorAction SilentlyContinue
-          Remove-Item -Path ./portable-fdd/*.pdb -ErrorAction SilentlyContinue
-          Remove-Item -Path ./portable-fdd/*.xml -ErrorAction SilentlyContinue
+          set -euo pipefail
+          app="$(find ./publish/osx-arm64 -maxdepth 2 -name '*.app' -print -quit)"
+          if [ -z "$app" ]; then
+            echo "::error::No .app bundle was produced"
+            exit 1
+          fi
+          echo "Bundle: $app"
 
-      - name: Upload portable package (self-contained)
-        uses: actions/upload-artifact@v4
-        with:
-          name: Sendspin-Player-Windows-Portable
-          path: ./portable
-          retention-days: 30
+          binary="$app/Contents/MacOS/Sendspin.Player"
+          if [ -L "$binary" ]; then
+            echo "::error::${binary} is a symlink; UNUserNotificationCenter requires a real file"
+            exit 1
+          fi
+          if [ ! -f "$binary" ]; then
+            echo "::error::${binary} is missing"
+            exit 1
+          fi
 
-      - name: Upload portable package (framework-dependent)
-        uses: actions/upload-artifact@v4
+          plist="$app/Contents/Info.plist"
+          for key in NSLocalNetworkUsageDescription NSBonjourServices; do
+            if ! /usr/libexec/PlistBuddy -c "Print :${key}" "$plist" >/dev/null 2>&1; then
+              echo "::error::Info.plist is missing ${key}; macOS 15+ gates all Bonjour and *.local resolution on it"
+              exit 1
+            fi
+          done
+
+      - name: Create dmg
+        run: |
+          set -euo pipefail
+          app="$(find ./publish/osx-arm64 -maxdepth 2 -name '*.app' -print -quit)"
+          mkdir -p dmg-root
+          cp -R "$app" dmg-root/
+          hdiutil create -volname "Sendspin Player" -srcfolder dmg-root \
+            -ov -format UDZO Sendspin-Player-arm64.dmg
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: Sendspin-Player-Windows-Portable-NetRequired
-          path: ./portable-fdd
-          retention-days: 30
+          name: sendspin-player-osx-arm64
+          path: |
+            ./publish/osx-arm64
+            Sendspin-Player-arm64.dmg
+          retention-days: 14

@@ -7,7 +7,7 @@
             "type": "process",
             "args": [
                 "build",
-                "${workspaceFolder}/SendspinClient.Linux.sln",
+                "${workspaceFolder}/Sendspin.Player.slnx",
                 "--configuration",
                 "Debug",
                 "/property:GenerateFullPaths=true",
@@ -25,7 +25,7 @@
             "type": "process",
             "args": [
                 "build",
-                "${workspaceFolder}/SendspinClient.Linux.sln",
+                "${workspaceFolder}/Sendspin.Player.slnx",
                 "--configuration",
                 "Release",
                 "--runtime",
@@ -40,7 +40,7 @@
             "type": "process",
             "args": [
                 "publish",
-                "${workspaceFolder}/src/SendspinClient.Linux/SendspinClient.Linux.csproj",
+                "${workspaceFolder}/src/Sendspin.Player/Sendspin.Player.csproj",
                 "--configuration",
                 "Release",
                 "--runtime",
@@ -60,7 +60,7 @@
             "type": "process",
             "args": [
                 "test",
-                "${workspaceFolder}/SendspinClient.Linux.sln",
+                "${workspaceFolder}/Sendspin.Player.slnx",
                 "--configuration",
                 "Debug"
             ],
@@ -76,7 +76,7 @@
             "type": "process",
             "args": [
                 "test",
-                "${workspaceFolder}/SendspinClient.Linux.sln",
+                "${workspaceFolder}/Sendspin.Player.slnx",
                 "--configuration",
                 "Debug",
                 "--collect:\"XPlat Code Coverage\"",
@@ -91,7 +91,7 @@
             "type": "process",
             "args": [
                 "clean",
-                "${workspaceFolder}/SendspinClient.Linux.sln"
+                "${workspaceFolder}/Sendspin.Player.slnx"
             ],
             "problemMatcher": "$msCompile"
         },
@@ -101,7 +101,7 @@
             "type": "process",
             "args": [
                 "restore",
-                "${workspaceFolder}/SendspinClient.Linux.sln"
+                "${workspaceFolder}/Sendspin.Player.slnx"
             ],
             "problemMatcher": "$msCompile"
         },
@@ -156,7 +156,7 @@
             "args": [
                 "watch",
                 "--project",
-                "${workspaceFolder}/src/SendspinClient.Linux/SendspinClient.Linux.csproj",
+                "${workspaceFolder}/src/Sendspin.Player/Sendspin.Player.csproj",
                 "build"
             ],
             "problemMatcher": "$msCompile",

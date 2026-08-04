@@ -22,9 +22,9 @@
 
 # Project settings
 PROJECT_NAME := Sendspin.Player
-SOLUTION := Sendspin.Player.sln
+SOLUTION := Sendspin.Player.slnx
 MAIN_PROJECT := src/Sendspin.Player/Sendspin.Player.csproj
-TEST_PROJECT := src/Sendspin.Player.Tests/Sendspin.Player.Tests.csproj
+TEST_PROJECT := src/Sendspin.Tests/Sendspin.Tests.csproj
 
 # Build settings
 CONFIGURATION ?= Debug
@@ -118,13 +118,16 @@ check-env:
 
 restore:
 	@echo "$(BLUE)Restoring packages...$(NC)"
-	dotnet restore $(SOLUTION) --runtime $(RUNTIME)
+	dotnet restore $(SOLUTION)
 
+# A RID cannot be passed at the solution level (NETSDK1134), and it should not be:
+# the solution holds three platform heads plus libraries, and only the head being
+# published needs one. The solution builds RID-agnostic; `make publish` supplies the
+# RID to the one project that wants it.
 build: restore
-	@echo "$(BLUE)Building $(CONFIGURATION) for $(RUNTIME)...$(NC)"
+	@echo "$(BLUE)Building $(CONFIGURATION)...$(NC)"
 	dotnet build $(SOLUTION) \
 		--configuration $(CONFIGURATION) \
-		--runtime $(RUNTIME) \
 		--no-restore
 
 release:
@@ -142,18 +145,16 @@ clean:
 # Test Targets
 # =============================================================================
 
-test: build
+test:
 	@echo "$(BLUE)Running tests...$(NC)"
 	dotnet test $(TEST_PROJECT) \
 		--configuration $(CONFIGURATION) \
-		--no-build \
 		--logger "console;verbosity=normal"
 
-coverage: build
+coverage:
 	@echo "$(BLUE)Running tests with coverage...$(NC)"
 	dotnet test $(TEST_PROJECT) \
 		--configuration $(CONFIGURATION) \
-		--no-build \
 		--collect:"XPlat Code Coverage" \
 		--results-directory $(ARTIFACTS_DIR)/test-results \
 		-- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
@@ -180,7 +181,7 @@ publish: restore
 		-p:EnableCompressionInSingleFile=true \
 		-p:Version=$(VERSION)
 	@chmod +x $(ARTIFACTS_DIR)/$(RUNTIME)/sendspin 2>/dev/null || \
-	 chmod +x $(ARTIFACTS_DIR)/$(RUNTIME)/SendspinClient.Linux 2>/dev/null || true
+	 chmod +x $(ARTIFACTS_DIR)/$(RUNTIME)/Sendspin.Player 2>/dev/null || true
 	@echo "$(GREEN)Published to: $(ARTIFACTS_DIR)/$(RUNTIME)$(NC)"
 
 publish-all:

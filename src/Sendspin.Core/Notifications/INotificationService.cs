@@ -1,38 +1,87 @@
 namespace Sendspin.Core.Notifications;
 
 /// <summary>
-/// Provides desktop notification capabilities for the Sendspin client.
+/// The kinds of notification this player raises, each independently switchable.
 /// </summary>
+public enum NotificationKind
+{
+    TrackChange,
+    PlaybackState,
+    ConnectionState
+}
+
+/// <summary>
+/// A notification to show, already reduced to what every backend needs.
+/// </summary>
+/// <param name="Kind">Which user toggle governs this notification.</param>
+/// <param name="Title">First line.</param>
+/// <param name="Body">Second line, or null.</param>
+/// <param name="ArtworkFilePath">
+/// Absolute path to an image, or null. Backends that cannot show an image ignore it. On Linux
+/// and Windows it becomes the notification's icon rather than an inline body image, which is
+/// all either shell renders.
+/// </param>
+public sealed record NotificationRequest(
+    NotificationKind Kind,
+    string Title,
+    string? Body = null,
+    string? ArtworkFilePath = null);
+
+/// <summary>
+/// Shows desktop notifications.
+/// </summary>
+/// <remarks>
+/// One <see cref="ShowAsync"/> rather than a method per event, so adding a notification does
+/// not mean touching three platform implementations. Filtering against the user's per-event
+/// toggles happens above this interface for the same reason.
+/// </remarks>
 public interface INotificationService : IAsyncDisposable
 {
     /// <summary>
-    /// Initializes the notification service.
+    /// Gets whether notifications can actually be delivered.
     /// </summary>
-    /// <param name="ct">Cancellation token for the operation.</param>
-    /// <returns>A task representing the asynchronous initialization operation.</returns>
-    Task InitializeAsync(CancellationToken ct = default);
+    /// <remarks>
+    /// False is a normal outcome, not a failure: there may be no notification daemon, the user
+    /// may have denied permission, or registration may be unsupported for this packaging mode.
+    /// Callers must not treat it as an error, and the implementation must have logged why.
+    /// </remarks>
+    bool IsAvailable { get; }
 
     /// <summary>
-    /// Displays a notification for a track change.
+    /// Connects to the platform notification service. Must not throw when unavailable; report
+    /// through <see cref="IsAvailable"/> and log the reason.
     /// </summary>
-    /// <param name="title">The track title.</param>
-    /// <param name="artist">The artist name.</param>
-    /// <param name="albumArtPath">Optional path to the album art image file.</param>
-    /// <returns>A task representing the asynchronous operation.</returns>
-    Task ShowTrackChangeAsync(string title, string artist, string? albumArtPath = null);
+    Task InitializeAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Displays a notification for connection status changes.
+    /// Shows a notification. A no-op when <see cref="IsAvailable"/> is false.
     /// </summary>
-    /// <param name="serverName">The name of the server.</param>
-    /// <param name="connected">True if connected, false if disconnected.</param>
-    /// <returns>A task representing the asynchronous operation.</returns>
-    Task ShowConnectionStatusAsync(string serverName, bool connected);
+    Task ShowAsync(NotificationRequest request, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Closes a notification by its ID.
+    /// Withdraws any notification this service currently has on screen.
     /// </summary>
-    /// <param name="notificationId">The ID of the notification to close.</param>
-    /// <returns>A task representing the asynchronous operation.</returns>
-    Task CloseNotificationAsync(uint notificationId);
+    Task WithdrawAsync(CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// The notification service used when a platform has none, or when one failed to start.
+/// </summary>
+public sealed class NullNotificationService : INotificationService
+{
+    /// <inheritdoc/>
+    public bool IsAvailable => false;
+
+    /// <inheritdoc/>
+    public Task InitializeAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    /// <inheritdoc/>
+    public Task ShowAsync(NotificationRequest request, CancellationToken cancellationToken = default) =>
+        Task.CompletedTask;
+
+    /// <inheritdoc/>
+    public Task WithdrawAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    /// <inheritdoc/>
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
