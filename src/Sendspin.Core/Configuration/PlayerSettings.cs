@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Sendspin.SDK.Client;
 
@@ -78,7 +79,7 @@ public sealed class PlayerSettings
     /// identifier that was neither unique (two installs on one host collide) nor stable
     /// (renaming the host re-registers the player as a new endpoint and loses its group).
     /// Empty here means "not yet generated"; see
-    /// <see cref="ClientIdentity.Resolve(PlayerSettings)"/>.
+    /// <see cref="ClientIdentity.EnsureIdentity(PlayerSettings)"/>.
     /// </remarks>
     public string ClientId { get; set; } = string.Empty;
 
@@ -170,6 +171,28 @@ public sealed class PlayerSettings
         }
 
         device.ManualLatencyOffsetMs = offsetMs;
+    }
+
+    /// <summary>
+    /// Returns an independent copy, sharing no mutable state with this instance.
+    /// </summary>
+    /// <remarks>
+    /// This type is mutable and holds a dictionary, so handing the same instance to every reader
+    /// means a reader can observe one field from before a multi-field change and another from after,
+    /// and iterating <see cref="Devices"/> while another thread inserts throws. Copying on write
+    /// instead — see <see cref="SettingsService.Update"/> — makes every published instance a stable
+    /// snapshot, at the cost of one copy per change rather than one per read.
+    /// <para>
+    /// Round-tripped through the same source-generated contract used to persist it, so a field that
+    /// is saved is also copied. A field added without a serializer entry would silently reset here,
+    /// which is the same failure it would already have on disk.
+    /// </para>
+    /// </remarks>
+    public PlayerSettings Clone()
+    {
+        var json = JsonSerializer.Serialize(this, PlayerSettingsJsonContext.Default.PlayerSettings);
+        return JsonSerializer.Deserialize(json, PlayerSettingsJsonContext.Default.PlayerSettings)
+               ?? new PlayerSettings();
     }
 }
 

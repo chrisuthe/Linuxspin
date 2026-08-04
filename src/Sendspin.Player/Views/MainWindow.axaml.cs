@@ -17,11 +17,9 @@ public sealed partial class MainWindow : Window
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Synchronous, and it disposes nothing. The window used to be an
-    /// <c>async void OnClosing</c> that disposed the view model, racing the application's own
-    /// synchronous disposal of the service provider — two owners tearing down the same audio
-    /// pipeline, so shutdown threw or hung depending on which reached it first. Teardown now has
-    /// exactly one owner, in <c>App.OnShutdownRequested</c>.
+    /// Synchronous, and it disposes nothing. Teardown has exactly one owner,
+    /// <c>App.OnShutdownRequested</c>; a window handler that also disposed the view model would
+    /// race it for the audio pipeline.
     /// </para>
     /// <para>
     /// The application's shutdown mode is explicit rather than last-window-closed, because an

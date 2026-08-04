@@ -544,7 +544,3 @@ systemctl --user restart pipewire
 
 - [Sendspin CLI](https://github.com/chrisuthe/sendspin-cli) - Python CLI reference implementation
 - [Music Assistant](https://music-assistant.io/) - The server this client connects to
-
-## License
-
-MIT License - see LICENSE file for details.

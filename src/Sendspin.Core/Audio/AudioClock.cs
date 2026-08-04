@@ -250,9 +250,4 @@ public sealed unsafe class SeqLockedAudioClockCell : IDisposable
             NativeMemory.AlignedFree(cell);
         }
     }
-
-    /// <summary>
-    /// Gets the raw cell address, for handing to a native render callback.
-    /// </summary>
-    public nint Address => (nint)_cell;
 }

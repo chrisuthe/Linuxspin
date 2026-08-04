@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# Sendspin Linux Client - Flatpak Build Script
+# Sendspin Player - Flatpak Build Script
 # =============================================================================
 # Run this script on Linux (Fedora) after cross-compiling from Windows
 #

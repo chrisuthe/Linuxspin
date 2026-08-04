@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Sendspin.SDK.Client;
 
@@ -46,13 +47,21 @@ public sealed class SettingsService
     public event EventHandler<PlayerSettings>? Changed;
 
     /// <summary>
-    /// Gets the current settings. Treat as read-only; mutate via <see cref="Update"/> so the
-    /// change is persisted and observers are told.
+    /// Gets the current settings, as a stable snapshot.
     /// </summary>
-    public PlayerSettings Current
-    {
-        get { lock (_gate) return _current; }
-    }
+    /// <remarks>
+    /// <para>
+    /// Safe to hold. <see cref="Update"/> publishes a new instance rather than mutating this one, so
+    /// a reference obtained here keeps the values it had: a reader can never see a half-applied
+    /// change, and can iterate <see cref="PlayerSettings.Devices"/> without racing a write.
+    /// </para>
+    /// <para>
+    /// Read-only <em>by contract</em>, not by enforcement. This is the live current snapshot, so
+    /// mutating it is a bug — the change bypasses persistence and observers, and the next
+    /// <see cref="Update"/> will copy it forward. Go through <see cref="Update"/>.
+    /// </para>
+    /// </remarks>
+    public PlayerSettings Current => Volatile.Read(ref _current);
 
     /// <summary>
     /// Applies <paramref name="mutate"/> to the settings, persists the result, and raises
@@ -68,13 +77,20 @@ public sealed class SettingsService
         ArgumentNullException.ThrowIfNull(mutate);
 
         PlayerSettings snapshot;
+
+        // Copy, mutate the copy, persist it, then publish it. Mutating the live instance in place
+        // would let a reader observe one field from before the change and another from after, and
+        // would let the serializer walk the Devices dictionary while another thread inserts into it.
+        // The cost is one copy per change rather than per read, and changes are rare because the
+        // call sites only write when a value actually moved.
         lock (_gate)
         {
-            mutate(_current);
-            snapshot = _current;
+            snapshot = _current.Clone();
+            mutate(snapshot);
+            Persist(snapshot);
+            Volatile.Write(ref _current, snapshot);
         }
 
-        Persist(snapshot);
         Changed?.Invoke(this, snapshot);
     }
 
@@ -91,6 +107,13 @@ public sealed class SettingsService
         catch (UnauthorizedAccessException ex)
         {
             _logger.LogError(ex, "Not permitted to write settings; this change will not survive a restart");
+        }
+        catch (JsonException ex)
+        {
+            // Serializing our own settings type should not fail. If it does, it must not escape into
+            // whatever called Update — which includes SDK event handlers on background threads,
+            // where an unexpected exception would take the process down.
+            _logger.LogError(ex, "Settings could not be serialized; this change will not survive a restart");
         }
     }
 }

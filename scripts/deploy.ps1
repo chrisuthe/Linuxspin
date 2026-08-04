@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Deploy Sendspin Linux Client to a remote Fedora test machine.
+    Deploy Sendspin Player to a remote Fedora test machine.
 
 .DESCRIPTION
     This script deploys the built application to a remote Linux machine for testing.

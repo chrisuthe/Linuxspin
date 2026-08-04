@@ -1,9 +1,9 @@
 <#
 .SYNOPSIS
-    Build script for Sendspin Linux Client - Windows development machine targeting Linux.
+    Build script for Sendspin Player - Windows development machine targeting Linux.
 
 .DESCRIPTION
-    This script builds the Sendspin Linux client from a Windows development environment.
+    This script builds the Sendspin Player from a Windows development environment.
     It supports cross-compilation to Linux using .NET's runtime identifier system.
 
 .PARAMETER Configuration

@@ -51,12 +51,35 @@ public sealed class MediaSessionMapperTests
         Assert.Equal(TimeSpan.FromSeconds(30), state.Position);
         Assert.True(state.CanGoNext);
         Assert.True(state.CanGoPrevious);
-        Assert.True(state.CanSeek);
         Assert.False(state.IsLive);
         Assert.True(state.Shuffle);
         Assert.Equal(MediaRepeatMode.All, state.Repeat);
         Assert.Equal(64, state.Volume);
         Assert.True(state.Muted);
+    }
+
+    /// <summary>
+    /// Seek is never offered, because the player role has no seek command.
+    /// </summary>
+    /// <remarks>
+    /// Asserted for a bounded track specifically: it would be easy to "fix" this by deriving it
+    /// from the duration, which is what every OS surface then renders a dead scrubber from.
+    /// </remarks>
+    [Fact]
+    public void FromGroupState_NeverAdvertisesSeek()
+    {
+        var group = new GroupState
+        {
+            PlaybackState = PlaybackState.Playing,
+            SupportedCommands = [Commands.Next, Commands.Previous],
+            Metadata = new TrackMetadata
+            {
+                Title = "A track with a known length",
+                Progress = new PlaybackProgress { TrackDuration = 200_000.0, TrackProgress = 1_000.0 }
+            }
+        };
+
+        Assert.False(MediaSessionMapper.FromGroupState(group).CanSeek);
     }
 
     /// <summary>

@@ -262,9 +262,13 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         {
             await _player.ConnectAsync(server);
         }
-        catch (Exception ex) when (ex is IOException or System.Net.WebSockets.WebSocketException
-                                       or TimeoutException or OperationCanceledException)
+        catch (Exception ex)
         {
+            // Deliberately broad. Connecting spans mDNS, a socket, a WebSocket handshake and the
+            // SDK's protocol handling, and the exception types are not enumerable from here. What
+            // matters is that IsConnecting is cleared: only OnConnectionChanged clears it otherwise,
+            // and that never fires on a failed connect — so anything unhandled would leave the
+            // Connect button disabled for the rest of the session.
             _logger.LogError(ex, "Could not connect to {Server}", server.Name);
             StatusMessage = $"Could not connect to {server.Name}: {ex.Message}";
             IsConnecting = false;
@@ -295,9 +299,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             StatusMessage = $"'{url}' is not a valid server address.";
             IsConnecting = false;
         }
-        catch (Exception ex) when (ex is IOException or System.Net.WebSockets.WebSocketException
-                                       or TimeoutException or OperationCanceledException)
+        catch (Exception ex)
         {
+            // Broad for the same reason as ConnectAsync: clearing IsConnecting matters more than
+            // enumerating the failure modes of the whole network stack.
             _logger.LogError(ex, "Could not connect to {Url}", url);
             StatusMessage = $"Could not connect to {url}: {ex.Message}";
             IsConnecting = false;
@@ -310,7 +315,19 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     /// Disconnects from the current server.
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanDisconnect))]
-    private async Task DisconnectAsync() => await _player.DisconnectAsync();
+    private async Task DisconnectAsync()
+    {
+        try
+        {
+            await _player.DisconnectAsync();
+        }
+        catch (Exception ex)
+        {
+            // A disconnect that throws has still disconnected as far as the user is concerned, and
+            // CommunityToolkit rethrows an unhandled command exception onto the UI thread.
+            _logger.LogWarning(ex, "Error while disconnecting");
+        }
+    }
 
     private bool CanDisconnect() => IsConnected;
 
@@ -393,10 +410,21 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         _router.LocalActionRequested -= OnLocalActionRequested;
 
         // Cancel and drain outstanding work before releasing what it touches.
-        await _work.DisposeAsync();
+        //
+        // ConfigureAwait(false) is load-bearing, not habit. Shutdown runs on the UI thread and
+        // blocks waiting for the service container to dispose; a continuation captured onto the
+        // Avalonia synchronisation context here would be queued behind that block and never run, so
+        // this method would never finish, the container would never get past it, and the audio
+        // device, the media session and the artwork cache would all be left as they are.
+        await _work.DisposeAsync().ConfigureAwait(false);
 
         Diagnostics.Dispose();
-        Artwork?.Dispose();
+
+        // Same ordering as above: ShutdownRequested fires before windows close, so the image is
+        // still bound at this point.
+        var artwork = Artwork;
+        Artwork = null;
+        artwork?.Dispose();
     }
 
     private static string Format(TimeSpan value) =>
@@ -495,9 +523,14 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 _progressTimer.Stop();
                 Position = TimeSpan.Zero;
                 State = MediaSessionState.Idle;
-                Artwork?.Dispose();
+
+                // Unbind before disposing. The compositor renders from Image.Source on its own
+                // thread, so releasing the bitmap while it is still the bound source is a native
+                // fault on the render thread rather than a managed exception here.
+                var previousArtwork = Artwork;
                 Artwork = null;
                 _artworkPath = null;
+                previousArtwork?.Dispose();
             }
         });
 

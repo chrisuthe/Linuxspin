@@ -78,8 +78,10 @@ availability. There is no parameter meaning "never proceed unconverged".
 The timeout is left at the SDK default of 5000 ms **on purpose**. Inflating it would hide the
 behaviour without fixing it, and would trade a known bounded gap for an unbounded startup stall.
 
-**Action required upstream:** file this against `sendspin-dotnet` and record the issue number
-here. Until then this row stays a declared gap, not a ticked box.
+**Action required upstream, and not yet done.** No issue has been filed against
+`sendspin-dotnet` — `AI_POLICY.md` bars an agent from opening issues, so this needs a human. The
+issue number belongs in this paragraph once it exists. Until then the row is a declared gap, not a
+ticked box, and no build should describe itself as meeting the convergence-gating requirement.
 
 ### Realtime-audio safety differs by platform, and one platform is knowingly short
 
@@ -95,6 +97,14 @@ here. Until then this row stays a declared gap, not a ticked box.
   (dotnet/runtime#119142, closed as not planned). The ring and seqlock boundary is deliberately
   shaped so a native C shim can replace the callback without touching managed code, which is the
   fix. This is a labelled limitation, not a solved problem.
+
+### `required_lead_time_ms` is a constant, not derived from the pipeline
+
+The acceptance criterion asks for it to be derived from the actual pipeline. It is 350 ms fixed. The
+value has to be advertised in `client/hello`, which is sent before any audio has flowed and so
+before the pipeline can report a measured latency; deriving it properly means re-advertising after
+the first stream, which the SDK's `ClientCapabilities` is not shaped for. Declared rather than
+quietly left looking derived.
 
 ### Not verified on hardware
 
@@ -112,6 +122,23 @@ machine this was not built on. They are listed so the gap is visible rather than
 - Now Playing / Control Center on macOS.
 - Fractional HiDPI at 125 % and 150 %.
 - MPRIS and the tray working *inside* the Flatpak rather than only outside it.
+
+### macOS audio measurements that *were* taken
+
+Unlike the rows above, these were measured on the build machine (macOS 26.6, Apple Silicon,
+48 kHz) rather than carried over from research, and the code's comments cite them:
+
+- Mach timebase 125/3, i.e. 24 MHz — mach ticks are not nanoseconds.
+- `mHostTime` arrives 11.646 ms ahead of `mach_absolute_time`, against
+  `(512 buffer + 48 safety) / 48000 = 11.667 ms`. That is direct evidence that buffer size and
+  safety offset are **already inside** `mHostTime`, so adding them again double-counts.
+- Built-in speakers: device latency 60 frames, **stream latency 690 frames**. Querying the device
+  twice instead of querying the stream gives 1.25 ms where the right answer is 15.62 ms.
+- Safety offset varies 48 → 576 frames by transport, the 12× spread the plan predicted.
+- A player run reported `latency=16ms`, `calibrated=40ms`, and `TimingSourceName` moving
+  `wall-clock` → `audio-clock` on the first publish, with the clock advancing 202666 µs per 200 ms
+  of wall time — exactly 19 × 512-frame buffers, so the rate is the DAC's.
+- Three forced compacting Gen2 collections mid-playback did not stop the callback or the clock.
 
 ### Blocked on a Developer ID certificate (macOS)
 

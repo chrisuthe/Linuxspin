@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Sendspin Linux Client - Test Runner Script
+# Sendspin Player - Test Runner Script
 # =============================================================================
-# This script runs the test suite for the Sendspin Linux client.
+# This script runs the test suite for the Sendspin Player.
 # It supports code coverage, filtering, and various output formats.
 #
 # Usage:

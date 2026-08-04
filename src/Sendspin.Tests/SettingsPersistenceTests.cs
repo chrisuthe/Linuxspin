@@ -180,4 +180,54 @@ public sealed class SettingsPersistenceTests
 
         Assert.Equal(-40.5, store.Load().StaticDelayMs);
     }
+
+    /// <summary>
+    /// A snapshot handed out before a change must not be altered by that change.
+    /// </summary>
+    /// <remarks>
+    /// The settings object is mutable and holds a dictionary. Publishing the same instance to every
+    /// reader lets one observe half of a multi-field change, and lets a reader iterating
+    /// <c>Devices</c> race an insert. Copy-on-write is what prevents both; this asserts it rather
+    /// than trusting it.
+    /// </remarks>
+    [Fact]
+    public void Update_PublishesANewSnapshotRatherThanMutatingTheOldOne()
+    {
+        using var paths = new TemporaryPaths();
+        var store = new JsonSettingsStore(paths, NullLogger<JsonSettingsStore>.Instance);
+        var settings = new SettingsService(store, NullLogger<SettingsService>.Instance);
+
+        var before = settings.Current;
+        var beforeVolume = before.Volume;
+
+        settings.Update(s =>
+        {
+            s.Volume = 17;
+            s.SetManualLatencyOffsetMs("device-x", 12.5);
+        });
+
+        Assert.NotSame(before, settings.Current);
+        Assert.Equal(beforeVolume, before.Volume);
+        Assert.Equal(0.0, before.GetManualLatencyOffsetMs("device-x"));
+
+        Assert.Equal(17, settings.Current.Volume);
+        Assert.Equal(12.5, settings.Current.GetManualLatencyOffsetMs("device-x"));
+    }
+
+    [Fact]
+    public void Clone_CopiesNestedStateIndependently()
+    {
+        var original = new PlayerSettings { Volume = 44 };
+        original.SetManualLatencyOffsetMs("d", 9.0);
+        original.Notifications.TrackChange = true;
+
+        var copy = original.Clone();
+        copy.Volume = 1;
+        copy.SetManualLatencyOffsetMs("d", -1.0);
+        copy.Notifications.TrackChange = false;
+
+        Assert.Equal(44, original.Volume);
+        Assert.Equal(9.0, original.GetManualLatencyOffsetMs("d"));
+        Assert.True(original.Notifications.TrackChange);
+    }
 }

@@ -21,12 +21,10 @@ namespace Sendspin.Platform.Shared.Client;
 /// </summary>
 /// <remarks>
 /// <para>
-/// This replaces a manager that opened a second raw WebSocket to every discovered server to
-/// hand-build its own <c>client/hello</c> and read back a display name. That duplicated work the
-/// SDK already does, doubled the socket count, advertised only <c>player@v1</c>, and could not
-/// survive a spec-current server. Discovery and connection here go entirely through
-/// <see cref="MdnsServerDiscovery"/>, <see cref="SendspinHostService"/> and
-/// <see cref="SendspinClientService"/>.
+/// Discovery and connection go entirely through the SDK — <see cref="MdnsServerDiscovery"/>,
+/// <see cref="SendspinHostService"/> and <see cref="SendspinClientService"/>. Nothing here speaks
+/// the protocol directly: connecting to N discovered servers opens N sockets, and the roles
+/// advertised are whatever <see cref="PlayerCapabilities"/> declares.
 /// </para>
 /// <para>
 /// It is also the <see cref="IPlayerCommandSink"/>, which is what makes the single command path
@@ -244,9 +242,16 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// The token is observed before the send, not during it: the SDK's command methods take no
+    /// cancellation token, so there is nothing to hand it to. Checking here is what lets
+    /// <see cref="BackgroundTaskSet"/>'s shutdown actually stop queued commands rather than waiting
+    /// out its timeout on every one of them.
+    /// </remarks>
     public async Task SendCommandAsync(string command, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(command);
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (_client is { ConnectionState: ConnectionState.Connected } client)
         {
@@ -272,6 +277,7 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
     /// </remarks>
     public async Task SetVolumeAsync(int volume, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var clamped = Math.Clamp(volume, 0, 100);
 
         if (_client is { ConnectionState: ConnectionState.Connected } client)
@@ -289,6 +295,7 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
     /// <inheritdoc/>
     public async Task SetMuteAsync(bool muted, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (_client is { ConnectionState: ConnectionState.Connected } client)
         {
             await client.SetMuteAsync(muted).ConfigureAwait(false);
@@ -305,6 +312,7 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
     /// </summary>
     public async Task SetStaticDelayAsync(double staticDelayMs, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         _staticDelayStore.Save(staticDelayMs);
 
         if (_clockSync is not null)
@@ -369,7 +377,6 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
         var provider = sampleSource?.CorrectionProvider;
         var clockStatus = _clockSync?.GetStatus();
         var format = _pipeline?.CurrentFormat;
-        var device = ResolveDevice(settings.AudioDeviceId);
 
         return new PlayerDiagnosticsSnapshot
         {
@@ -393,7 +400,7 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
             ManualLatencyOffsetMs = settings.GetManualLatencyOffsetMs(settings.AudioDeviceId),
             StaticDelayMs = settings.StaticDelayMs,
             TimingSource = stats?.TimingSourceName ?? buffer?.TimingSourceName,
-            AudioDeviceName = device?.Name,
+            AudioDeviceName = Volatile.Read(ref _activeDeviceName),
             PlatformName = ClientIdentity.PlatformLabel
         };
     }
@@ -522,9 +529,13 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
     {
         ObjectDisposedException.ThrowIf(_isDisposed, this);
 
-        if (_client is { ConnectionState: ConnectionState.Connected })
+        // Tear down *any* existing client, not only a connected one. A client that failed to
+        // connect, or that dropped, is still subscribed to these five events and still owns a
+        // socket; overwriting the field would leak it and — if its own reconnect later succeeded —
+        // leave two clients driving one UI and one settings file.
+        if (_client is not null)
         {
-            _logger.LogInformation("Already connected; disconnecting first");
+            _logger.LogInformation("Replacing the existing client connection");
             await DisconnectAsync().ConfigureAwait(false);
         }
 
@@ -710,7 +721,11 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
                     timeFunc,
                     _loggerFactory.CreateLogger<SyncCorrectedSampleSource>());
 
-                Volatile.Write(ref _sampleSource, source);
+                // A new source per stream, so the previous one has to go: each holds a scratch
+                // buffer and a correction calculator.
+                var previous = Interlocked.Exchange(ref _sampleSource, source);
+                previous?.Dispose();
+
                 return source;
             },
             precisionTimer: null,
@@ -718,6 +733,18 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
             convergenceTimeoutMs: 5_000,
             useMonotonicTimer: true);
     }
+
+    /// <summary>
+    /// The active device's display name, remembered so that <see cref="Capture"/> does not have to
+    /// enumerate devices.
+    /// </summary>
+    /// <remarks>
+    /// Diagnostics polls twice a second on the UI thread. Enumerating there means constructing an
+    /// <c>MMDeviceEnumerator</c> and walking every endpoint on Windows, or re-reading the device
+    /// string list on Linux — tens of milliseconds of work on the thread that renders the UI, for a
+    /// value that changes only when the user picks a different output.
+    /// </remarks>
+    private string? _activeDeviceName;
 
     private AudioDeviceInfo? ResolveDevice(string? deviceId)
     {
@@ -728,6 +755,7 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
                 var match = _deviceEnumerator.GetDevices().FirstOrDefault(d => d.Id == deviceId);
                 if (match is not null)
                 {
+                    Volatile.Write(ref _activeDeviceName, match.Name);
                     return match;
                 }
 
@@ -735,7 +763,9 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
                     "Configured audio device {DeviceId} is not present; using the system default", deviceId);
             }
 
-            return _deviceEnumerator.GetDefaultDevice();
+            var fallback = _deviceEnumerator.GetDefaultDevice();
+            Volatile.Write(ref _activeDeviceName, fallback?.Name);
+            return fallback;
         }
         catch (InvalidOperationException ex)
         {
@@ -812,24 +842,41 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
 
         // Volume is server-authoritative: this is where the value that actually took effect
         // arrives, so this is where it is persisted for the next connection's initial state.
-        _settings.Update(s =>
-        {
-            s.Volume = Math.Clamp(group.Volume, 0, 100);
-            s.Muted = group.Muted;
-        });
+        PersistVolumeIfChanged(group.Volume, group.Muted);
 
         PublishState();
     }
 
     private void OnPlayerStateChanged(object? sender, PlayerState state)
     {
+        PersistVolumeIfChanged(state.Volume, state.Muted);
+        PublishState();
+    }
+
+    /// <summary>
+    /// Persists volume and mute, but only when they actually changed.
+    /// </summary>
+    /// <remarks>
+    /// Group and player state arrive on every <c>server/state</c>, including updates that change
+    /// neither — so writing unconditionally rewrites the settings file and fans out a
+    /// <c>Changed</c> event several times a second for the life of the session. Under Flatpak that
+    /// file often lives on a size-limited tmpfs.
+    /// </remarks>
+    private void PersistVolumeIfChanged(int volume, bool muted)
+    {
+        var clamped = Math.Clamp(volume, 0, 100);
+        var current = _settings.Current;
+
+        if (current.Volume == clamped && current.Muted == muted)
+        {
+            return;
+        }
+
         _settings.Update(s =>
         {
-            s.Volume = Math.Clamp(state.Volume, 0, 100);
-            s.Muted = state.Muted;
+            s.Volume = clamped;
+            s.Muted = muted;
         });
-
-        PublishState();
     }
 
     private void OnArtworkReceived(object? sender, ArtworkReceivedEventArgs e)
@@ -841,14 +888,23 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
         }
 
         var identity = MediaSessionMapper.BuildTrackIdentity(group?.Metadata);
-        _artworkPath = _artworkCache.Write(identity, e.ImageData);
+        var path = _artworkCache.Write(identity, e.ImageData);
+
+        lock (_sessionGate)
+        {
+            _artworkPath = path;
+        }
 
         PublishState();
     }
 
     private void OnArtworkCleared(object? sender, ArtworkClearedEventArgs e)
     {
-        _artworkPath = null;
+        lock (_sessionGate)
+        {
+            _artworkPath = null;
+        }
+
         PublishState();
     }
 

@@ -167,6 +167,28 @@ public sealed class SingleInstanceGuard : IDisposable
     /// </summary>
     private static string GetPipeName() => $"sendspin-player-{Environment.UserName}";
 
+    /// <summary>
+    /// Returns the pipe to the listening state, tolerating a client that has already gone.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="PipeStream.IsConnected"/> is not a usable guard here: it can flip between the test
+    /// and the call, and <c>Disconnect</c> then throws <see cref="InvalidOperationException"/>. That
+    /// type matched none of the loop's catch clauses, so the listen task faulted, nothing observed
+    /// it, and the guard silently stopped answering — after which every later launch exited without
+    /// raising the window. Catching it here keeps the loop alive.
+    /// </remarks>
+    private void Recycle()
+    {
+        try
+        {
+            _server?.Disconnect();
+        }
+        catch (InvalidOperationException)
+        {
+            // Already disconnected. Nothing to do.
+        }
+    }
+
     private async Task ListenAsync(CancellationToken cancellationToken)
     {
         var buffer = new byte[ShowMessage.Length];
@@ -183,7 +205,7 @@ public sealed class SingleInstanceGuard : IDisposable
                     ShowRequested?.Invoke(this, EventArgs.Empty);
                 }
 
-                _server.Disconnect();
+                Recycle();
             }
             catch (OperationCanceledException)
             {
@@ -197,10 +219,7 @@ public sealed class SingleInstanceGuard : IDisposable
             {
                 // A client that connected and vanished. Reset and keep listening; the pipe is
                 // still ours.
-                if (_server.IsConnected)
-                {
-                    _server.Disconnect();
-                }
+                Recycle();
             }
         }
     }

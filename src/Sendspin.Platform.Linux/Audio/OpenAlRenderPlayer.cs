@@ -123,6 +123,7 @@ public sealed unsafe class OpenAlRenderPlayer : AudioPlayerBase
     private int _sampleRate;
     private BufferFormat _bufferFormat;
     private int _deviceLatencyMilliseconds;
+    private int _queuedBuffers;
     private double _smoothedDeviceLatencyMilliseconds;
     private bool _inUnderrun;
 
@@ -144,13 +145,16 @@ public sealed unsafe class OpenAlRenderPlayer : AudioPlayerBase
     /// <inheritdoc/>
     /// <remarks>
     /// <para>
-    /// Two parts, both real. The device's own latency comes from
+    /// Two parts, both measured. The device's own latency comes from
     /// <c>ALC_DEVICE_CLOCK_LATENCY_SOFT</c> (or <c>AL_SAMPLE_OFFSET_LATENCY_SOFT</c>), sampled
-    /// continuously by the render thread. Added to it is the audio already queued ahead of the
-    /// buffer being written, which in steady state is <see cref="BufferCount"/> - 1 periods:
-    /// the render thread refills a buffer the moment the device finishes one, so the queue sits
-    /// full. That term is a property of this player's own scheduling, not a guess about the
-    /// driver.
+    /// continuously by the render thread. Added to it is the audio actually sitting in the source's
+    /// queue ahead of the device, read from <c>AL_BUFFERS_QUEUED</c> on each pass.
+    /// </para>
+    /// <para>
+    /// The queue depth is observed rather than assumed to be <see cref="BufferCount"/> - 1. In
+    /// steady state it is that, so assuming it would usually be right — but it is wrong exactly
+    /// when the number matters most: during prefill, and after an underrun, when the queue is not
+    /// full and a fixed term would overstate the latency by up to the whole buffer depth.
     /// </para>
     /// <para>
     /// When the extensions are absent the device term falls back to one buffer period as a
@@ -162,9 +166,15 @@ public sealed unsafe class OpenAlRenderPlayer : AudioPlayerBase
         QueuedAheadMilliseconds + Volatile.Read(ref _deviceLatencyMilliseconds);
 
     /// <summary>
-    /// Gets the audio queued ahead of the buffer currently being written, in milliseconds.
+    /// Gets the audio sitting in the source queue ahead of the device, in milliseconds.
     /// </summary>
-    private static int QueuedAheadMilliseconds => (BufferCount - 1) * BufferMilliseconds;
+    /// <remarks>
+    /// A queued-but-unplayed buffer is one period of audio the device has not reached yet, so the
+    /// queue holds <c>queued - 1</c> periods beyond the one being played. Clamped at zero for the
+    /// moment before the first buffer is queued.
+    /// </remarks>
+    private int QueuedAheadMilliseconds =>
+        Math.Max(0, Volatile.Read(ref _queuedBuffers) - 1) * BufferMilliseconds;
 
     /// <inheritdoc/>
     protected override Task OpenDeviceAsync(AudioFormat format, string? deviceId, CancellationToken cancellationToken)
@@ -179,58 +189,74 @@ public sealed unsafe class OpenAlRenderPlayer : AudioPlayerBase
 
         lock (_deviceGate)
         {
-            _sampleRate = format.SampleRate;
-            _bufferFormat = format.Channels == 2 ? BufferFormat.Stereo16 : BufferFormat.Mono16;
+            // Anything that throws part-way through leaves a device and possibly a context open,
+            // and AudioPlayerBase.InitializeAsync reports the failure and rethrows without calling
+            // CloseDevice — so the unwind has to happen here or the handles leak for the lifetime
+            // of the process.
+            var opened = false;
 
-            var al = AL.GetApi();
-            var alc = ALContext.GetApi();
-            _al = al;
-            _alc = alc;
-
-            _device = alc.OpenDevice(deviceId);
-            if (_device is null)
+            try
             {
-                throw new InvalidOperationException(
-                    $"OpenAL could not open audio device '{deviceId ?? "system default"}'.");
-            }
+                _sampleRate = format.SampleRate;
+                _bufferFormat = format.Channels == 2 ? BufferFormat.Stereo16 : BufferFormat.Mono16;
 
-            // Ask the mixer to run at the stream's rate. When it can, OpenAL's own resampler is
-            // out of the path entirely; when it cannot, the resampler's delay is included in the
-            // latency the device reports, so either way the figure stays honest.
-            var attributes = stackalloc int[] { (int)ContextAttributes.Frequency, format.SampleRate, 0 };
-            _context = alc.CreateContext(_device, attributes);
-            if (_context is null)
+                var al = AL.GetApi();
+                var alc = ALContext.GetApi();
+                _al = al;
+                _alc = alc;
+
+                _device = alc.OpenDevice(deviceId);
+                if (_device is null)
+                {
+                    throw new InvalidOperationException(
+                        $"OpenAL could not open audio device '{deviceId ?? "system default"}'.");
+                }
+
+                // Ask the mixer to run at the stream's rate. When it can, OpenAL's own resampler is
+                // out of the path entirely; when it cannot, the resampler's delay is included in the
+                // latency the device reports, so either way the figure stays honest.
+                var attributes = stackalloc int[] { (int)ContextAttributes.Frequency, format.SampleRate, 0 };
+                _context = alc.CreateContext(_device, attributes);
+                if (_context is null)
+                {
+                    var error = alc.GetError(_device);
+                    throw new InvalidOperationException($"OpenAL could not create a context: {error}.");
+                }
+
+                if (!alc.MakeContextCurrent(_context))
+                {
+                    throw new InvalidOperationException("OpenAL could not make the new context current.");
+                }
+
+                _source = al.GenSource();
+                fixed (uint* buffers = _buffers)
+                {
+                    al.GenBuffers(BufferCount, buffers);
+                }
+
+                _buffers.CopyTo(_freeBuffers, 0);
+                _freeBufferCount = BufferCount;
+
+                var framesPerBuffer = format.SampleRate * BufferMilliseconds / 1_000;
+                var samplesPerBuffer = framesPerBuffer * format.Channels;
+                _sampleBuffer = new float[samplesPerBuffer];
+                _pcmBuffer = new short[samplesPerBuffer];
+
+                DisableSpatialisation(al, format.Channels);
+                ApplyGain(al);
+
+                _extensions = new AlSoftExtensions(al, alc, _device, Logger);
+                SeedDeviceLatency(_extensions);
+
+                opened = true;
+            }
+            finally
             {
-                var error = alc.GetError(_device);
-                alc.CloseDevice(_device);
-                _device = null;
-                throw new InvalidOperationException($"OpenAL could not create a context: {error}.");
+                if (!opened)
+                {
+                    ReleaseDeviceResources();
+                }
             }
-
-            if (!alc.MakeContextCurrent(_context))
-            {
-                throw new InvalidOperationException("OpenAL could not make the new context current.");
-            }
-
-            _source = al.GenSource();
-            fixed (uint* buffers = _buffers)
-            {
-                al.GenBuffers(BufferCount, buffers);
-            }
-
-            _buffers.CopyTo(_freeBuffers, 0);
-            _freeBufferCount = BufferCount;
-
-            var framesPerBuffer = format.SampleRate * BufferMilliseconds / 1_000;
-            var samplesPerBuffer = framesPerBuffer * format.Channels;
-            _sampleBuffer = new float[samplesPerBuffer];
-            _pcmBuffer = new short[samplesPerBuffer];
-
-            DisableSpatialisation(al, format.Channels);
-            ApplyGain(al);
-
-            _extensions = new AlSoftExtensions(al, alc, _device, Logger);
-            SeedDeviceLatency(_extensions);
         }
 
         return Task.CompletedTask;
@@ -241,54 +267,67 @@ public sealed unsafe class OpenAlRenderPlayer : AudioPlayerBase
     {
         lock (_deviceGate)
         {
-            var al = _al;
-            var alc = _alc;
-
-            if (al is not null)
-            {
-                if (_source != 0)
-                {
-                    al.DeleteSource(_source);
-                    _source = 0;
-                    CheckError(al, "alDeleteSource");
-                }
-
-                if (_buffers[0] != 0)
-                {
-                    fixed (uint* buffers = _buffers)
-                    {
-                        al.DeleteBuffers(BufferCount, buffers);
-                    }
-
-                    Array.Clear(_buffers);
-                    CheckError(al, "alDeleteBuffers");
-                }
-
-                _freeBufferCount = 0;
-            }
-
-            if (alc is not null)
-            {
-                if (_context is not null)
-                {
-                    alc.MakeContextCurrent(null);
-                    alc.DestroyContext(_context);
-                    _context = null;
-                }
-
-                if (_device is not null)
-                {
-                    alc.CloseDevice(_device);
-                    _device = null;
-                }
-            }
-
-            _extensions = null;
-            al?.Dispose();
-            alc?.Dispose();
-            _al = null;
-            _alc = null;
+            ReleaseDeviceResources();
         }
+    }
+
+    /// <summary>
+    /// Releases whatever OpenAL handles are currently held. Safe to call on a partly-opened device,
+    /// and safe to call twice.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately does not check the AL error state. This runs both on ordinary teardown and on
+    /// the unwind from a failed open; an error reported while deleting a handle is not actionable,
+    /// and raising it from the unwind path would replace the exception that actually explains the
+    /// failure. The caller must hold <c>_deviceGate</c>.
+    /// </remarks>
+    private void ReleaseDeviceResources()
+    {
+        var al = _al;
+        var alc = _alc;
+
+        if (al is not null)
+        {
+            if (_source != 0)
+            {
+                al.DeleteSource(_source);
+                _source = 0;
+            }
+
+            if (_buffers[0] != 0)
+            {
+                fixed (uint* buffers = _buffers)
+                {
+                    al.DeleteBuffers(BufferCount, buffers);
+                }
+
+                Array.Clear(_buffers);
+            }
+
+            _freeBufferCount = 0;
+        }
+
+        if (alc is not null)
+        {
+            if (_context is not null)
+            {
+                alc.MakeContextCurrent(null);
+                alc.DestroyContext(_context);
+                _context = null;
+            }
+
+            if (_device is not null)
+            {
+                alc.CloseDevice(_device);
+                _device = null;
+            }
+        }
+
+        _extensions = null;
+        al?.Dispose();
+        alc?.Dispose();
+        _al = null;
+        _alc = null;
     }
 
     /// <inheritdoc/>
@@ -486,7 +525,7 @@ public sealed unsafe class OpenAlRenderPlayer : AudioPlayerBase
             while (!_stopSignal.IsSet)
             {
                 RecycleProcessedBuffers(al, source);
-                ResumeIfStarved(al, source);
+                ObserveQueueAndResume(al, source);
 
                 if (--passesUntilLatencySample <= 0)
                 {
@@ -551,17 +590,25 @@ public sealed unsafe class OpenAlRenderPlayer : AudioPlayerBase
     }
 
     /// <summary>
-    /// Restarts a source the device stopped because the queue ran dry.
+    /// Publishes the queue depth, and restarts a source the device stopped because the queue ran
+    /// dry.
     /// </summary>
-    private void ResumeIfStarved(AL al, uint source)
+    /// <remarks>
+    /// The depth is read on every pass, not only when starved: it is one of the two terms in
+    /// <see cref="MeasuredOutputLatencyMs"/>, so a value that only refreshed on an underrun would
+    /// report a stale latency for the whole of normal playback.
+    /// </remarks>
+    private void ObserveQueueAndResume(AL al, uint source)
     {
+        al.GetSourceProperty(source, GetSourceInteger.BuffersQueued, out var queued);
+        Volatile.Write(ref _queuedBuffers, queued);
+
         al.GetSourceProperty(source, GetSourceInteger.SourceState, out var state);
         if ((SourceState)state == SourceState.Playing)
         {
             return;
         }
 
-        al.GetSourceProperty(source, GetSourceInteger.BuffersQueued, out var queued);
         if (queued > 0 && !_stopSignal.IsSet)
         {
             al.SourcePlay(source);

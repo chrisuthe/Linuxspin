@@ -22,9 +22,15 @@ public static class PlayerCapabilities
     /// </summary>
     /// <remarks>
     /// Covers codec init, decoder warm-up and the first fill of the output buffer. The server
-    /// schedules the first chunk at least this far after the start trigger, so too small
-    /// truncates the opening of a track and too large delays every start. Refined from the
-    /// live pipeline once it reports a measured output latency.
+    /// schedules the first chunk at least this far after the start trigger, so too small truncates
+    /// the opening of a track and too large delays every start.
+    /// <para>
+    /// It is a fixed figure, and that is a known shortfall against the requirement that it be
+    /// derived from the pipeline: the value has to be advertised in <c>client/hello</c>, which is
+    /// sent before any audio has flowed and therefore before the pipeline can report a measured
+    /// latency. Deriving it properly means re-advertising after the first stream, which the SDK's
+    /// capabilities are not shaped for. Recorded in <c>docs/COMPLIANCE.md</c>.
+    /// </para>
     /// </remarks>
     public const int DefaultRequiredLeadTimeMs = 350;
 
@@ -59,14 +65,10 @@ public static class PlayerCapabilities
     /// The output device that will be used, or null when none could be enumerated.
     /// </param>
     /// <param name="softwareVersion">This build's version string.</param>
-    /// <param name="requiredLeadTimeMs">
-    /// Measured startup lead time, or null to use <see cref="DefaultRequiredLeadTimeMs"/>.
-    /// </param>
     public static ClientCapabilities Build(
         PlayerSettings settings,
         AudioDeviceInfo? device,
-        string softwareVersion,
-        int? requiredLeadTimeMs = null)
+        string softwareVersion)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentException.ThrowIfNullOrEmpty(softwareVersion);
@@ -87,7 +89,7 @@ public static class PlayerCapabilities
             ],
             AudioFormats = BuildFormats(settings.PreferredCodec, device),
             BufferCapacity = BufferCapacityMs,
-            RequiredLeadTimeMs = requiredLeadTimeMs ?? DefaultRequiredLeadTimeMs,
+            RequiredLeadTimeMs = DefaultRequiredLeadTimeMs,
             MinBufferMs = DefaultMinBufferMs,
 
             // The player exposes a static-delay control, so it must accept the server's

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Sendspin Linux Client - Native Linux Build Script
+# Sendspin Player - Native Linux Build Script
 # =============================================================================
-# This script builds the Sendspin Linux client on a Linux development machine
+# This script builds the Sendspin Player on a Linux development machine
 # or CI environment. It supports all packaging formats (AppImage, .deb, Flatpak).
 #
 # Usage:
@@ -476,7 +476,7 @@ Description: Synchronized multi-room audio playback client
  Sendspin is a desktop client for synchronized multi-room audio
  playback. Play audio in perfect sync with other Sendspin clients
  across your network.
-Homepage: https://github.com/your-org/Linuxspin
+Homepage: https://github.com/chrisuthe/sendspin-player
 EOF
 
     # Create desktop file

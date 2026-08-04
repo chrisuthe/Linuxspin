@@ -14,9 +14,8 @@ namespace Sendspin.Platform.Shared.Audio;
 /// <remarks>
 /// <para>
 /// What differs between WASAPI, OpenAL and AUHAL is how frames reach the device and how the
-/// device reports its position — those are the abstract members. Everything else was
-/// previously duplicated per platform and had already drifted: the two OpenAL copies differed
-/// by fifteen lines, and Windows applied the volume curve a second time.
+/// device reports its position — those are the abstract members. Everything else belongs here, so
+/// that there is one state machine, one volume path and one clock projection rather than three.
 /// </para>
 /// <para>
 /// <strong>Volume.</strong> <see cref="Volume"/> arrives already curved, because the SDK's
@@ -27,6 +26,19 @@ namespace Sendspin.Platform.Shared.Audio;
 public abstract class AudioPlayerBase : IAudioPlayer
 {
     private readonly Lock _stateGate = new();
+
+    /// <summary>
+    /// Held while the device's clock is read, and while the device is torn down.
+    /// </summary>
+    /// <remarks>
+    /// The SDK reads the audio clock on every buffer read, from its own thread, so a device switch
+    /// or a disposal is genuinely concurrent with a clock read. Every backend's reader dereferences
+    /// something the teardown frees — an unmanaged seqlock cell on macOS, a COM object on Windows, a
+    /// raw <c>ALCdevice*</c> on Linux — so without this the read is a use-after-free rather than a
+    /// stale value. It lives here because the base class owns the ordering: no backend can fix it
+    /// alone, since none of them is called for teardown except through this class.
+    /// </remarks>
+    private readonly Lock _clockGate = new();
 
     private AudioPlayerState _state = AudioPlayerState.Uninitialized;
     private DeviceAnchoredClock? _clock;
@@ -108,6 +120,12 @@ public abstract class AudioPlayerBase : IAudioPlayer
     public string? CurrentDeviceId { get; private set; }
 
     /// <summary>
+    /// Gets the name this backend reports as its timing source, for
+    /// <see cref="ITimedAudioBuffer.TimingSourceName"/> and the diagnostics view.
+    /// </summary>
+    public abstract string TimingSourceName { get; }
+
+    /// <summary>
     /// Gets the logger for this player.
     /// </summary>
     protected ILogger Logger { get; }
@@ -126,17 +144,10 @@ public abstract class AudioPlayerBase : IAudioPlayer
     /// Gets the device's measured output latency in milliseconds, excluding the manual offset.
     /// </summary>
     /// <remarks>
-    /// Must be a real figure queried from the device. A constant derived from buffer size is
-    /// what this rebuild exists to remove: it was 100 ms flat on Linux and
-    /// "requested + 15" on Windows, against a ±1 ms specification.
+    /// Must be a real figure queried from the device, against a ±1 ms synchronisation budget. A
+    /// constant derived from the buffer size is not acceptable here, however plausible it looks.
     /// </remarks>
     protected abstract int MeasuredOutputLatencyMs { get; }
-
-    /// <summary>
-    /// Gets the name this backend reports as its timing source, for
-    /// <see cref="ITimedAudioBuffer.TimingSourceName"/> and the diagnostics view.
-    /// </summary>
-    public abstract string TimingSourceName { get; }
 
     /// <inheritdoc/>
     public async Task InitializeAsync(AudioFormat format, CancellationToken cancellationToken = default)
@@ -260,7 +271,11 @@ public abstract class AudioPlayerBase : IAudioPlayer
         try
         {
             StopRendering(flush: true);
-            CloseDevice();
+
+            lock (_clockGate)
+            {
+                CloseDevice();
+            }
 
             CurrentDeviceId = deviceId;
             await OpenDeviceAsync(format, deviceId, cancellationToken).ConfigureAwait(false);
@@ -306,7 +321,20 @@ public abstract class AudioPlayerBase : IAudioPlayer
             return null;
         }
 
-        var reading = TryReadDeviceClock();
+        AudioClockReading? reading;
+
+        lock (_clockGate)
+        {
+            // Re-check inside the gate: teardown may have completed between the checks above and
+            // acquiring it.
+            if (_isDisposed || OutputFormat is null)
+            {
+                return null;
+            }
+
+            reading = TryReadDeviceClock();
+        }
+
         if (reading is null)
         {
             return null;
@@ -351,11 +379,18 @@ public abstract class AudioPlayerBase : IAudioPlayer
             Logger.LogWarning(ex, "Audio render loop did not stop cleanly during disposal");
         }
 
+        // DisposeCoreAsync is awaited and so cannot be inside the gate; by contract it releases only
+        // what StopRendering has already stopped. CloseDevice, which frees what the clock reader
+        // dereferences, is the part that has to be serialised against a read.
         await DisposeCoreAsync().ConfigureAwait(false);
 
-        CloseDevice();
+        lock (_clockGate)
+        {
+            CloseDevice();
+            _clock = null;
+        }
+
         SampleSource = null;
-        _clock = null;
         SetState(AudioPlayerState.Uninitialized);
     }
 

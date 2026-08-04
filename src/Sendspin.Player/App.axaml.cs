@@ -219,15 +219,16 @@ public sealed partial class App : Application
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Synchronous, and it blocks. That is the point: the previous arrangement had an
-    /// <c>async void</c> window-closing handler disposing the view model while this handler
-    /// disposed the service provider, so the audio pipeline could be disposed from two
-    /// directions at once and shutdown either threw or hung depending on which won.
+    /// Synchronous, and it blocks — deliberately. Teardown has exactly one owner: the view model
+    /// is disposed as part of the container, the window disposes nothing, and this waits for the
+    /// async teardown to finish. Two owners disposing the audio pipeline from different directions
+    /// is how shutdown starts either throwing or hanging depending on which gets there first.
     /// </para>
     /// <para>
-    /// Now there is one owner. The view model is disposed as part of the container, the window
-    /// does not dispose anything, and this waits for the async teardown to finish with a bound
-    /// so a stuck service cannot prevent the process exiting.
+    /// The wait is bounded so a stuck service cannot stop the process exiting. Everything in the
+    /// chain uses <c>ConfigureAwait(false)</c>, so blocking here does not deadlock on a
+    /// continuation needing this thread — but a dispatcher continuation queued during teardown will
+    /// not run until it returns, which is why the bound exists rather than being a formality.
     /// </para>
     /// </remarks>
     private void OnShutdownRequested(object? sender, ShutdownRequestedEventArgs e)

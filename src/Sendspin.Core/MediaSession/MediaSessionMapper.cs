@@ -58,9 +58,12 @@ public static class MediaSessionMapper
             Position = ToTimeSpan(metadata?.Position) ?? TimeSpan.Zero,
             CanGoNext = Supports(commands, Commands.Next),
             CanGoPrevious = Supports(commands, Commands.Previous),
-            // Never advertise seek on an unbounded stream: a scrubber that cannot land
-            // anywhere is worse than no scrubber.
-            CanSeek = duration is not null,
+            // Always false. The player role has no seek command — position belongs to the server,
+            // and a player asking to seek would be asking the whole group to move. Every OS surface
+            // renders a draggable scrubber from this flag and PlayerCommandRouter then declines the
+            // resulting intent, so advertising it would give all three shells a scrubber that snaps
+            // back. The inbound handlers stay as defensive no-ops.
+            CanSeek = false,
             Shuffle = group.Shuffle,
             Repeat = ToRepeatMode(group.Repeat),
             Volume = Math.Clamp(group.Volume, 0, 100),

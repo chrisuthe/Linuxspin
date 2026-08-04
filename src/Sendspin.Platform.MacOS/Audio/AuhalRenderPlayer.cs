@@ -89,6 +89,7 @@ public sealed unsafe class AuhalRenderPlayer : AudioPlayerBase
 
     private AudioUnit.AudioUnit? _audioUnit;
     private UnmanagedAudioRing? _ring;
+    private bool _clockObserved;
     private SeqLockedAudioClockCell? _clockCell;
     private GCHandle _ringHandle;
     private GCHandle _clockCellHandle;
@@ -117,8 +118,14 @@ public sealed unsafe class AuhalRenderPlayer : AudioPlayerBase
     /// the SDK is on its filtered wall clock and saying otherwise would misreport the one field
     /// that exists to record which path is in use.
     /// </remarks>
+    /// <remarks>
+    /// Derived from a flag rather than by reading the clock cell. This property is read on the SDK's
+    /// timing path, and the cell is unmanaged memory that <c>CloseDevice</c> frees — so probing it
+    /// here would be a second, unsynchronised dereference of exactly what teardown releases. The
+    /// flag is set by <see cref="TryReadDeviceClock"/>, which the base class does serialise.
+    /// </remarks>
     public override string TimingSourceName =>
-        _clockCell?.TryRead() is not null ? "audio-clock" : "wall-clock";
+        Volatile.Read(ref _clockObserved) ? "audio-clock" : "wall-clock";
 
     /// <inheritdoc/>
     /// <remarks>
@@ -299,7 +306,17 @@ public sealed unsafe class AuhalRenderPlayer : AudioPlayerBase
     }
 
     /// <inheritdoc/>
-    protected override AudioClockReading? TryReadDeviceClock() => _clockCell?.TryRead();
+    protected override AudioClockReading? TryReadDeviceClock()
+    {
+        var reading = _clockCell?.TryRead();
+
+        if (reading is not null)
+        {
+            Volatile.Write(ref _clockObserved, true);
+        }
+
+        return reading;
+    }
 
     /// <summary>
     /// The AUHAL render callback. Realtime thread; see the class remarks.
@@ -508,6 +525,9 @@ public sealed unsafe class AuhalRenderPlayer : AudioPlayerBase
     /// </summary>
     private void ReleaseRenderResources()
     {
+        // Back to wall-clock until a new callback publishes again.
+        Volatile.Write(ref _clockObserved, false);
+
         var state = _state;
         _state = null;
 

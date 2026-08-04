@@ -180,8 +180,16 @@ public sealed class MprisMediaSession : IMediaSession
             seekedTo = state.Position;
             changed = DiffPlayerProperties(previous, state, properties);
 
+            // Re-anchor only when the reported position actually moved. Publish fires on artwork,
+            // player state and connection changes too, so anchoring unconditionally restarts the
+            // extrapolation from a stale position several times per server update — which a shell
+            // renders as a progress bar that keeps twitching backwards.
+            if (previous is null || state.Position != previous.Position)
+            {
+                _positionAnchorTicks = Environment.TickCount64;
+            }
+
             _state = state;
-            _positionAnchorTicks = Environment.TickCount64;
             Volatile.Write(ref _playerProperties, properties);
         }
 
@@ -202,21 +210,45 @@ public sealed class MprisMediaSession : IMediaSession
     }
 
     /// <inheritdoc/>
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         if (_disposed)
         {
-            return ValueTask.CompletedTask;
+            return;
         }
 
         _disposed = true;
         _isActive = false;
 
-        // The connection itself belongs to SessionBus, so only this object's export is withdrawn.
-        _connection?.RemoveMethodHandler(SessionObjectPath);
+        // The connection itself belongs to SessionBus, so only this object's export is withdrawn —
+        // but the bus name has to go with it, and in that order. A name still owned with no object
+        // at /org/mpris/MediaPlayer2 makes Properties.GetAll fail with UnknownObject, which is
+        // precisely the condition that makes KDE delete the player entry. In the usual shutdown
+        // order the connection drops immediately afterwards so it rarely shows; it shows if this
+        // session is ever disposed while the bus stays up.
+        var connection = _connection;
         _connection = null;
 
-        return ValueTask.CompletedTask;
+        if (connection is not null)
+        {
+            connection.RemoveMethodHandler(SessionObjectPath);
+
+            if (_busName is { } busName)
+            {
+                try
+                {
+                    await connection.ReleaseNameAsync(busName).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is DBusExceptionBase or ObjectDisposedException or IOException)
+                {
+                    // The bus going away first is the common case on shutdown, and it has already
+                    // released the name for us.
+                    _logger.LogDebug(ex, "Could not release {BusName}", busName);
+                }
+
+                _busName = null;
+            }
+        }
     }
 
     private static Dictionary<string, VariantValue> BuildRootProperties() => new(StringComparer.Ordinal)
@@ -248,8 +280,14 @@ public sealed class MprisMediaSession : IMediaSession
             ["Metadata"] = MprisMetadata.Build(state),
 
             // MPRIS volume is a linear 0.0-1.0 multiplier, and the protocol volume is 0-100.
-            // Muted reports zero because that is what is actually audible.
-            ["Volume"] = VariantValue.Double(state.Muted ? 0.0 : state.Volume / 100.0),
+            //
+            // The level is reported even while muted, rather than as zero. MPRIS has no mute
+            // property, so a shell treats this as the slider position: reporting zero makes the
+            // slider jump to the bottom on mute, and then a user who drags it sends a SetVolume that
+            // does not unmute — leaving the slider snapping back to zero with no way to recover from
+            // the shell. Reporting the real level keeps the slider where the user left it, and
+            // dragging it is a genuine volume change.
+            ["Volume"] = VariantValue.Double(state.Volume / 100.0),
 
             ["CanGoNext"] = VariantValue.Bool(state.CanGoNext),
             ["CanGoPrevious"] = VariantValue.Bool(state.CanGoPrevious),
@@ -298,7 +336,7 @@ public sealed class MprisMediaSession : IMediaSession
             changed["Shuffle"] = properties["Shuffle"];
         }
 
-        if (previous.Volume != current.Volume || previous.Muted != current.Muted)
+        if (previous.Volume != current.Volume)
         {
             changed["Volume"] = properties["Volume"];
         }

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Sendspin Linux Client - Deployment Script for Fedora Test Machine
+# Sendspin Player - Deployment Script for Fedora Test Machine
 # =============================================================================
 # This script deploys the built application to a remote Linux machine for testing.
 # It uses rsync for efficient incremental file transfers.

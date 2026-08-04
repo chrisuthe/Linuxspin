@@ -86,7 +86,15 @@ public sealed record MediaSessionState
     /// <summary>Gets whether the server currently accepts a previous-track command.</summary>
     public bool CanGoPrevious { get; init; }
 
-    /// <summary>Gets whether seeking is offered. Never true for a live stream.</summary>
+    /// <summary>
+    /// Gets whether seeking is offered to OS media surfaces.
+    /// </summary>
+    /// <remarks>
+    /// Always false for a player, and the property exists so that is explicit rather than absent.
+    /// The Sendspin player role has no seek command — position belongs to the server, and one
+    /// player asking to seek would be asking its whole group to move — so a surface that advertised
+    /// it would render a scrubber that snaps back.
+    /// </remarks>
     public bool CanSeek { get; init; }
 
     /// <summary>Gets whether shuffle is on.</summary>
@@ -214,7 +222,15 @@ public sealed class NullMediaSession : IMediaSession
     public bool IsActive => false;
 
     /// <inheritdoc/>
-    public event EventHandler<MediaSessionIntentEventArgs>? IntentReceived;
+    /// <remarks>
+    /// Explicit no-op accessors rather than a field-backed event: nothing ever raises this, and a
+    /// field-backed event that is never raised warns. Subscribing is harmless and does nothing.
+    /// </remarks>
+    public event EventHandler<MediaSessionIntentEventArgs>? IntentReceived
+    {
+        add { }
+        remove { }
+    }
 
     /// <inheritdoc/>
     public Task InitializeAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
@@ -222,9 +238,6 @@ public sealed class NullMediaSession : IMediaSession
     /// <inheritdoc/>
     public void Publish(MediaSessionState state)
     {
-        // Nothing to publish to. IntentReceived is never raised; referencing it here keeps
-        // the compiler from warning about an event that is part of the interface contract.
-        _ = IntentReceived;
     }
 
     /// <inheritdoc/>

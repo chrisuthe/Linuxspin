@@ -14,9 +14,10 @@ namespace Sendspin.Platform.Shared.Audio;
 /// rather than kept.
 /// </para>
 /// <para>
-/// Pull-shaped: the caller says how much output it needs and learns how much input was
-/// consumed, which is what a fixed-size audio buffer actually requires. Fractional position
-/// and the previous frame carry across calls, so block boundaries do not click.
+/// Pull-shaped: the caller says how much output it needs and learns how much input it consumed,
+/// which is what a fixed-size audio buffer actually requires. The fractional read position carries
+/// across calls, and the caller retains the input this did not consume, so block boundaries do not
+/// click.
 /// </para>
 /// <para>
 /// Not thread-safe. It belongs to one render path.
@@ -25,10 +26,8 @@ namespace Sendspin.Platform.Shared.Audio;
 public sealed class DriftResampler
 {
     private readonly int _channels;
-    private readonly float[] _previousFrame;
 
     private double _position;
-    private bool _hasPreviousFrame;
 
     /// <param name="channels">Interleaved channel count.</param>
     public DriftResampler(int channels)
@@ -36,7 +35,6 @@ public sealed class DriftResampler
         ArgumentOutOfRangeException.ThrowIfLessThan(channels, 1);
 
         _channels = channels;
-        _previousFrame = new float[channels];
     }
 
     /// <summary>
@@ -77,9 +75,7 @@ public sealed class DriftResampler
 
             for (var channel = 0; channel < _channels; channel++)
             {
-                var first = baseIndex < 0
-                    ? _previousFrame[channel]
-                    : input[(baseIndex * _channels) + channel];
+                var first = input[(baseIndex * _channels) + channel];
                 var second = input[((baseIndex + 1) * _channels) + channel];
 
                 output[(written * _channels) + channel] = (float)(first + ((second - first) * fraction));
@@ -93,8 +89,6 @@ public sealed class DriftResampler
 
         if (consumedFrames > 0)
         {
-            input.Slice((consumedFrames - 1) * _channels, _channels).CopyTo(_previousFrame);
-            _hasPreviousFrame = true;
             _position -= consumedFrames;
         }
 
@@ -110,20 +104,14 @@ public sealed class DriftResampler
         (int)Math.Ceiling((outputFrames * ratio) + _position) + 2;
 
     /// <summary>
-    /// Discards interpolation state. Call whenever the stream is not continuous with what came
-    /// before — a buffer clear, a re-anchor, a device switch — otherwise the first frame
-    /// interpolates against audio from before the discontinuity.
+    /// Discards the fractional read position. Call whenever the stream is not continuous with what
+    /// came before — a buffer clear, a re-anchor, a device switch.
     /// </summary>
-    public void Reset()
-    {
-        _position = 0.0;
-        _hasPreviousFrame = false;
-        Array.Clear(_previousFrame);
-    }
-
-    /// <summary>
-    /// Gets whether a previous frame is available to interpolate the first output frame
-    /// against. False immediately after <see cref="Reset"/>.
-    /// </summary>
-    public bool HasHistory => _hasPreviousFrame;
+    /// <remarks>
+    /// There is no sample history to clear: <see cref="Resample"/> subtracts the whole frames it
+    /// consumed, so <c>_position</c> stays in <c>[0, 1)</c> and every interpolation reads two frames
+    /// that are both inside the current input. Continuity across calls comes from the caller
+    /// retaining the input it did not consume, not from this type keeping a copy.
+    /// </remarks>
+    public void Reset() => _position = 0.0;
 }
