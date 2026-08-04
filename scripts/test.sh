@@ -22,8 +22,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
-SOLUTION_FILE="$REPO_ROOT/Sendspin.Player.sln"
-TEST_PROJECT="$REPO_ROOT/src/Sendspin.Player.Tests/Sendspin.Player.Tests.csproj"
+SOLUTION_FILE="$REPO_ROOT/Sendspin.Player.slnx"
+TEST_PROJECT="$REPO_ROOT/src/Sendspin.Tests/Sendspin.Tests.csproj"
 RESULTS_DIR="$REPO_ROOT/artifacts/test-results"
 
 # Default options
@@ -158,7 +158,7 @@ done
 # =============================================================================
 
 if ! command -v dotnet &> /dev/null; then
-    error ".NET SDK not found. Please install .NET 8.0 SDK"
+    error ".NET SDK not found. Please install .NET 10 SDK"
     exit 1
 fi
 

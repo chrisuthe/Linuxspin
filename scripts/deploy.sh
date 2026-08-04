@@ -212,7 +212,7 @@ fi
 # Find source directory
 if [[ ! -d "$ARTIFACTS_DIR" ]]; then
     # Try debug build
-    DEBUG_DIR="$REPO_ROOT/src/Sendspin.Player/bin/Debug/net8.0/linux-x64"
+    DEBUG_DIR="$REPO_ROOT/src/Sendspin.Player/bin/Debug/net10.0/linux-x64"
     if [[ -d "$DEBUG_DIR" ]]; then
         ARTIFACTS_DIR="$DEBUG_DIR"
         warn "Using debug build from: $ARTIFACTS_DIR"
@@ -272,7 +272,7 @@ success "SSH connection established"
 
 if $KILL_EXISTING || $RUN_AFTER || $DEBUG_MODE; then
     info "Checking for existing sendspin process..."
-    run_ssh "pkill -f 'sendspin|SendspinClient' 2>/dev/null || true" true
+    run_ssh "pkill -f 'sendspin|Sendspin.Player' 2>/dev/null || true" true
 fi
 
 # =============================================================================

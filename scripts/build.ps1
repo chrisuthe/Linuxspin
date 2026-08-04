@@ -42,7 +42,7 @@
 
 .NOTES
     Author: Sendspin Team
-    Requires: .NET 8.0 SDK
+    Requires: .NET 10 SDK
 #>
 
 [CmdletBinding()]
@@ -71,7 +71,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = Split-Path -Parent $ScriptRoot
-$SolutionFile = Join-Path $RepoRoot 'Sendspin.Player.sln'
+$SolutionFile = Join-Path $RepoRoot 'Sendspin.Player.slnx'
 $MainProject = Join-Path $RepoRoot 'src\Sendspin.Player\Sendspin.Player.csproj'
 
 # Color output helpers
@@ -92,11 +92,11 @@ try {
     Write-Info "Found .NET SDK version: $dotnetVersion"
 
     if (-not $dotnetVersion.StartsWith('8.')) {
-        Write-Warn ".NET 8.x SDK is recommended. Current version: $dotnetVersion"
+        Write-Warn ".NET 10 SDK is recommended. Current version: $dotnetVersion"
     }
 }
 catch {
-    Write-Err ".NET SDK not found. Please install .NET 8.0 SDK."
+    Write-Err ".NET SDK not found. Please install .NET 10 SDK."
     exit 1
 }
 
@@ -147,10 +147,8 @@ if ($Clean) {
         (Join-Path $RepoRoot 'artifacts'),
         (Join-Path $RepoRoot 'src\Sendspin.Player\bin'),
         (Join-Path $RepoRoot 'src\Sendspin.Player\obj'),
-        (Join-Path $RepoRoot 'src\Sendspin.Player.Services\bin'),
-        (Join-Path $RepoRoot 'src\Sendspin.Player.Services\obj'),
-        (Join-Path $RepoRoot 'src\Sendspin.Player.Tests\bin'),
-        (Join-Path $RepoRoot 'src\Sendspin.Player.Tests\obj')
+        (Join-Path $RepoRoot 'src\Sendspin.Tests\bin'),
+        (Join-Path $RepoRoot 'src\Sendspin.Tests\obj')
     )
 
     foreach ($path in $cleanPaths) {

@@ -13,7 +13,7 @@
 #   ./build.sh --all              # Build all package formats
 #
 # Author: Sendspin Team
-# Requires: .NET 8.0 SDK
+# Requires: .NET 10 SDK
 # =============================================================================
 
 set -euo pipefail
@@ -24,7 +24,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
-SOLUTION_FILE="$REPO_ROOT/Sendspin.Player.sln"
+SOLUTION_FILE="$REPO_ROOT/Sendspin.Player.slnx"
 MAIN_PROJECT="$REPO_ROOT/src/Sendspin.Player/Sendspin.Player.csproj"
 ARTIFACTS_DIR="$REPO_ROOT/artifacts"
 
@@ -214,14 +214,14 @@ info "Validating build environment..."
 
 # Check .NET SDK
 if ! command -v dotnet &> /dev/null; then
-    error ".NET SDK not found. Please install .NET 8.0 SDK"
+    error ".NET SDK not found. Please install .NET 10 SDK"
 fi
 
 DOTNET_VERSION=$(dotnet --version)
 info "Found .NET SDK version: $DOTNET_VERSION"
 
 if [[ ! "$DOTNET_VERSION" =~ ^8\. ]]; then
-    warn ".NET 8.x SDK is recommended. Current version: $DOTNET_VERSION"
+    warn ".NET 10 SDK is recommended. Current version: $DOTNET_VERSION"
 fi
 
 # Verify solution exists
@@ -342,7 +342,7 @@ if $PUBLISH; then
 
     # Make binary executable
     chmod +x "$OUTPUT_DIR/sendspin" 2>/dev/null || \
-    chmod +x "$OUTPUT_DIR/SendspinClient.Linux" 2>/dev/null || true
+    chmod +x "$OUTPUT_DIR/Sendspin.Player" 2>/dev/null || true
 
     # List published files
     info "Published files:"
@@ -372,7 +372,7 @@ if $BUILD_APPIMAGE; then
     # Copy binary
     cp -r "$ARTIFACTS_DIR/$RUNTIME"/* "$APPDIR/usr/bin/"
     chmod +x "$APPDIR/usr/bin/sendspin" 2>/dev/null || \
-    chmod +x "$APPDIR/usr/bin/SendspinClient.Linux" 2>/dev/null || true
+    chmod +x "$APPDIR/usr/bin/Sendspin.Player" 2>/dev/null || true
 
     # Create desktop entry
     cat > "$APPDIR/usr/share/applications/sendspin.desktop" << 'EOF'
@@ -389,8 +389,8 @@ Terminal=false
 EOF
 
     # Copy icon if exists
-    if [[ -f "$REPO_ROOT/src/SendspinClient.Linux/Assets/sendspin.png" ]]; then
-        cp "$REPO_ROOT/src/SendspinClient.Linux/Assets/sendspin.png" \
+    if [[ -f "$REPO_ROOT/src/Sendspin.Player/Assets/sendspin.png" ]]; then
+        cp "$REPO_ROOT/src/Sendspin.Player/Assets/sendspin.png" \
            "$APPDIR/usr/share/icons/hicolor/256x256/apps/"
     fi
 
@@ -401,7 +401,7 @@ SELF=$(readlink -f "$0")
 HERE=${SELF%/*}
 export PATH="${HERE}/usr/bin:${PATH}"
 export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
-exec "${HERE}/usr/bin/sendspin" "$@" || exec "${HERE}/usr/bin/SendspinClient.Linux" "$@"
+exec "${HERE}/usr/bin/sendspin" "$@" || exec "${HERE}/usr/bin/Sendspin.Player" "$@"
 EOF
     chmod +x "$APPDIR/AppRun"
 
@@ -460,7 +460,7 @@ if $BUILD_DEB; then
     # Copy binary
     cp -r "$ARTIFACTS_DIR/$RUNTIME"/* "$PKG_DIR/usr/bin/"
     chmod +x "$PKG_DIR/usr/bin/sendspin" 2>/dev/null || \
-    chmod +x "$PKG_DIR/usr/bin/SendspinClient.Linux" 2>/dev/null || true
+    chmod +x "$PKG_DIR/usr/bin/Sendspin.Player" 2>/dev/null || true
 
     # Create control file
     cat > "$PKG_DIR/DEBIAN/control" << EOF
@@ -494,8 +494,8 @@ Terminal=false
 EOF
 
     # Copy icon if exists
-    if [[ -f "$REPO_ROOT/src/SendspinClient.Linux/Assets/sendspin.png" ]]; then
-        cp "$REPO_ROOT/src/SendspinClient.Linux/Assets/sendspin.png" \
+    if [[ -f "$REPO_ROOT/src/Sendspin.Player/Assets/sendspin.png" ]]; then
+        cp "$REPO_ROOT/src/Sendspin.Player/Assets/sendspin.png" \
            "$PKG_DIR/usr/share/icons/hicolor/256x256/apps/"
     fi
 
@@ -541,7 +541,7 @@ modules:
   - name: sendspin
     buildsystem: simple
     build-commands:
-      - install -Dm755 sendspin /app/bin/sendspin || install -Dm755 SendspinClient.Linux /app/bin/sendspin
+      - install -Dm755 sendspin /app/bin/sendspin || install -Dm755 Sendspin.Player /app/bin/sendspin
       - install -Dm644 sendspin.desktop /app/share/applications/io.sendspin.client.desktop
     sources:
       - type: dir
@@ -578,7 +578,7 @@ echo ""
 
 info "Artifacts:"
 if [[ -d "$ARTIFACTS_DIR" ]]; then
-    find "$ARTIFACTS_DIR" -maxdepth 2 -type f \( -name "*.AppImage" -o -name "*.deb" -o -name "*.flatpak" -o -name "sendspin" -o -name "SendspinClient.Linux" \) 2>/dev/null | while read -r file; do
+    find "$ARTIFACTS_DIR" -maxdepth 2 -type f \( -name "*.AppImage" -o -name "*.deb" -o -name "*.flatpak" -o -name "sendspin" -o -name "Sendspin.Player" \) 2>/dev/null | while read -r file; do
         size=$(ls -lh "$file" | awk '{print $5}')
         info "  $(basename "$file") ($size)"
     done
