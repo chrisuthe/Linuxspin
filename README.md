@@ -10,6 +10,15 @@ roles are implemented, which are not, and — importantly — **which servers a 
 actually talk to**. Builds on SDK 9.1.0 have no transport encryption and cannot connect to a
 server that requires it.
 
+| Document | What it is for |
+|---|---|
+| [`docs/COMPLIANCE.md`](docs/COMPLIANCE.md) | What is implemented, what is not, and which servers a build can talk to |
+| [`docs/NEXT_STEPS.md`](docs/NEXT_STEPS.md) | What remains, why it stopped, and the first concrete action for each |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Why the code is shaped this way, and the **measured** platform and SDK facts it rests on |
+
+If you are picking this up cold, read `docs/ARCHITECTURE.md` first. Several things in it contradict
+the obvious answer, and each one cost real effort to establish.
+
 ## What it does
 
 - **Synchronized playback** against the rest of a Sendspin group, using the SDK's Kalman clock
@@ -174,6 +183,8 @@ correct answers, and a knob only invites making the player worse.
   are unverified. `docs/COMPLIANCE.md` lists what a Developer ID certificate unblocks.
 - **Sync accuracy has not been measured against a second client** on real hardware. The
   instrumentation to measure it ships in the diagnostics view; the numbers do not.
+
+Each of these is tracked with a first action in [`docs/NEXT_STEPS.md`](docs/NEXT_STEPS.md).
 
 ## Licence
 

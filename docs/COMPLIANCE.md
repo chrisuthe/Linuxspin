@@ -6,6 +6,10 @@ not implement it.
 
 Last reviewed against `Sendspin/spec` HEAD of 2026-07-31 and `Sendspin.SDK` **9.1.0**.
 
+Companion documents: `docs/NEXT_STEPS.md` is what remains and who it needs;
+`docs/ARCHITECTURE.md` records the measured facts this code rests on, including several that
+contradict what the plan originally assumed.
+
 ## Summary
 
 | Role | Status |
@@ -178,3 +182,38 @@ unpackaged** apps (WindowsAppSDK#6071). Windows notifications therefore go throu
 `Shell_NotifyIcon` balloon notifications, which need no package and no package identity and work
 unpackaged. The route in use is logged at startup so it is visible in a bug report rather than
 inferred. The Windows CI job publishes framework-dependent for the same family of reasons.
+
+## How the claims above were checked
+
+Reproducible on any machine with the .NET 10 SDK:
+
+```bash
+dotnet build Sendspin.Player.slnx -c Release      # all heads, warnings are errors
+dotnet test  src/Sendspin.Tests/Sendspin.Tests.csproj -c Release
+dotnet list  src/Sendspin.Tests/Sendspin.Tests.csproj package --vulnerable --include-transitive
+```
+
+At the time of writing: three heads build clean with zero warnings, 125 tests pass, and no project
+reports a vulnerable package.
+
+The suite was confirmed to be a real gate rather than decoration by changing
+`VolumeCurve.Exponent` from 1.5 to 1.4 — six tests failed, including the one that drives the SDK's
+own pipeline — and passing again on restore. Do that again if you ever doubt it.
+
+Mechanical checks the acceptance criteria name, all currently returning nothing:
+
+```bash
+grep -rn '#if WINDOWS' src/
+grep -rnE 'catch\s*\{' src/
+grep -rn 'Thread\.Sleep' src/
+grep -rnE 'Math\.Pow|MathF\.Pow' src/Sendspin.Platform.*/
+grep -rn 'Version="[0-9]*\.\*"' src/ Directory.Packages.props
+grep -c 'continue-on-error:' .github/workflows/build.yml
+```
+
+**What has actually been run, end to end:** the macOS `.app` launches, mints and persists its client
+identity, creates the tray item, registers with `MPRemoteCommandCenter`, and in `Auto` mode
+advertises and discovers simultaneously — it found two live Music Assistant servers on a real
+network. The audio *path* was exercised on macOS (see the measurements above). Nothing has been
+verified on Windows or Linux, and no synchronised playback against a second client has been measured
+anywhere; see `docs/NEXT_STEPS.md` item 4.
