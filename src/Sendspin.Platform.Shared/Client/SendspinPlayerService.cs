@@ -195,19 +195,13 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
     {
         SendspinClientService? client;
         IAudioPipeline? pipeline;
-        SyncCorrectedSampleSource? source;
 
         lock (_sessionGate)
         {
             client = _client;
             pipeline = _pipeline;
-            source = _sampleSource;
             _client = null;
-            _pipeline = null;
-            _sampleSource = null;
             _connection = null;
-            _clockSync = null;
-            _activePlayer = null;
             _group = null;
             _mediaState = MediaSessionState.Idle;
             _serverName = null;
@@ -237,12 +231,13 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
             await client.DisposeAsync().ConfigureAwait(false);
         }
 
+        // Stop the pipeline rather than dispose it. It is shared with the host service, which in
+        // Auto mode is still advertising and may have a server connect a moment later; disposing
+        // here would leave that service holding a dead pipeline.
         if (pipeline is not null)
         {
-            await pipeline.DisposeAsync().ConfigureAwait(false);
+            await pipeline.StopAsync().ConfigureAwait(false);
         }
-
-        source?.Dispose();
 
         RaiseConnectionChanged(connected: false, serverName: null);
         PublishState();
@@ -367,9 +362,11 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
     public PlayerDiagnosticsSnapshot Capture()
     {
         var settings = _settings.Current;
+        var activePlayer = Volatile.Read(ref _activePlayer);
+        var sampleSource = Volatile.Read(ref _sampleSource);
         var stats = _pipeline?.BufferStats;
-        var buffer = _sampleSource?.Buffer;
-        var provider = _sampleSource?.CorrectionProvider;
+        var buffer = sampleSource?.Buffer;
+        var provider = sampleSource?.CorrectionProvider;
         var clockStatus = _clockSync?.GetStatus();
         var format = _pipeline?.CurrentFormat;
         var device = ResolveDevice(settings.AudioDeviceId);
@@ -392,7 +389,7 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
             ClockOffsetUncertaintyMicroseconds = clockStatus?.OffsetUncertaintyMicroseconds ?? 0,
             ClockConverged = clockStatus?.IsConverged ?? false,
             RoundTripMicroseconds = clockStatus?.AvgRttMicroseconds ?? 0,
-            OutputLatencyMs = _activePlayer?.OutputLatencyMs ?? _pipeline?.DetectedOutputLatencyMs ?? 0,
+            OutputLatencyMs = activePlayer?.OutputLatencyMs ?? _pipeline?.DetectedOutputLatencyMs ?? 0,
             ManualLatencyOffsetMs = settings.GetManualLatencyOffsetMs(settings.AudioDeviceId),
             StaticDelayMs = settings.StaticDelayMs,
             TimingSource = stats?.TimingSourceName ?? buffer?.TimingSourceName,
@@ -435,6 +432,28 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
             await discovery.DisposeAsync().ConfigureAwait(false);
         }
 
+        // The pipeline is shared, so this is the only place that disposes it — after both the
+        // client and the host service are gone, so neither can still be handing it audio.
+        IAudioPipeline? pipeline;
+        SyncCorrectedSampleSource? source;
+
+        lock (_sessionGate)
+        {
+            pipeline = _pipeline;
+            source = _sampleSource;
+            _pipeline = null;
+            _sampleSource = null;
+            _clockSync = null;
+            _activePlayer = null;
+        }
+
+        if (pipeline is not null)
+        {
+            await pipeline.DisposeAsync().ConfigureAwait(false);
+        }
+
+        source?.Dispose();
+
         _artworkCache.Clear();
     }
 
@@ -465,9 +484,7 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
         var settings = _settings.Current;
         var device = ResolveDevice(settings.AudioDeviceId);
         var capabilities = PlayerCapabilities.Build(settings, device, _softwareVersion);
-
-        var clockSync = CreateClockSynchronizer(settings.StaticDelayMs);
-        var pipeline = CreatePipeline(clockSync, device);
+        var (clockSync, pipeline) = EnsureAudioSession(device);
 
         var host = new SendspinHostService(
             _loggerFactory,
@@ -491,8 +508,6 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
         lock (_sessionGate)
         {
             _host = host;
-            _clockSync = clockSync;
-            _pipeline = pipeline;
         }
 
         await host.StartAsync(cancellationToken).ConfigureAwait(false);
@@ -516,9 +531,8 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
         var settings = _settings.Current;
         var device = ResolveDevice(settings.AudioDeviceId);
         var capabilities = PlayerCapabilities.Build(settings, device, _softwareVersion);
+        var (clockSync, pipeline) = EnsureAudioSession(device);
 
-        var clockSync = CreateClockSynchronizer(settings.StaticDelayMs);
-        var pipeline = CreatePipeline(clockSync, device);
         var connection = new SendspinConnection(
             _loggerFactory.CreateLogger<SendspinConnection>(),
             new ConnectionOptions());
@@ -541,8 +555,6 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
         {
             _client = client;
             _connection = connection;
-            _clockSync = clockSync;
-            _pipeline = pipeline;
         }
 
         _logger.LogInformation("Connecting to {Uri}", uri);
@@ -590,16 +602,44 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
     }
 
     /// <summary>
-    /// Creates the clock synchroniser, seeded with the persisted static delay.
+    /// Returns the one clock synchroniser and audio pipeline for this process, creating them on
+    /// first use.
     /// </summary>
-    private IClockSynchronizer CreateClockSynchronizer(double staticDelayMs)
+    /// <remarks>
+    /// <para>
+    /// There is exactly one of each, shared by the host service and the client service, because
+    /// there is exactly one output device. In <see cref="ConnectionMode.Auto"/> both services run
+    /// at once; giving each its own pipeline would put two audio players on the same device, and
+    /// tearing one down would leave the other holding a disposed pipeline.
+    /// </para>
+    /// <para>
+    /// Sharing is safe because only one of them can be streaming: a player belongs to one group at
+    /// a time, and the pipeline is stopped between streams. The synchroniser is shared for the same
+    /// reason, and its <see cref="IClockSynchronizer.StaticDelayMs"/> is a property of this machine
+    /// rather than of a particular connection.
+    /// </para>
+    /// </remarks>
+    private (IClockSynchronizer ClockSync, IAudioPipeline Pipeline) EnsureAudioSession(AudioDeviceInfo? device)
     {
-        var clockSync = new KalmanClockSynchronizer(_loggerFactory.CreateLogger<KalmanClockSynchronizer>())
+        lock (_sessionGate)
         {
-            StaticDelayMs = staticDelayMs
-        };
+            if (_clockSync is { } existingClock && _pipeline is { } existingPipeline)
+            {
+                return (existingClock, existingPipeline);
+            }
 
-        return clockSync;
+            var clockSync = new KalmanClockSynchronizer(_loggerFactory.CreateLogger<KalmanClockSynchronizer>())
+            {
+                StaticDelayMs = _settings.Current.StaticDelayMs
+            };
+
+            var pipeline = CreatePipeline(clockSync, device);
+
+            _clockSync = clockSync;
+            _pipeline = pipeline;
+
+            return (clockSync, pipeline);
+        }
     }
 
     /// <summary>
@@ -648,7 +688,11 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
                 if (player is AudioPlayerBase platformPlayer)
                 {
                     platformPlayer.ManualLatencyOffsetMs = manualOffsetMs;
-                    _activePlayer = platformPlayer;
+
+                    // The SDK invokes this factory on its own thread while the diagnostics view
+                    // reads the field from the UI thread, so the reference is published rather
+                    // than merely assigned.
+                    Volatile.Write(ref _activePlayer, platformPlayer);
                 }
 
                 return player;
@@ -666,7 +710,7 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
                     timeFunc,
                     _loggerFactory.CreateLogger<SyncCorrectedSampleSource>());
 
-                _sampleSource = source;
+                Volatile.Write(ref _sampleSource, source);
                 return source;
             },
             precisionTimer: null,
