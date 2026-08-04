@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>Sendspin Player</string>
+
+    <key>CFBundleDisplayName</key>
+    <string>Sendspin Player</string>
+
+    <key>CFBundleIdentifier</key>
+    <string>io.sendspin.client</string>
+
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+
+    <key>NSHighResolutionCapable</key>
+    <true/>
+
+    <!--
+        macOS 15 and later gate Bonjour, *.local resolution AND plain local-subnet TCP behind a
+        user grant. That is everything discovery and streaming do, so without this key the app is
+        silently unable to reach a server on the same network — no error that names the cause.
+
+        Two things make this harder to test than it looks. TCC keys the grant to the code
+        signature, so ad-hoc signing produces a new hash every rebuild and a grant that quietly
+        stops applying; and running the binary directly from a terminal is auto-allowed, which
+        gives a false pass. Test by launching the .app from Finder, with a real Developer ID
+        certificate. There is no way to reset an app's local-network grant, so use a snapshot.
+    -->
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Sendspin Player finds music servers on your local network and streams audio from them.</string>
+
+    <!--
+        Service types this app browses. A type that is not listed here is not resolvable, and again
+        there is no error that says so.
+    -->
+    <key>NSBonjourServices</key>
+    <array>
+        <!-- Servers we discover. -->
+        <string>_sendspin-server._tcp</string>
+        <!-- Ourselves, advertised so a server can connect to us. -->
+        <string>_sendspin._tcp</string>
+    </array>
+
+    <!--
+        LSUIElement is deliberately NOT set. A menu-bar-only app suits a background endpoint, but
+        it removes the Dock as a route back to the window, and this app has a real window with
+        settings and diagnostics in it. The status item works either way.
+    -->
+</dict>
+</plist>

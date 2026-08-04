@@ -1,142 +1,18 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="Sendspin.Player.App"
-             RequestedThemeVariant="Dark">
+             RequestedThemeVariant="Default">
+
+    <!--
+      RequestedThemeVariant="Default" is what makes the app follow the system light/dark
+      setting, and switch live when it changes, rather than pinning a theme. The player this
+      one takes its feature set from is dark-only with custom chrome; that is the opposite of
+      feeling native, so it is not copied.
+    -->
+
     <Application.Styles>
         <FluentTheme />
-
-        <!-- Custom Styles -->
         <StyleInclude Source="avares://Sendspin.Player/Styles/PlayerStyles.axaml" />
     </Application.Styles>
 
-    <Application.Resources>
-        <ResourceDictionary>
-            <!-- ═══════════════════════════════════════════════════════════════
-                 SENDSPIN DESIGN SYSTEM - "Soft Dark Ambient"
-                 A warm, comfortable dark theme with coral accents
-                 ═══════════════════════════════════════════════════════════════ -->
-
-            <!-- Background Colors - Warm charcoal with subtle warmth -->
-            <Color x:Key="BackgroundDeep">#FF0D0D0F</Color>
-            <Color x:Key="BackgroundBase">#FF141416</Color>
-            <Color x:Key="BackgroundElevated">#FF1C1C1F</Color>
-            <Color x:Key="BackgroundSurface">#FF242428</Color>
-            <Color x:Key="BackgroundHover">#FF2A2A2F</Color>
-
-            <!-- Accent Colors - Warm coral/peach -->
-            <Color x:Key="AccentPrimary">#FFFF6B5B</Color>
-            <Color x:Key="AccentSecondary">#FFFF8A7A</Color>
-            <Color x:Key="AccentMuted">#FF994840</Color>
-            <Color x:Key="AccentGlow">#40FF6B5B</Color>
-
-            <!-- Text Colors -->
-            <Color x:Key="TextPrimary">#FFF5F5F7</Color>
-            <Color x:Key="TextSecondary">#FFA0A0A8</Color>
-            <Color x:Key="TextMuted">#FF606068</Color>
-            <Color x:Key="TextDisabled">#FF404048</Color>
-
-            <!-- Status Colors -->
-            <Color x:Key="StatusConnected">#FF5DD39E</Color>
-            <Color x:Key="StatusDisconnected">#FF606068</Color>
-            <Color x:Key="StatusConnecting">#FFFFB74D</Color>
-            <Color x:Key="StatusPlaying">#FF5DD39E</Color>
-            <Color x:Key="StatusPaused">#FFFFB74D</Color>
-
-            <!-- Frosted Glass Colors -->
-            <Color x:Key="GlassLight">#40000000</Color>
-            <Color x:Key="GlassMedium">#50000000</Color>
-            <Color x:Key="GlassDark">#80000000</Color>
-
-            <!-- Gradient Colors for Disc Visual -->
-            <Color x:Key="DiscOuter">#FF2A2A2F</Color>
-            <Color x:Key="DiscMiddle">#FF1A1A1E</Color>
-            <Color x:Key="DiscInner">#FF0D0D0F</Color>
-            <Color x:Key="DiscLabel">#FF3A3A40</Color>
-            <Color x:Key="DiscHighlight">#20FFFFFF</Color>
-
-            <!-- ═══════════════════════════════════════════════════════════════
-                 BRUSHES
-                 ═══════════════════════════════════════════════════════════════ -->
-
-            <!-- Background Brushes -->
-            <SolidColorBrush x:Key="BackgroundDeepBrush" Color="{StaticResource BackgroundDeep}" />
-            <SolidColorBrush x:Key="BackgroundBaseBrush" Color="{StaticResource BackgroundBase}" />
-            <SolidColorBrush x:Key="BackgroundElevatedBrush" Color="{StaticResource BackgroundElevated}" />
-            <SolidColorBrush x:Key="BackgroundSurfaceBrush" Color="{StaticResource BackgroundSurface}" />
-            <SolidColorBrush x:Key="BackgroundHoverBrush" Color="{StaticResource BackgroundHover}" />
-
-            <!-- Accent Brushes -->
-            <SolidColorBrush x:Key="AccentPrimaryBrush" Color="{StaticResource AccentPrimary}" />
-            <SolidColorBrush x:Key="AccentSecondaryBrush" Color="{StaticResource AccentSecondary}" />
-            <SolidColorBrush x:Key="AccentMutedBrush" Color="{StaticResource AccentMuted}" />
-            <SolidColorBrush x:Key="AccentGlowBrush" Color="{StaticResource AccentGlow}" />
-
-            <!-- Text Brushes -->
-            <SolidColorBrush x:Key="TextPrimaryBrush" Color="{StaticResource TextPrimary}" />
-            <SolidColorBrush x:Key="TextSecondaryBrush" Color="{StaticResource TextSecondary}" />
-            <SolidColorBrush x:Key="TextMutedBrush" Color="{StaticResource TextMuted}" />
-            <SolidColorBrush x:Key="TextDisabledBrush" Color="{StaticResource TextDisabled}" />
-
-            <!-- Status Brushes -->
-            <SolidColorBrush x:Key="StatusConnectedBrush" Color="{StaticResource StatusConnected}" />
-            <SolidColorBrush x:Key="StatusDisconnectedBrush" Color="{StaticResource StatusDisconnected}" />
-            <SolidColorBrush x:Key="StatusConnectingBrush" Color="{StaticResource StatusConnecting}" />
-            <SolidColorBrush x:Key="StatusPlayingBrush" Color="{StaticResource StatusPlaying}" />
-            <SolidColorBrush x:Key="StatusPausedBrush" Color="{StaticResource StatusPaused}" />
-
-            <!-- Frosted Glass Brushes -->
-            <SolidColorBrush x:Key="GlassLightBrush" Color="{StaticResource GlassLight}" />
-            <SolidColorBrush x:Key="GlassMediumBrush" Color="{StaticResource GlassMedium}" />
-            <SolidColorBrush x:Key="GlassDarkBrush" Color="{StaticResource GlassDark}" />
-
-            <!-- Window Background Gradient -->
-            <LinearGradientBrush x:Key="WindowBackgroundBrush" StartPoint="0%,0%" EndPoint="100%,100%">
-                <GradientStop Color="{StaticResource BackgroundBase}" Offset="0" />
-                <GradientStop Color="{StaticResource BackgroundDeep}" Offset="1" />
-            </LinearGradientBrush>
-
-            <!-- Disc Gradient -->
-            <RadialGradientBrush x:Key="DiscBackgroundBrush" Center="50%,50%" GradientOrigin="50%,50%">
-                <GradientStop Color="{StaticResource DiscOuter}" Offset="0.7" />
-                <GradientStop Color="{StaticResource DiscMiddle}" Offset="0.85" />
-                <GradientStop Color="{StaticResource DiscInner}" Offset="1" />
-            </RadialGradientBrush>
-
-            <!-- Control Surface Gradient -->
-            <LinearGradientBrush x:Key="ControlSurfaceBrush" StartPoint="0%,0%" EndPoint="0%,100%">
-                <GradientStop Color="{StaticResource BackgroundSurface}" Offset="0" />
-                <GradientStop Color="{StaticResource BackgroundElevated}" Offset="1" />
-            </LinearGradientBrush>
-
-            <!-- ═══════════════════════════════════════════════════════════════
-                 LEGACY COMPATIBILITY (keeping old resource keys)
-                 ═══════════════════════════════════════════════════════════════ -->
-            <Color x:Key="SendspinAccentColor">#FFFF6B5B</Color>
-            <SolidColorBrush x:Key="SendspinAccentBrush" Color="{StaticResource AccentPrimary}" />
-            <SolidColorBrush x:Key="ConnectedBrush" Color="{StaticResource StatusConnected}" />
-            <SolidColorBrush x:Key="DisconnectedBrush" Color="{StaticResource StatusDisconnected}" />
-            <SolidColorBrush x:Key="ConnectingBrush" Color="{StaticResource StatusConnecting}" />
-
-            <!-- ═══════════════════════════════════════════════════════════════
-                 DESIGN TOKENS
-                 ═══════════════════════════════════════════════════════════════ -->
-            <CornerRadius x:Key="RadiusSmall">4</CornerRadius>
-            <CornerRadius x:Key="RadiusMedium">8</CornerRadius>
-            <CornerRadius x:Key="RadiusLarge">12</CornerRadius>
-            <CornerRadius x:Key="RadiusRound">999</CornerRadius>
-
-            <Thickness x:Key="SpacingXs">4</Thickness>
-            <Thickness x:Key="SpacingSm">8</Thickness>
-            <Thickness x:Key="SpacingMd">16</Thickness>
-            <Thickness x:Key="SpacingLg">24</Thickness>
-            <Thickness x:Key="SpacingXl">32</Thickness>
-
-            <x:Double x:Key="FontSizeXs">10</x:Double>
-            <x:Double x:Key="FontSizeSm">12</x:Double>
-            <x:Double x:Key="FontSizeMd">14</x:Double>
-            <x:Double x:Key="FontSizeLg">18</x:Double>
-            <x:Double x:Key="FontSizeXl">24</x:Double>
-            <x:Double x:Key="FontSizeDisplay">32</x:Double>
-        </ResourceDictionary>
-    </Application.Resources>
 </Application>

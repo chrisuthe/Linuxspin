@@ -1,60 +1,183 @@
 # Sendspin Player
 
-A cross-platform desktop application for synchronized multi-room audio playback using the Sendspin protocol. Built with Avalonia UI, supporting Windows and Linux.
+A desktop Sendspin **player**: it turns the machine it runs on into a synchronized music endpoint
+that feels like it belongs there. Windows 11, macOS (Apple Silicon) and Linux, built on
+[Avalonia](https://avaloniaui.net/) 12 and the
+[Sendspin.SDK](https://www.nuget.org/packages/Sendspin.SDK).
 
-## Features
+**Read [`docs/COMPLIANCE.md`](docs/COMPLIANCE.md) before deploying this.** It states which spec
+roles are implemented, which are not, and — importantly — **which servers a given build can
+actually talk to**. Builds on SDK 9.1.0 have no transport encryption and cannot connect to a
+server that requires it.
 
-- **Synchronized multi-room audio**: Play audio in perfect sync with other Sendspin clients
-- **Cross-platform**: Native experience on Windows (WASAPI) and Linux (OpenAL/PipeWire)
-- **Low-latency audio**: Sub-millisecond sync accuracy via Kalman filter clock synchronization
+## What it does
+
+- **Synchronized playback** against the rest of a Sendspin group, using the SDK's Kalman clock
+  filter and a real hardware audio clock rather than the OS wall clock.
+- **Both connection modes**: it advertises itself for a server to connect to, discovers servers
+  itself, or does both at once.
+- **Native OS media integration** — the Windows 11 media flyout, MPRIS on Plasma 6 and GNOME, and
+  Now Playing / Control Center on macOS — so hardware media keys work without the app being
+  focused.
+- **Tray / status item**, start-minimized, single-instance, and notifications with per-event
+  toggles.
+- **Real measured output latency** per platform, not a constant, plus a per-device manual offset
+  for the Bluetooth and AirPlay tail that no API reports.
+- **A diagnostics view** showing sync error, correction band, playback rate in ppm, buffer depth,
+  clock offset and drift, and — the most useful single field — whether the timing source is
+  actually the audio hardware clock.
+- **Resizable, native chrome, follows the system light/dark theme.** Deliberately not a fixed-size
+  dark-only custom-chrome window.
 
 ## Requirements
 
-- .NET 8.0 Runtime (or use self-contained build)
-- **Linux**: PipeWire or PulseAudio audio server
-- **Windows**: Windows 10 or later
+- **.NET 10** runtime, or use a self-contained build.
+- **Linux**: PipeWire or PulseAudio, and OpenAL Soft. Under GNOME the tray needs the AppIndicator
+  extension (see [Known limitations](#known-limitations)).
+- **Windows**: Windows 10 2004 (build 19041) or later.
+- **macOS**: macOS 13 or later, Apple Silicon. Intel Macs are not built — .NET cannot emit a
+  universal binary and the bundled `libopenal.dylib` is arm64-only.
 
 ## Installation
 
-### AppImage (Recommended)
+### Linux — AppImage
+
 ```bash
-chmod +x Sendspin-x86_64.AppImage
-./Sendspin-x86_64.AppImage
+chmod +x Sendspin-Player-x86_64.AppImage
+./Sendspin-Player-x86_64.AppImage
 ```
 
-### Flatpak
+### Linux — Flatpak
+
 ```bash
-flatpak install sendspin.flatpak
+flatpak install Sendspin-Player.flatpak
 flatpak run io.sendspin.client
 ```
 
-### Debian/Ubuntu (.deb)
-```bash
-sudo dpkg -i sendspin_1.0.0_amd64.deb
-sendspin
-```
+### Windows
 
-### From Source
-```bash
-dotnet restore
-dotnet build
-dotnet run --project src/Sendspin.Player
-```
+Framework-dependent: install the [.NET 10 runtime](https://dot.net) and run `Sendspin.Player.exe`.
+
+### macOS
+
+Open the dmg and drag the app to Applications. **Launch it from Finder, not from a terminal** —
+macOS 15 and later gate all local-network access behind a grant that only a Finder launch prompts
+for, and a terminal launch is auto-allowed in a way that hides whether the grant works.
+
+Current builds are **unsigned**; see `docs/COMPLIANCE.md` for what that costs and why ad-hoc
+signing is not used as a substitute.
 
 ## Architecture
 
-This client uses the [Sendspin.SDK](https://www.nuget.org/packages/Sendspin.SDK) NuGet package for all protocol handling, clock synchronization, and audio pipeline orchestration.
+Protocol handling, the clock filter, the volume curve and the audio pipeline all live in
+`Sendspin.SDK`. This repository is the desktop player around it: the platform integrations the SDK
+cannot provide, and the UI.
 
 ```
 src/
-├── Sendspin.Player/                # Avalonia UI application
-├── Sendspin.Player.Services/       # Core services (legacy)
-├── Sendspin.Core/                  # Shared interfaces
-├── Sendspin.Platform.Linux/        # Linux: OpenAL audio, D-Bus notifications
-├── Sendspin.Platform.Windows/      # Windows: WASAPI audio, Toast notifications
-├── Sendspin.Platform.Shared/       # Cross-platform implementations
-└── Sendspin.Player.Tests/          # Unit tests
+├── Sendspin.Core/               net10.0  — contracts and platform-neutral logic
+├── Sendspin.Platform.Shared/    net10.0  — session orchestration, audio base, artwork cache
+├── Sendspin.Platform.Linux/     net10.0  — OpenAL + AL_SOFT latency, MPRIS2, portals
+├── Sendspin.Platform.Windows/   net10.0-windows10.0.19041.0 — WASAPI, SMTC, taskbar transport
+├── Sendspin.Platform.MacOS/     net10.0-macos — AUHAL, Now Playing, status item
+├── Sendspin.Discord/            net10.0  — optional Rich Presence, off by default
+├── Sendspin.Player/             Avalonia 12 UI, one head per platform TFM
+└── Sendspin.Tests/              net10.0  — unit tests over Core and Platform.Shared
 ```
+
+Two things about this layout are load-bearing rather than tidy:
+
+**Platform choice is a runtime decision.** Everything branches on `OperatingSystem.IsX()`. The one
+exception is naming a concrete `IPlatformInitializer`, which needs a reference the other target
+frameworks cannot have; that lives in a single per-TFM file under
+`src/Sendspin.Player/PlatformSelection/`, and those files contain wiring only.
+
+**Decisions live in `Core`/`Platform.Shared`, adapters stay thin.** The volume curve, the
+media-session state mapping, the sync-correction limits and the command router are all
+platform-neutral and unit-tested. That is not only for testability: the duplicated-per-adapter
+version of this had already drifted into a real bug, with Windows applying the loudness curve a
+second time on top of the SDK's.
+
+## Building
+
+```bash
+dotnet test  src/Sendspin.Tests/Sendspin.Tests.csproj
+
+# Linux
+dotnet publish src/Sendspin.Player/Sendspin.Player.csproj -c Release \
+  -f net10.0 -r linux-x64 --self-contained -o publish/linux-x64
+
+# Windows (cross-compiles from any host)
+dotnet publish src/Sendspin.Player/Sendspin.Player.csproj -c Release \
+  -f net10.0-windows10.0.19041.0 -r win-x64 --no-self-contained -o publish/win-x64
+
+# macOS — only builds ON macOS, and needs the workload: dotnet workload install macos
+dotnet publish src/Sendspin.Player/Sendspin.Player.csproj -c Release \
+  -f net10.0-macos -r osx-arm64 -o publish/osx-arm64
+```
+
+The macOS head is added to `TargetFrameworks` only when building on macOS, because the `macos`
+workload does not exist on other hosts and its presence would break restore there. If the runner's
+Xcode version disagrees with the pinned SDK pack, override it:
+`-p:SendspinMacOSPlatformVersion=<version>`.
+
+`TreatWarningsAsErrors` and `AnalysisLevel=latest` are on. Turning either off is not an acceptable
+way to fix a build.
+
+### Native Wayland (opt-in)
+
+The app ships X11 by default, which under a Wayland session means XWayland. Avalonia 12.1's native
+Wayland backend gives correct fractional HiDPI and is available behind a flag:
+
+```bash
+SENDSPIN_WAYLAND=1 ./Sendspin.Player
+```
+
+It is not the default: `UsePlatformDetect()` never selects it, it is marked experimental, and every
+desktop integration here (MPRIS, StatusNotifierItem, notifications, portals) is D-Bus and therefore
+identical either way. It also does not bind `xdg-activation-v1` or `idle-inhibit`, so raising the
+window and inhibiting the screensaver are worse there, not better.
+
+## Configuration
+
+One file, same name on every platform:
+
+| Platform | Path |
+|---|---|
+| Linux | `$XDG_CONFIG_HOME/sendspin/settings.json` (default `~/.config/sendspin/`) |
+| Windows | `%LocalAppData%\Sendspin\config\settings.json` |
+| macOS | `~/Library/Application Support/Sendspin/settings.json` |
+
+Everything the UI changes is written there immediately; there is no apply button. Two settings are
+genuine physical calibration and are exposed on purpose — the **static delay**, which aligns this
+player against the rest of its group, and a **per-device latency offset** for outputs whose delay
+no API reports. Buffer depths and sync-correction limits are deliberately *not* exposed: they have
+correct answers, and a knob only invites making the player worse.
+
+## Known limitations
+
+- **Transport encryption and pairing are not implemented**, because the pinned SDK does not provide
+  them and hand-rolling Noise or CPace here would be worse than not having it. A build cannot
+  connect to a server that requires encryption. See `docs/COMPLIANCE.md`.
+- **Availability is not withheld until the clock filter converges.** The SDK proceeds after a
+  timeout and owns the message that reports availability, so this cannot be fixed from here. It is
+  a declared gap, not a ticked box.
+- **GNOME tray needs the AppIndicator extension.** GNOME Shell has no `StatusNotifierWatcher`, no
+  tray portal exists, and Avalonia's X11 fallback is a stub that logs "not implemented" — and is
+  not even reached, so on vanilla GNOME the icon simply does not appear with no error. Ubuntu ships
+  the extension; Fedora, Debian GNOME and vanilla do not. `org.freedesktop.portal.Background` is the
+  alternative surface, and Plasma 6.7 renders it as "Background Apps".
+- **Windows 11 hides notification-area icons by default** and Microsoft documents that this cannot
+  be controlled programmatically, so the tray is not a dependable transport surface there. A taskbar
+  overlay badge carries the always-visible affordance instead.
+- **macOS builds are unsigned**, which means Now Playing, notifications and local-network discovery
+  are unverified. `docs/COMPLIANCE.md` lists what a Developer ID certificate unblocks.
+- **Sync accuracy has not been measured against a second client** on real hardware. The
+  instrumentation to measure it ships in the diagnostics view; the numbers do not.
+
+## Licence
+
+MIT — see [`LICENSE`](LICENSE).
 
 ---
 
@@ -65,14 +188,14 @@ This project supports cross-platform development from Windows targeting Linux.
 ### Prerequisites
 
 **On Windows (Development Machine):**
-- .NET 8.0 SDK
+- .NET 10 SDK
 - Visual Studio 2022 or VS Code with C# extension
 - Git for Windows (includes rsync for deployment)
 - SSH client (built into Windows 10+)
 
 **On Fedora (Test Machine):**
 - SSH server enabled: `sudo systemctl enable --now sshd`
-- .NET 8.0 Runtime (for framework-dependent builds): `sudo dnf install dotnet-runtime-8.0`
+- .NET 10 runtime (for framework-dependent builds): `sudo dnf install dotnet-runtime-10.0`
 - PipeWire (default on Fedora)
 
 ### Quick Start
@@ -365,7 +488,7 @@ make help             # Show all targets
 
 **"dotnet not found"**
 ```powershell
-# Install .NET 8.0 SDK from https://dot.net
+# Install .NET 10 SDK from https://dot.net
 winget install Microsoft.DotNet.SDK.8
 ```
 

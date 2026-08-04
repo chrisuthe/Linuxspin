@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-macos</TargetFramework>
+    <!-- Single source of truth is SendspinMacOSPlatformVersion in Directory.Build.props. -->
+    <TargetPlatformVersion>$(SendspinMacOSPlatformVersion)</TargetPlatformVersion>
+    <SupportedOSPlatformVersion>13.0</SupportedOSPlatformVersion>
+    <RootNamespace>Sendspin.Platform.MacOS</RootNamespace>
+    <AssemblyName>Sendspin.Platform.MacOS</AssemblyName>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsAppExtension>false</IsAppExtension>
+    <CreatePackage>false</CreatePackage>
+    <!--
+      Required even for a library: the macOS SDK's Xamarin.Shared.targets refuses to build
+      without a bundle identifier from either this property or an Info.plist. Nothing consumes
+      it here — the app head's own ApplicationId is what ends up in the .app.
+    -->
+    <ApplicationId>org.sendspin.player.platform.macos</ApplicationId>
+    <Description>macOS platform backend: AUHAL render callback, Now Playing, status item, user notifications</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Sendspin.SDK" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Sendspin.Core\Sendspin.Core.csproj" />
+    <ProjectReference Include="..\Sendspin.Platform.Shared\Sendspin.Platform.Shared.csproj" />
+  </ItemGroup>
+
+</Project>

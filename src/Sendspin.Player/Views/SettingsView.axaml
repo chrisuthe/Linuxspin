@@ -1,0 +1,121 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Sendspin.Player.ViewModels"
+             mc:Ignorable="d"
+             x:Class="Sendspin.Player.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel">
+
+    <StackPanel Classes="settings" Spacing="14">
+
+        <TextBlock Text="Settings" Classes="h2" />
+
+        <StackPanel Spacing="4">
+            <TextBlock Text="Player name" Classes="fieldLabel" />
+            <TextBox Text="{Binding PlayerName}" />
+        </StackPanel>
+
+        <StackPanel Spacing="4">
+            <TextBlock Text="Connection mode" Classes="fieldLabel" />
+            <ComboBox ItemsSource="{Binding ConnectionModes}"
+                      SelectedItem="{Binding ConnectionMode}"
+                      HorizontalAlignment="Stretch" />
+            <TextBlock Text="Takes effect after a restart."
+                       Classes="warning"
+                       IsVisible="{Binding ConnectionModeNeedsRestart}" />
+        </StackPanel>
+
+        <StackPanel Spacing="4">
+            <TextBlock Text="Auto-connect" Classes="fieldLabel" />
+            <ComboBox ItemsSource="{Binding AutoConnectPolicies}"
+                      SelectedItem="{Binding AutoConnect}"
+                      HorizontalAlignment="Stretch" />
+        </StackPanel>
+
+        <Separator />
+
+        <StackPanel Spacing="4">
+            <TextBlock Text="Output device" Classes="fieldLabel" />
+            <ComboBox ItemsSource="{Binding AudioDevices}"
+                      SelectedItem="{Binding SelectedDevice}"
+                      HorizontalAlignment="Stretch">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding Name}" />
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
+            <Button Content="Refresh devices" Command="{Binding RefreshDevicesCommand}" />
+        </StackPanel>
+
+        <StackPanel Spacing="4">
+            <TextBlock Text="Preferred codec" Classes="fieldLabel" />
+            <ComboBox ItemsSource="{Binding Codecs}"
+                      SelectedItem="{Binding PreferredCodec}"
+                      HorizontalAlignment="Stretch" />
+            <TextBlock Text="Offered first; the server still chooses from everything this device supports."
+                       Classes="subtle" TextWrapping="Wrap" />
+        </StackPanel>
+
+        <Separator />
+
+        <!--
+          The only two calibration controls the app exposes, and both are here because they are
+          physical facts rather than preferences: a static delay is this room's alignment against
+          the rest of the group, and the manual offset is the Bluetooth, AirPlay or analog tail
+          that no platform API reports. Buffer depths and correction limits are deliberately not
+          exposed — they have correct answers, and a knob only invites making the player worse.
+        -->
+        <StackPanel Spacing="4">
+            <TextBlock Text="Static delay" Classes="fieldLabel" />
+            <Grid ColumnDefinitions="*,Auto">
+                <Slider Grid.Column="0" Value="{Binding StaticDelayMs}" Minimum="0" Maximum="2000"
+                        TickFrequency="50" />
+                <TextBlock Grid.Column="1" Text="{Binding StaticDelayMs, StringFormat='{}{0:F0} ms'}"
+                           VerticalAlignment="Center" Width="70" TextAlignment="Right" />
+            </Grid>
+            <TextBlock Text="Delays this player relative to the group. Survives a restart."
+                       Classes="subtle" TextWrapping="Wrap" />
+        </StackPanel>
+
+        <StackPanel Spacing="4">
+            <TextBlock Text="This device's latency offset" Classes="fieldLabel" />
+            <Grid ColumnDefinitions="*,Auto">
+                <Slider Grid.Column="0" Value="{Binding ManualLatencyOffsetMs}" Minimum="-200" Maximum="500"
+                        TickFrequency="10" />
+                <TextBlock Grid.Column="1" Text="{Binding ManualLatencyOffsetMs, StringFormat='{}{0:F0} ms'}"
+                           VerticalAlignment="Center" Width="70" TextAlignment="Right" />
+            </Grid>
+            <TextBlock Text="Added to the measured latency. Needed for Bluetooth and AirPlay outputs, whose delay no API reports."
+                       Classes="subtle" TextWrapping="Wrap" />
+        </StackPanel>
+
+        <Separator />
+
+        <StackPanel Spacing="6">
+            <TextBlock Text="Notifications" Classes="fieldLabel" />
+            <CheckBox Content="Track changes" IsChecked="{Binding NotifyTrackChange}" />
+            <TextBlock Text="Off by default: neither KDE nor GNOME hides a now-playing toast that duplicates this app's own media entry."
+                       Classes="subtle" TextWrapping="Wrap" />
+            <CheckBox Content="Play and pause" IsChecked="{Binding NotifyPlaybackState}" />
+            <CheckBox Content="Connect and disconnect" IsChecked="{Binding NotifyConnectionState}" />
+            <CheckBox Content="Include artwork" IsChecked="{Binding IncludeArtworkInNotifications}" />
+        </StackPanel>
+
+        <Separator />
+
+        <StackPanel Spacing="6">
+            <TextBlock Text="Window" Classes="fieldLabel" />
+            <CheckBox Content="Start hidden in the tray" IsChecked="{Binding StartMinimizedToTray}" />
+            <CheckBox Content="Closing the window keeps playing" IsChecked="{Binding CloseToTray}" />
+        </StackPanel>
+
+        <Separator />
+
+        <StackPanel Spacing="6">
+            <TextBlock Text="Integrations" Classes="fieldLabel" />
+            <CheckBox Content="Discord Rich Presence" IsChecked="{Binding DiscordRichPresence}" />
+        </StackPanel>
+    </StackPanel>
+</UserControl>

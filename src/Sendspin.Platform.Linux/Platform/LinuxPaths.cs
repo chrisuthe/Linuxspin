@@ -1,92 +1,148 @@
-using Microsoft.Extensions.Logging;
 using Sendspin.Core.Platform;
 
 namespace Sendspin.Platform.Linux.Platform;
 
 /// <summary>
-/// Linux implementation of platform paths following the XDG Base Directory Specification.
+/// XDG Base Directory locations for the player's configuration, data and cache.
 /// </summary>
 /// <remarks>
-/// Paths follow XDG conventions:
-/// - Config: ~/.config/sendspin or $XDG_CONFIG_HOME/sendspin
-/// - Data: ~/.local/share/sendspin or $XDG_DATA_HOME/sendspin
-/// - Cache: ~/.cache/sendspin or $XDG_CACHE_HOME/sendspin
+/// Only the three roots are platform-specific; the log directory, the artwork directory and the
+/// settings filename all come from <see cref="PlatformPathsBase"/>. In particular
+/// <see cref="PlatformPathsBase.ConfigFile"/> is deliberately not overridden: the settings file has
+/// one name on every platform, and the two names this project used to have made support and
+/// documentation needlessly per-platform.
 /// </remarks>
-public sealed class LinuxPaths : IPlatformPaths
+public sealed class LinuxPaths : PlatformPathsBase
 {
-    private const string AppName = "sendspin";
-    private readonly ILogger<LinuxPaths>? _logger;
-
-    public LinuxPaths()
-    {
-        // Design-time or test constructor
-    }
-
-    public LinuxPaths(ILogger<LinuxPaths> logger)
-    {
-        _logger = logger;
-    }
-
-    /// <inheritdoc/>
-    public string ConfigDirectory => GetXdgPath("XDG_CONFIG_HOME", ".config");
-
-    /// <inheritdoc/>
-    public string DataDirectory => GetXdgPath("XDG_DATA_HOME", ".local/share");
-
-    /// <inheritdoc/>
-    public string CacheDirectory => GetXdgPath("XDG_CACHE_HOME", ".cache");
-
-    /// <inheritdoc/>
-    public string LogDirectory => Path.Combine(DataDirectory, "logs");
-
-    /// <inheritdoc/>
-    public string AlbumArtCacheDirectory => Path.Combine(CacheDirectory, "album-art");
-
-    /// <inheritdoc/>
-    public string ConfigFile => Path.Combine(ConfigDirectory, "config.json");
+    private const string ApplicationDirectory = "sendspin";
 
     /// <summary>
-    /// Gets the path to the server bookmarks file.
+    /// Set by Flatpak inside the sandbox, and the cheapest reliable way to detect it.
     /// </summary>
-    public string BookmarksFile => Path.Combine(ConfigDirectory, "servers.json");
+    private const string FlatpakIdVariable = "FLATPAK_ID";
+
+    /// <summary>
+    /// Present in every Flatpak sandbox, and the fallback when the id variable has been unset by an
+    /// intervening process.
+    /// </summary>
+    private const string FlatpakInfoPath = "/.flatpak-info";
 
     /// <inheritdoc/>
-    public void EnsureDirectoriesExist()
-    {
-        var directories = new[]
-        {
-            ConfigDirectory,
-            DataDirectory,
-            CacheDirectory,
-            LogDirectory,
-            AlbumArtCacheDirectory
-        };
+    public override string ConfigDirectory => XdgDirectory("XDG_CONFIG_HOME", ".config");
 
-        foreach (var directory in directories)
+    /// <inheritdoc/>
+    public override string DataDirectory => XdgDirectory("XDG_DATA_HOME", ".local/share");
+
+    /// <inheritdoc/>
+    public override string CacheDirectory => XdgDirectory("XDG_CACHE_HOME", ".cache");
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <para>
+    /// Under Flatpak this must be <c>$XDG_RUNTIME_DIR/app/$FLATPAK_ID/</c> and not the sandbox's
+    /// cache directory. Artwork is handed to the shell as a <c>file://</c> URL, and the shell runs
+    /// on the host: a path inside the sandbox's private filesystem is one the host cannot follow, so
+    /// the picture silently never appears. That directory is the sanctioned exception — it is
+    /// visible on both sides.
+    /// </para>
+    /// <para>
+    /// Outside Flatpak the base class's cache subdirectory is correct and is used unchanged.
+    /// </para>
+    /// </remarks>
+    public override string AlbumArtCacheDirectory
+    {
+        get
         {
-            if (!Directory.Exists(directory))
+            var flatpakId = FlatpakId;
+            var runtimeDirectory = Environment.GetEnvironmentVariable("XDG_RUNTIME_DIR");
+
+            if (flatpakId is null || string.IsNullOrEmpty(runtimeDirectory))
             {
-                Directory.CreateDirectory(directory);
-                _logger?.LogDebug("Created directory: {Directory}", directory);
+                return base.AlbumArtCacheDirectory;
             }
+
+            return Path.Combine(runtimeDirectory, "app", flatpakId);
+        }
+    }
+
+    /// <summary>
+    /// Gets the Flatpak application id, or null when not running in a sandbox.
+    /// </summary>
+    /// <remarks>
+    /// <c>/.flatpak-info</c> is consulted when the environment variable is missing, which happens
+    /// whenever an intervening process sanitises the environment. The file is the authoritative
+    /// marker of a sandbox, and its <c>[Application] name</c> key is the same id.
+    /// </remarks>
+    private static string? FlatpakId
+    {
+        get
+        {
+            var id = Environment.GetEnvironmentVariable(FlatpakIdVariable);
+            if (!string.IsNullOrEmpty(id))
+            {
+                return id;
+            }
+
+            return ReadFlatpakInfoName();
+        }
+    }
+
+    private static string? ReadFlatpakInfoName()
+    {
+        if (!File.Exists(FlatpakInfoPath))
+        {
+            return null;
         }
 
-        _logger?.LogInformation("XDG directories initialized");
+        try
+        {
+            var inApplicationSection = false;
+
+            foreach (var line in File.ReadLines(FlatpakInfoPath))
+            {
+                var trimmed = line.Trim();
+
+                if (trimmed.StartsWith('['))
+                {
+                    inApplicationSection = trimmed.Equals("[Application]", StringComparison.Ordinal);
+                    continue;
+                }
+
+                if (inApplicationSection && trimmed.StartsWith("name=", StringComparison.Ordinal))
+                {
+                    var name = trimmed["name=".Length..].Trim();
+                    return name.Length == 0 ? null : name;
+                }
+            }
+        }
+        catch (IOException)
+        {
+            // Unreadable sandbox metadata: fall back to the in-sandbox cache directory, which costs
+            // artwork in the shell but nothing else.
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+
+        return null;
     }
 
     /// <summary>
-    /// Gets the XDG-compliant path for the specified environment variable.
+    /// Resolves one XDG root, falling back to the specification's default when the variable is
+    /// unset.
     /// </summary>
-    private string GetXdgPath(string envVariable, string defaultRelativePath)
+    private static string XdgDirectory(string variable, string fallbackRelativePath)
     {
-        var xdgPath = Environment.GetEnvironmentVariable(envVariable);
+        var root = Environment.GetEnvironmentVariable(variable);
 
-        if (!string.IsNullOrEmpty(xdgPath))
+        if (!string.IsNullOrEmpty(root))
         {
-            return Path.Combine(xdgPath, AppName);
+            return Path.Combine(root, ApplicationDirectory);
         }
 
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        return Path.Combine(home, defaultRelativePath, AppName);
+        return Path.Combine(home, fallbackRelativePath, ApplicationDirectory);
     }
 }

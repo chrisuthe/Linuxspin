@@ -1,98 +1,77 @@
-# =============================================================================
-# Sendspin Linux Client - Flatpak Manifest
-# =============================================================================
-# Build on Linux (Fedora):
-#   cd packaging/flatpak
-#   flatpak-builder --user --force-clean --repo=repo build-dir io.sendspin.client.yml
-#   flatpak build-bundle repo sendspin.flatpak io.sendspin.client
+# Sendspin Player — Flatpak manifest
 #
-# Install:
-#   flatpak install --user sendspin.flatpak
+# This is the ONLY Flatpak manifest in the repository. CI builds this file rather than generating
+# its own copy inline, which is what previously let two manifests drift with only the invisible
+# one ever being built.
 #
-# Run:
-#   flatpak run io.sendspin.client
-# =============================================================================
-
+# Build locally:
+#   dotnet publish src/Sendspin.Player/Sendspin.Player.csproj -c Release \
+#     -f net10.0 -r linux-x64 --self-contained -o publish/linux-x64
+#   flatpak-builder --user --force-clean --repo=repo build-dir \
+#     packaging/flatpak/io.sendspin.client.yml
+#   flatpak build-bundle repo Sendspin-Player.flatpak io.sendspin.client
 app-id: io.sendspin.client
+
 runtime: org.freedesktop.Platform
-runtime-version: '24.08'
+runtime-version: '25.08'
 sdk: org.freedesktop.Sdk
 
 command: Sendspin.Player
 
-# Sandbox permissions
 finish-args:
-  # Display access - X11/XWayland required (Avalonia uses XWayland on Wayland desktops)
   - --share=ipc
-  - --socket=x11
-
-  # Audio access (PipeWire/PulseAudio)
-  - --socket=pulseaudio
-
-  # Network access (for mDNS discovery and streaming)
   - --share=network
-
-  # GPU acceleration for Avalonia
   - --device=dri
 
-  # System notifications via D-Bus
+  # X11 by default, because that is the windowing backend the app defaults to. The native
+  # Wayland backend is opt-in (SENDSPIN_WAYLAND=1), so --socket=wayland is granted as well:
+  # fallback-x11 alone would make the opt-in unusable inside the sandbox.
+  - --socket=fallback-x11
+  - --socket=wayland
+
+  # PipeWire's own socket rather than --socket=pulseaudio. The pulseaudio socket forces
+  # enable-shm=no, which pushes every audio buffer through the socket instead of shared
+  # memory — measurable overhead on a path that has a ±1 ms sync budget. This is a community
+  # convention (the qpwgraph precedent) rather than a documented portal, so expect a Flathub
+  # reviewer to ask about it.
+  - --filesystem=xdg-run/pipewire-0
+
+  # Notifications and the StatusNotifierItem tray host. The tray name is org.kde.* even on
+  # GNOME, where it is served by the AppIndicator extension rather than the shell.
   - --talk-name=org.freedesktop.Notifications
+  - --talk-name=org.kde.StatusNotifierWatcher
 
-  # Discord Rich Presence (optional)
-  - --filesystem=xdg-run/discord-ipc-0:ro
-
-  # Portal access for native dialogs
-  - --talk-name=org.freedesktop.portal.*
+  # Deliberately NOT declared: --own-name=org.mpris.MediaPlayer2.*
+  # Flatpak auto-grants org.mpris.MediaPlayer2.<app_id>.* and declaring it is a Flathub linter
+  # error. The bus name the app claims is org.mpris.MediaPlayer2.io.sendspin.client, which falls
+  # inside the automatic grant, so MPRIS works without any declaration here.
 
 modules:
-  - name: sendspin
+  - name: sendspin-player
     buildsystem: simple
+
     build-commands:
-      # Create app directories
-      - mkdir -p /app/lib/sendspin
       - mkdir -p /app/bin
-
-      # Copy all application files
-      - cp -r sendspin-app/* /app/lib/sendspin/
-
-      # Make main executable runnable
-      - chmod +x /app/lib/sendspin/Sendspin.Player
-
-      # Create wrapper script in bin
-      - |
-        cat > /app/bin/Sendspin.Player << 'EOF'
-        #!/bin/sh
-        exec /app/lib/sendspin/Sendspin.Player "$@"
-        EOF
+      - cp -r app-files/* /app/bin/
       - chmod +x /app/bin/Sendspin.Player
 
-      # Install desktop file
-      - install -Dm644 io.sendspin.client.desktop /app/share/applications/io.sendspin.client.desktop
-
-      # Install AppStream metadata
-      - install -Dm644 io.sendspin.client.appdata.xml /app/share/metainfo/io.sendspin.client.appdata.xml
-
-      # Install icon (placeholder - add real icon later)
-      - |
-        mkdir -p /app/share/icons/hicolor/256x256/apps
-        if [ -f sendspin-256.png ]; then
-          install -Dm644 sendspin-256.png /app/share/icons/hicolor/256x256/apps/io.sendspin.client.png
-        fi
+      - install -Dm644 io.sendspin.client.desktop
+          /app/share/applications/io.sendspin.client.desktop
+      - install -Dm644 io.sendspin.client.appdata.xml
+          /app/share/metainfo/io.sendspin.client.appdata.xml
+      - install -Dm644 sendspin-256.png
+          /app/share/icons/hicolor/256x256/apps/io.sendspin.client.png
 
     sources:
-      # Published .NET application (all files)
       - type: dir
-        path: sendspin-app
-        dest: sendspin-app
+        path: ../../publish/linux-x64
+        dest: app-files
 
-      # Desktop file
       - type: file
         path: io.sendspin.client.desktop
 
-      # AppStream metadata
       - type: file
         path: io.sendspin.client.appdata.xml
 
-      # Application icon
       - type: file
         path: sendspin-256.png

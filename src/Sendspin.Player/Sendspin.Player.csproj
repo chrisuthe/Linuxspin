@@ -1,74 +1,134 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputType>WinExe</OutputType>
-    <TargetFrameworks>net8.0;net8.0-windows10.0.19041.0</TargetFrameworks>
-    <!-- RuntimeIdentifier is set during publish: dotnet publish -r linux-x64 -self-contained -->
-    <!-- <RuntimeIdentifier>linux-x64</RuntimeIdentifier> -->
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
-    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <!--
+      The head multi-targets because a platform project that needs its own TFM cannot be
+      referenced from a head that does not have it: a net10.0-macos assembly is not loadable
+      from net10.0, and neither is net10.0-windows. So there is one head per platform TFM, and
+      the plain net10.0 head is the Linux one.
+    -->
+    <TargetFrameworks>net10.0;net10.0-windows10.0.19041.0</TargetFrameworks>
+    <!--
+      The macOS head is added only when building ON macOS. The macos workload does not exist on a
+      Linux or Windows runner, so leaving the TFM in unconditionally makes `dotnet restore` fail
+      there even for the Linux head — restore evaluates every TFM regardless of which one you
+      asked to build. `net10.0-windows` has no such problem because EnableWindowsTargeting makes
+      it restorable anywhere.
+    -->
+    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('OSX'))">$(TargetFrameworks);net10.0-macos</TargetFrameworks>
     <RootNamespace>Sendspin.Player</RootNamespace>
     <AssemblyName>Sendspin.Player</AssemblyName>
-    <!-- ApplicationIcon can be set when an icon is available -->
-    <!-- <ApplicationIcon>Assets/sendspin.ico</ApplicationIcon> -->
-    <Version>1.0.0</Version>
-    <Authors>Sendspin Team</Authors>
-    <Description>Sendspin Cross-Platform Audio Player - Synchronized multi-room audio playback</Description>
-    <!-- Enable building Windows platform project from Linux -->
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
-    <!-- Single-file publishing for portable distribution -->
-    <PublishSingleFile>true</PublishSingleFile>
-    <IncludeNativeLibrariesForSelfExtract>false</IncludeNativeLibrariesForSelfExtract>
+    <!--
+      The macOS head needs an explicit RID (see below), and restore only emits RID-specific assets
+      for RIDs listed here — so this has to be visible during restore, when TargetFramework is
+      empty. It must NOT be visible to the Windows head's inner build: the SDK resolves a runtime
+      pack for every RID in this list, and it then fails looking for Microsoft.WindowsDesktop.App
+      on osx-arm64. Excluding that one TFM satisfies both, which is why the condition names it
+      rather than using a tidier-looking positive test.
+    -->
+    <RuntimeIdentifiers Condition="$([MSBuild]::IsOSPlatform('OSX')) And '$(TargetFramework)' != 'net10.0-windows10.0.19041.0'">osx-arm64</RuntimeIdentifiers>
+    <Description>Sendspin Player — a native-feeling synchronized audio endpoint for the desktop</Description>
   </PropertyGroup>
 
-  <!-- Define WINDOWS constant when targeting Windows -->
-  <PropertyGroup Condition="$(TargetFramework.Contains('windows'))">
-    <DefineConstants>$(DefineConstants);WINDOWS</DefineConstants>
+  <PropertyGroup>
+    <!--
+      WinExe everywhere except macOS: on Windows it suppresses the console window, on Linux it is
+      equivalent to Exe, and the macOS SDK rejects it outright ("WinExe is not a valid output type
+      for macOS") because the .app bundle decides windowed-versus-console, not the PE subsystem.
+    -->
+    <OutputType Condition="'$(TargetFramework)' != 'net10.0-macos'">WinExe</OutputType>
+    <OutputType Condition="'$(TargetFramework)' == 'net10.0-macos'">Exe</OutputType>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="$(TargetFramework.Contains('-windows'))">
+    <!-- A Win32 manifest only means anything on Windows; the other heads must not embed one. -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)' != '' And '$(TargetFramework)' != 'net10.0-macos'">
+    <!--
+      Only the macOS head pins a RID. Clearing it for the others keeps them RID-agnostic, so
+      `dotnet publish -r <rid>` on the command line decides, which is what CI does.
+    -->
+    <RuntimeIdentifier />
+    <UseCurrentRuntimeIdentifier>false</UseCurrentRuntimeIdentifier>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-macos'">
+    <!-- The macOS workload builds a .app bundle and requires a bundle identifier. -->
+    <ApplicationId>io.sendspin.client</ApplicationId>
+    <!-- Must match Sendspin.Platform.MacOS, or the two are not reference-compatible. -->
+    <TargetPlatformVersion>$(SendspinMacOSPlatformVersion)</TargetPlatformVersion>
+    <!--
+      arm64 only, and stated rather than left to default. The macOS SDK otherwise assumes
+      osx-x64; .NET cannot emit a universal binary, and the bundled libopenal.dylib is thin
+      arm64 already, so an x64 head would be a build that cannot load its own audio backend.
+    -->
+    <RuntimeIdentifier>osx-arm64</RuntimeIdentifier>
+    <ApplicationTitle>Sendspin Player</ApplicationTitle>
+    <SupportedOSPlatformVersion>13.0</SupportedOSPlatformVersion>
+    <!--
+      NativeAOT is broken with Avalonia on this TFM (Avalonia#17425), and single-file
+      compression causes bus errors on Apple Silicon, so neither is enabled anywhere.
+    -->
+    <PublishAot>false</PublishAot>
+    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Avalonia UI Framework -->
-    <PackageReference Include="Avalonia" Version="11.2.5" />
-    <PackageReference Include="Avalonia.Desktop" Version="11.2.5" />
-    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.5" />
-    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.2.5" />
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="Avalonia.Desktop" />
+    <PackageReference Include="Avalonia.Themes.Fluent" />
+    <PackageReference Include="Avalonia.Fonts.Inter" />
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.Logging" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" />
+    <PackageReference Include="Sendspin.SDK" />
+  </ItemGroup>
 
-    <!-- Avalonia Diagnostics (Debug only) -->
-    <PackageReference Condition="'$(Configuration)' == 'Debug'" Include="Avalonia.Diagnostics" Version="11.2.5" />
+  <ItemGroup>
+    <ProjectReference Include="..\Sendspin.Core\Sendspin.Core.csproj" />
+    <ProjectReference Include="..\Sendspin.Platform.Shared\Sendspin.Platform.Shared.csproj" />
+    <ProjectReference Include="..\Sendspin.Discord\Sendspin.Discord.csproj" />
+  </ItemGroup>
 
-    <!-- MVVM Framework -->
-    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+  <ItemGroup>
+    <!-- Opt-in native Wayland backend; only the Linux head can use it. -->
+    <PackageReference Condition="'$(TargetFramework)' == 'net10.0'" Include="Avalonia.Wayland" />
+  </ItemGroup>
 
-    <!-- Sendspin SDK - Uncomment when SDK is available on NuGet -->
-    <!-- <PackageReference Include="Sendspin.SDK" Version="3.1.0" /> -->
+  <ItemGroup>
+    <ProjectReference Condition="'$(TargetFramework)' == 'net10.0'"
+                     Include="..\Sendspin.Platform.Linux\Sendspin.Platform.Linux.csproj" />
+    <ProjectReference Condition="'$(TargetFramework)' == 'net10.0-windows10.0.19041.0'"
+                     Include="..\Sendspin.Platform.Windows\Sendspin.Platform.Windows.csproj" />
+    <ProjectReference Condition="'$(TargetFramework)' == 'net10.0-macos'"
+                     Include="..\Sendspin.Platform.MacOS\Sendspin.Platform.MacOS.csproj" />
+  </ItemGroup>
 
-    <!-- Dependency Injection -->
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
-    <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.1" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="8.0.1" />
-
-    <!-- Configuration -->
-    <PackageReference Include="Microsoft.Extensions.Configuration" Version="8.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.1" />
-    <PackageReference Include="Microsoft.Extensions.Options" Version="8.0.2" />
-    <PackageReference Include="Sendspin.SDK" Version="6.*" />
+  <!--
+    Exactly one of these is compiled per TFM. This is the whole of the platform branching in
+    the app: it exists because naming a concrete IPlatformInitializer requires a reference the
+    other TFMs cannot have. Everything else branches at runtime on OperatingSystem.IsX().
+    The glob is removed wholesale first, because the default Compile glob would otherwise pull
+    in all three and produce duplicate-type errors.
+  -->
+  <ItemGroup>
+    <Compile Remove="PlatformSelection\**\*.cs" />
+    <Compile Condition="'$(TargetFramework)' == 'net10.0'"
+             Include="PlatformSelection\PlatformSelection.Linux.cs" />
+    <Compile Condition="'$(TargetFramework)' == 'net10.0-windows10.0.19041.0'"
+             Include="PlatformSelection\PlatformSelection.Windows.cs" />
+    <Compile Condition="'$(TargetFramework)' == 'net10.0-macos'"
+             Include="PlatformSelection\PlatformSelection.MacOS.cs" />
   </ItemGroup>
 
   <ItemGroup>
     <AvaloniaResource Include="Assets\**" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- Legacy services (will be migrated to new platform projects) -->
-    <ProjectReference Include="..\Sendspin.Player.Services\Sendspin.Player.Services.csproj" />
-
-    <!-- New cross-platform architecture -->
-    <ProjectReference Include="..\Sendspin.Core\Sendspin.Core.csproj" />
-    <ProjectReference Include="..\Sendspin.Platform.Linux\Sendspin.Platform.Linux.csproj" Condition="!$(TargetFramework.Contains('windows'))" />
-    <ProjectReference Include="..\Sendspin.Platform.Windows\Sendspin.Platform.Windows.csproj" Condition="$(TargetFramework.Contains('windows'))" />
-    <ProjectReference Include="..\Sendspin.Platform.Shared\Sendspin.Platform.Shared.csproj" />
   </ItemGroup>
 
 </Project>

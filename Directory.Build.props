@@ -1,28 +1,51 @@
 <Project>
+
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <!--
+      .NET 10 is the LTS through 2028-11-14. .NET 8 and 9 both leave support on
+      2026-11-10, the Sendspin SDK ships a lib/net10.0 target, and the macOS TFM
+      (net10.0-macos) does not exist on net8.0 at all.
+    -->
+    <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <LangVersion>latest</LangVersion>
+    <InvariantGlobalization>true</InvariantGlobalization>
     <Version>1.0.0</Version>
-    <Authors>Sendspin Team</Authors>
+    <Authors>Sendspin Contributors</Authors>
     <Company>Sendspin</Company>
     <Product>Sendspin Player</Product>
-    <Copyright>Copyright (c) 2024-2025 Sendspin</Copyright>
+    <Copyright>Copyright (c) 2024-2026 Sendspin Contributors</Copyright>
     <RepositoryUrl>https://github.com/chrisuthe/sendspin-player</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
   </PropertyGroup>
 
-  <!-- Code Analysis -->
-  <PropertyGroup>
+  <PropertyGroup Label="macOS SDK pack">
+    <!--
+      The macOS platform version for every project that targets net10.0-macos. It has to be one
+      value across the solution: a head and a library that resolve different packs are not
+      reference-compatible, and the error ("not compatible with net10.0-macosXX.X") does not
+      obviously point at this.
+
+      Why it is pinned at all: the SDK pack's Xcode validation demands an exact major.minor match
+      against the installed Xcode, and the default pack for a bare `net10.0-macos` recommends a
+      different Xcode than the pack whose reference assemblies are installed. Override on a
+      machine or a CI runner with a different Xcode:
+        dotnet build -p:SendspinMacOSPlatformVersion=<version>
+    -->
+    <SendspinMacOSPlatformVersion Condition="'$(SendspinMacOSPlatformVersion)' == ''">26.5</SendspinMacOSPlatformVersion>
+  </PropertyGroup>
+
+  <PropertyGroup Label="Analysis">
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
     <AnalysisLevel>latest</AnalysisLevel>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
   </PropertyGroup>
 
-  <!-- Deterministic builds for reproducibility -->
-  <PropertyGroup Condition="'$(GITHUB_ACTIONS)' == 'true'">
+  <PropertyGroup Condition="'$(GITHUB_ACTIONS)' == 'true'" Label="Reproducibility">
     <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
     <Deterministic>true</Deterministic>
   </PropertyGroup>
+
 </Project>
