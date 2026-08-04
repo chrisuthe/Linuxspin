@@ -13,6 +13,7 @@ A cross-platform desktop application for synchronized multi-room audio playback 
 - .NET 8.0 Runtime (or use self-contained build)
 - **Linux**: PipeWire or PulseAudio audio server
 - **Windows**: Windows 10 or later
+- **macOS**: not a supported target — see [docs/macos.md](docs/macos.md) for the current build-readiness assessment
 
 ## Installation
 
