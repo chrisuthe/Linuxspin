@@ -371,8 +371,7 @@ if $BUILD_APPIMAGE; then
 
     # Copy binary
     cp -r "$ARTIFACTS_DIR/$RUNTIME"/* "$APPDIR/usr/bin/"
-    chmod +x "$APPDIR/usr/bin/sendspin" 2>/dev/null || \
-    chmod +x "$APPDIR/usr/bin/Sendspin.Player" 2>/dev/null || true
+    chmod +x "$APPDIR/usr/bin/Sendspin.Player"
 
     # Create desktop entry
     cat > "$APPDIR/usr/share/applications/sendspin.desktop" << 'EOF'
@@ -394,15 +393,10 @@ EOF
            "$APPDIR/usr/share/icons/hicolor/256x256/apps/"
     fi
 
-    # Create AppRun
-    cat > "$APPDIR/AppRun" << 'EOF'
-#!/bin/bash
-SELF=$(readlink -f "$0")
-HERE=${SELF%/*}
-export PATH="${HERE}/usr/bin:${PATH}"
-export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
-exec "${HERE}/usr/bin/sendspin" "$@" || exec "${HERE}/usr/bin/Sendspin.Player" "$@"
-EOF
+    # Use the checked-in AppRun rather than writing a second copy here. The inline version this
+    # replaces exec'd a binary no publish produces, behind an `exec A || exec B` that could never
+    # fall through: a failed exec ends a non-interactive shell.
+    cp "$REPO_ROOT/packaging/appimage/AppRun" "$APPDIR/AppRun"
     chmod +x "$APPDIR/AppRun"
 
     # Symlinks

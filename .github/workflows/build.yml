@@ -215,11 +215,8 @@ jobs:
           cp -r ./publish/linux-x64/* AppDir/usr/bin/
           chmod +x AppDir/usr/bin/Sendspin.Player
 
-          cat > AppDir/AppRun <<'RUNNER'
-          #!/bin/sh
-          HERE="$(dirname "$(readlink -f "$0")")"
-          exec "$HERE/usr/bin/Sendspin.Player" "$@"
-          RUNNER
+          # The checked-in AppRun, not a third inline copy of one.
+          cp packaging/appimage/AppRun AppDir/AppRun
           chmod +x AppDir/AppRun
 
           cp packaging/io.sendspin.client.desktop AppDir/

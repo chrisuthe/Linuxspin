@@ -3,7 +3,7 @@ Version: ${VERSION}
 Section: sound
 Priority: optional
 Architecture: ${ARCHITECTURE}
-Depends: libx11-6, libfontconfig1, libfreetype6, libicu74 | libicu72 | libicu71 | libicu70
+Depends: libopenal1, libx11-6, libfontconfig1, libfreetype6, libicu74 | libicu72 | libicu71 | libicu70
 Recommends: pipewire, pipewire-pulse
 Suggests: pipewire-alsa
 Conflicts: sendspin-git

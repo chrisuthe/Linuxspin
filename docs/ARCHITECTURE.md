@@ -321,6 +321,39 @@ an underrun.
 `alcGetString`'s Silk.NET string overload truncates the double-NUL device list at the first entry,
 which is why enumeration resolves the function pointer directly.
 
+**All of the above is now measured rather than reviewed.** First execution of this backend was on
+Fedora 44 / PipeWire 1.6.8 / OpenAL Soft 1.24.2, against Music Assistant over plain `ws://`:
+
+```
+OpenAL Soft timing extensions: ALC_SOFT_device_clock available, AL_SOFT_source_latency available,
+AL_SOFT_source_start_delay available
+Audio output ready: 48000 Hz, 2 ch, measured latency 21 ms (+0 ms manual), timing source audio-clock
+```
+
+All three hand-bound extensions resolve, `TimingSourceName` reports `audio-clock`, enumeration lists
+both outputs with the right one defaulted, and `SwitchDeviceAsync` reopens either device with
+playback uninterrupted and the clock re-anchored. Nothing in this section had to be revised in the
+light of running it, which is worth recording as much as a correction would have been.
+
+### Linux — the `libopenal` that loads is the system one, not the bundled one
+
+`Silk.NET.OpenAL.Soft.Native` ships `runtimes/linux-x64/native/libopenal.so`, so it is tempting to
+assume that is what runs. It is not, wherever a system OpenAL exists: Silk.NET asks for the SONAME
+`libopenal.so.1`, the RID asset is named `libopenal.so`, and so the dynamic loader answers with
+`/usr/lib64/libopenal.so.1` first. Confirmed from `/proc/<pid>/maps` — the running player has the
+host's 1.24.2 mapped, along with `libpipewire-0.3.so`, and never touches the bundled copy.
+
+This matters because the two builds are not equivalent. The bundled 1.23.1 has **no PipeWire
+backend** (`alsa`, `jack`, `null`, `pulse`, `wave` only), while the host's 1.24.2 does. So the
+fallback that takes over on a machine without a system OpenAL is the *less* capable library, which
+is the opposite of the usual assumption — and it is why `packaging/deb/control.template` depends on
+`libopenal1` rather than relying on the bundled asset.
+
+The same asymmetry drives the Flatpak's audio grant: `org.freedesktop.Platform` 25.08 ships OpenAL
+Soft 1.24.3 built with the **pulse backend only**, so `--filesystem=xdg-run/pipewire-0` on its own
+reaches nothing inside the sandbox. See the reasoning kept alongside both grants in
+`packaging/flatpak/io.sendspin.client.yml`.
+
 ## Realtime audio, per platform
 
 The three platforms genuinely differ, and the honest statement differs with them.

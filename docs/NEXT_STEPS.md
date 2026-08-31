@@ -112,6 +112,18 @@ Everything below is implemented and reviewable. None of it is *verified*, and no
 corresponding boxes should be ticked by reading code. The diagnostics view exists precisely to make
 the first group measurable.
 
+**Linux is no longer wholly unrun.** The backend has been executed on Fedora 44 / PipeWire 1.6.8 /
+OpenAL Soft 1.24.2 against Music Assistant: audio, artwork and metadata all confirmed audible and
+visible by a human, `audio-clock` timing, 21 ms measured device latency, device switching, volume and
+mute. What that run did **not** cover is the sync-quality group immediately below — no second client
+was playing alongside it, so the ±1 ms figure remains unmeasured on every platform. Getting audio out
+of one machine is a much weaker claim than sync, and the two should not be confused.
+
+That first run also found the bug that had made *every* platform silent against a current server —
+unversioned `supported_roles` — which is recorded in `docs/COMPLIANCE.md`. It is the reason this item
+existing as "unverified" was expensive: the defect was in shared code, and no amount of reading it
+would have surfaced it.
+
 ### Sync quality — the one that matters most
 
 Measure against a second Sendspin client on the same server, on each of Windows, macOS and Linux:
@@ -134,9 +146,10 @@ hardware clock and every other figure is resting on the OS timer instead.
 | macOS | Now Playing / Control Center metadata and artwork; media keys. Needs item 3 first |
 | Both shells | Album art loads from the `file://` path; fractional HiDPI at 125 % and 150 %; MPRIS and tray work **inside** the Flatpak, not only outside it |
 
-The MPRIS implementation is hand-written D-Bus dispatch that has **never been executed** — no Linux
-machine was available. It was reviewed against the specification line by line and the types check
-out, but first-run behaviour is genuinely unknown. Start with `dbus-monitor` and
+The MPRIS implementation is hand-written D-Bus dispatch. It has now **been executed** — it publishes
+cleanly as `org.mpris.MediaPlayer2.io.sendspin.client` on the session bus at every start, alongside
+the tray icon — but only its publication is confirmed. The applet integration in the table above,
+and the media-key behaviour, are still unverified. Continue with `dbus-monitor` and
 `busctl --user introspect`.
 
 ---

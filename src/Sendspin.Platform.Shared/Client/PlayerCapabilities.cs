@@ -42,6 +42,41 @@ public static class PlayerCapabilities
     public const int DefaultMinBufferMs = 150;
 
     /// <summary>
+    /// The roles advertised in <c>client/hello</c>, as <c>&lt;role&gt;@v&lt;version&gt;</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>The version suffix is load-bearing.</strong> <c>ClientRoles.Player</c> and friends
+    /// are the pre-versioning spellings — bare <c>player</c>, <c>controller</c> — and a current
+    /// server matches <c>supported_roles</c> against versioned identifiers. Advertising the bare
+    /// names makes a server activate nothing:
+    /// </para>
+    /// <code>
+    /// non-compliant client: client/hello sent support objects for unlisted roles: player@v1, artwork@v1
+    /// Client offered roles/versions this server does not implement: ['player', 'controller', 'metadata', 'artwork']
+    /// </code>
+    /// <para>
+    /// The client then connects, clock-syncs and registers — as a <em>protocol</em> entry rather
+    /// than a player — and the server never sends <c>stream/start</c>, so nothing is ever
+    /// rendered. That is silence with a healthy connection and no error anywhere on this side,
+    /// which is exactly how it presented.
+    /// </para>
+    /// <para>
+    /// SDK 9.3.2 is half-migrated rather than simply old: it already keys the support objects it
+    /// emits as <c>player@v1_support</c> and <c>artwork@v1_support</c>, and only the role list
+    /// kept the bare spellings. So these are written out here rather than taken from
+    /// <c>ClientRoles</c>, which has no versioned members to take.
+    /// </para>
+    /// </remarks>
+    public static IReadOnlyList<string> AdvertisedRoles { get; } =
+        [
+            $"{ClientRoles.Player}@v1",
+            $"{ClientRoles.Controller}@v1",
+            $"{ClientRoles.Metadata}@v1",
+            $"{ClientRoles.Artwork}@v1"
+        ];
+
+    /// <summary>
     /// Codecs this build can decode, best first.
     /// </summary>
     /// <remarks>
@@ -75,13 +110,7 @@ public static class PlayerCapabilities
             ProductName = "Sendspin Player",
             Manufacturer = "Sendspin Contributors",
             SoftwareVersion = softwareVersion,
-            Roles =
-            [
-                ClientRoles.Player,
-                ClientRoles.Controller,
-                ClientRoles.Metadata,
-                ClientRoles.Artwork
-            ],
+            Roles = [.. AdvertisedRoles],
             AudioFormats = BuildFormats(settings.PreferredCodec, device),
 
             // BufferCapacity is deliberately unset. It is compressed *bytes*, not milliseconds,

@@ -22,6 +22,48 @@ public sealed class PlayerCapabilitiesTests
             softwareVersion: "1.0.0");
 
     /// <summary>
+    /// Every advertised role must carry its <c>@v1</c> suffix.
+    /// </summary>
+    /// <remarks>
+    /// The failure this pins is silent, which is why it is pinned at all. A server matches
+    /// <c>supported_roles</c> against versioned identifiers; advertise the bare
+    /// <c>ClientRoles</c> spellings and it activates nothing, returns an empty
+    /// <c>active_roles</c>, registers the client as a protocol entry rather than a player and
+    /// never sends <c>stream/start</c>. The client still connects, still clock-syncs and still
+    /// reports itself synchronized — there is no error on this side at all, only no audio. A
+    /// regression here would look exactly like a broken audio backend.
+    /// </remarks>
+    [Fact]
+    public void Roles_AreAdvertisedWithTheirVersionSuffix()
+    {
+        var capabilities = Build();
+
+        Assert.Equal(
+            ["player@v1", "controller@v1", "metadata@v1", "artwork@v1"],
+            capabilities.Roles);
+    }
+
+    /// <summary>
+    /// The support objects the SDK emits must correspond to roles that were actually listed.
+    /// </summary>
+    /// <remarks>
+    /// SDK 9.3.2 keys them <c>player@v1_support</c> and <c>artwork@v1_support</c> from its own
+    /// constants, and there is no API to align the two — the role list is the only half this
+    /// repository controls. So the invariant is asserted from the other direction: every role
+    /// whose support object the SDK will emit has to appear in what we advertise. A server
+    /// rejects the hello as non-compliant otherwise, naming exactly the roles that are listed
+    /// nowhere.
+    /// </remarks>
+    [Fact]
+    public void Roles_CoverEveryRoleTheSdkEmitsASupportObjectFor()
+    {
+        var capabilities = Build();
+
+        Assert.Contains("player@v1", capabilities.Roles);
+        Assert.Contains("artwork@v1", capabilities.Roles);
+    }
+
+    /// <summary>
     /// The advertised capacity must be the SDK's derived figure, not the 8 000 this repo used to
     /// set.
     /// </summary>
