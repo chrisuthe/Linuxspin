@@ -85,6 +85,24 @@ public sealed record PlayerDiagnosticsSnapshot
     /// </remarks>
     public string? TimingSource { get; init; }
 
+    /// <summary>
+    /// Gets the post-anchor clock-drift term folded into the sync error, in milliseconds.
+    /// </summary>
+    /// <remarks>
+    /// Added by 9.2's drift tracking, which is on by default. Sustained growth is relative crystal
+    /// drift being actively compensated — the difference between a player that is mis-scheduled and
+    /// one that is merely running on a slower clock.
+    /// <para>
+    /// It is the only one of 9.3's new buffer statistics this snapshot can carry.
+    /// <c>HardSyncStalled</c>, <c>HardSyncCount</c>, <c>LateChunksDropped</c> and
+    /// <c>ContentHolesDetected</c> are documented in the SDK's XML but declared internal, because
+    /// the 9.x line freezes its published surface. They are the fields that would explain a bad
+    /// sync number rather than restate it, so they are worth revisiting when the SDK publishes
+    /// them; recorded in <c>docs/NEXT_STEPS.md</c>.
+    /// </para>
+    /// </remarks>
+    public double ClockDriftMs { get; init; }
+
     /// <summary>Gets the active audio device's name.</summary>
     public string? AudioDeviceName { get; init; }
 

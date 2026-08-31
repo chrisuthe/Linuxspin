@@ -2,7 +2,11 @@ using Sendspin.Core.Control;
 using Sendspin.Core.MediaSession;
 using Sendspin.Core.Platform;
 using Sendspin.SDK.Audio;
+using Sendspin.SDK.Client;
+using Sendspin.SDK.Connection;
 using Sendspin.SDK.Models;
+using Sendspin.SDK.Protocol;
+using Sendspin.SDK.Protocol.Messages;
 using Sendspin.SDK.Synchronization;
 
 namespace Sendspin.Tests;
@@ -172,4 +176,134 @@ internal sealed class TemporaryPaths : PlatformPathsBase, IDisposable
             Directory.Delete(_root, recursive: true);
         }
     }
+}
+
+/// <summary>
+/// An <see cref="IAudioPipeline"/> that does nothing, for tests that need a service constructed
+/// rather than a stream played.
+/// </summary>
+internal sealed class InertAudioPipeline : IAudioPipeline
+{
+    public AudioPipelineState State => AudioPipelineState.Idle;
+
+    public bool IsReady => false;
+
+    public AudioBufferStats? BufferStats => null;
+
+    public AudioFormat? CurrentFormat => null;
+
+    public AudioFormat? OutputFormat => null;
+
+    public int DetectedOutputLatencyMs => 0;
+
+    public event EventHandler<AudioPipelineState>? StateChanged;
+
+    public event EventHandler<AudioPipelineError>? ErrorOccurred;
+
+    public Task StartAsync(
+        AudioFormat format,
+        long? targetTimestamp = null,
+        CancellationToken cancellationToken = default)
+    {
+        StateChanged?.Invoke(this, State);
+        _ = ErrorOccurred;
+        return Task.CompletedTask;
+    }
+
+    public Task StopAsync() => Task.CompletedTask;
+
+    public void NotifyReconnect()
+    {
+    }
+
+    public void Clear(long? newTargetTimestamp = null)
+    {
+    }
+
+    public void ReanchorTiming()
+    {
+    }
+
+    public void ProcessAudioChunk(AudioChunk chunk)
+    {
+    }
+
+    public void SetVolume(int volume)
+    {
+    }
+
+    public void SetMuted(bool muted)
+    {
+    }
+
+    public Task SwitchDeviceAsync(string? deviceId, CancellationToken cancellationToken = default) =>
+        Task.CompletedTask;
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+}
+
+/// <summary>
+/// An <see cref="ISendspinConnection"/> that reports whatever state a test sets, and never opens a
+/// socket.
+/// </summary>
+/// <remarks>
+/// This is the seam that makes the arbitration contract testable at all:
+/// <c>SendspinClientService</c> is sealed and <c>AdoptClientInitiated</c> takes the concrete type,
+/// so a client can only be produced by constructing a real one — which this makes possible without
+/// a server to dial.
+/// </remarks>
+internal sealed class FakeConnection : ISendspinConnection
+{
+    public ConnectionState State { get; private set; } = ConnectionState.Connected;
+
+    public Uri? ServerUri => new("ws://test.invalid/sendspin");
+
+    public event EventHandler<ConnectionStateChangedEventArgs>? StateChanged;
+
+    public event EventHandler<string>? TextMessageReceived;
+
+    public event EventHandler<ReadOnlyMemory<byte>>? BinaryMessageReceived;
+
+    /// <summary>Moves to a new state and raises the change, as a real transport would.</summary>
+    public void TransitionTo(ConnectionState state)
+    {
+        var old = State;
+        State = state;
+        StateChanged?.Invoke(
+            this,
+            new ConnectionStateChangedEventArgs { OldState = old, NewState = state, Reason = "test" });
+    }
+
+    public Task ConnectAsync(Uri serverUri, CancellationToken cancellationToken = default)
+    {
+        _ = TextMessageReceived;
+        _ = BinaryMessageReceived;
+        TransitionTo(ConnectionState.Connected);
+        return Task.CompletedTask;
+    }
+
+    public Task DisconnectAsync(string? reason = null, CancellationToken cancellationToken = default)
+    {
+        TransitionTo(ConnectionState.Disconnected);
+        return Task.CompletedTask;
+    }
+
+    public Task SendMessageAsync<T>(T message, CancellationToken cancellationToken = default)
+        where T : IMessage =>
+        Task.CompletedTask;
+
+    public Task SendBinaryAsync(ReadOnlyMemory<byte> data, CancellationToken cancellationToken = default) =>
+        Task.CompletedTask;
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+}
+
+/// <summary>An <see cref="IStaticDelayStore"/> held in memory.</summary>
+internal sealed class InMemoryStaticDelayStore : IStaticDelayStore
+{
+    private double? _value;
+
+    public double? Load() => _value;
+
+    public void Save(double staticDelayMs) => _value = staticDelayMs;
 }

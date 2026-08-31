@@ -55,6 +55,7 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
     private SyncCorrectedSampleSource? _sampleSource;
     private AudioPlayerBase? _activePlayer;
 
+    private string? _adoptedServerId;
     private GroupState? _group;
     private MediaSessionState _mediaState = MediaSessionState.Idle;
     private string? _serverName;
@@ -138,12 +139,13 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
         _logger.LogInformation("Starting Sendspin player {ClientId} ({PlayerName}) in {Mode} mode",
             settings.ClientId, settings.PlayerName, mode);
 
-        if (mode is ConnectionMode.Auto or ConnectionMode.DiscoverOnly)
+        // Exactly one of the two, never both: connection.md allows a client one connection
+        // method at a time, which is why the SDK retires ConnectionMode.Auto in 10.0.0.
+        if (mode == ConnectionMode.DiscoverOnly)
         {
             await StartDiscoveryAsync(cancellationToken).ConfigureAwait(false);
         }
-
-        if (mode is ConnectionMode.Auto or ConnectionMode.AdvertiseOnly)
+        else
         {
             await StartAdvertisingAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -194,6 +196,10 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
         SendspinClientService? client;
         IAudioPipeline? pipeline;
 
+        // Stop arbitrating for this session before the socket goes: an adoption left behind
+        // would keep refusing every server that dials in, with no session left to protect.
+        ReleaseAdoption();
+
         lock (_sessionGate)
         {
             client = _client;
@@ -229,9 +235,9 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
             await client.DisposeAsync().ConfigureAwait(false);
         }
 
-        // Stop the pipeline rather than dispose it. It is shared with the host service, which in
-        // Auto mode is still advertising and may have a server connect a moment later; disposing
-        // here would leave that service holding a dead pipeline.
+        // Stop the pipeline rather than dispose it. It is shared with the host service, which may
+        // still be advertising and have a server connect a moment later; disposing here would
+        // leave that service holding a dead pipeline.
         if (pipeline is not null)
         {
             await pipeline.StopAsync().ConfigureAwait(false);
@@ -399,6 +405,7 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
             OutputLatencyMs = activePlayer?.OutputLatencyMs ?? _pipeline?.DetectedOutputLatencyMs ?? 0,
             ManualLatencyOffsetMs = settings.GetManualLatencyOffsetMs(settings.AudioDeviceId),
             StaticDelayMs = settings.StaticDelayMs,
+            ClockDriftMs = stats?.ClockDriftMs ?? 0,
             TimingSource = stats?.TimingSourceName ?? buffer?.TimingSourceName,
             AudioDeviceName = Volatile.Read(ref _activeDeviceName),
             PlatformName = ClientIdentity.PlatformLabel
@@ -421,6 +428,10 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
 
         if (_host is { } host)
         {
+            // Already released by DisconnectAsync above in every normal path; this is the
+            // backstop for a session adopted after that ran.
+            ReleaseAdoption();
+
             _host = null;
             host.ServerConnected -= OnHostServerConnected;
             host.ServerDisconnected -= OnHostServerDisconnected;
@@ -584,8 +595,96 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
             _settings.Update(s => s.LastServerId = resolvedId);
         }
 
+        AdoptIntoHost(client, resolvedId);
+
         _logger.LogInformation("Connected to {ServerName}", resolvedName);
         RaiseConnectionChanged(connected: true, resolvedName);
+    }
+
+    /// <summary>
+    /// Registers a session this player dialled with the host service, so a server connecting in
+    /// is arbitrated against it rather than against nothing.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Dropping <c>ConnectionMode.Auto</c> does not make this unnecessary. Advertising is the
+    /// default mode, and both <see cref="ConnectAsync(string, CancellationToken)"/> and the
+    /// auto-connect policy dial out regardless of it — so a host and a client still coexist,
+    /// which is exactly the shape that let an incoming server be accepted and announced while a
+    /// dialled session was playing, resetting the shared clock synchroniser and pipeline under it
+    /// (SDK #253).
+    /// </para>
+    /// <para>
+    /// Ownership does not move: the SDK never disconnects or disposes an adopted client, so
+    /// <see cref="DisconnectAsync"/> tears the session down exactly as it did before.
+    /// </para>
+    /// <para>
+    /// Arbitration is keyed by server id, and the manual-connect path starts with none. The id is
+    /// therefore taken after the connect completes, from the server's own hello where possible.
+    /// A session with no id from either source is left unadopted and logged rather than adopted
+    /// under null: the SDK matches the release against the id it was given, so a placeholder would
+    /// be a lock nothing could open.
+    /// </para>
+    /// </remarks>
+    private void AdoptIntoHost(SendspinClientService client, string? resolvedId)
+    {
+        SendspinHostService? host;
+
+        lock (_sessionGate)
+        {
+            host = _host;
+        }
+
+        if (host is null)
+        {
+            return;
+        }
+
+        if (resolvedId is null)
+        {
+            _logger.LogWarning(
+                "Connected without a server id; the session is not adopted, so an incoming server "
+                + "will not be arbitrated against it");
+            return;
+        }
+
+        host.AdoptClientInitiated(client, resolvedId);
+
+        lock (_sessionGate)
+        {
+            _adoptedServerId = resolvedId;
+        }
+
+        _logger.LogDebug("Adopted client-initiated session with {ServerId} for arbitration", resolvedId);
+    }
+
+    /// <summary>
+    /// Stops arbitrating on behalf of the adopted session, if there is one.
+    /// </summary>
+    /// <remarks>
+    /// Released under the same id it was adopted with — the SDK matches on it and ignores anything
+    /// else. Idempotent, because both <see cref="DisconnectAsync"/> and
+    /// <see cref="DisposeAsync"/> call it and a dropped session may already have released itself.
+    /// </remarks>
+    private void ReleaseAdoption()
+    {
+        SendspinHostService? host;
+        string? serverId;
+
+        lock (_sessionGate)
+        {
+            host = _host;
+            serverId = _adoptedServerId;
+            _adoptedServerId = null;
+        }
+
+        if (host is null || serverId is null)
+        {
+            return;
+        }
+
+        host.ReleaseClientInitiated(serverId);
+        _logger.LogDebug("Released the adopted session with {ServerId}", serverId);
     }
 
     private async Task AutoConnectAsync(string serverId, CancellationToken cancellationToken)
@@ -619,9 +718,11 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
     /// <remarks>
     /// <para>
     /// There is exactly one of each, shared by the host service and the client service, because
-    /// there is exactly one output device. In <see cref="ConnectionMode.Auto"/> both services run
-    /// at once; giving each its own pipeline would put two audio players on the same device, and
-    /// tearing one down would leave the other holding a disposed pipeline.
+    /// there is exactly one output device. The two services coexist even now that only one
+    /// connection method runs: <see cref="ConnectAsync(string, CancellationToken)"/> and the
+    /// auto-connect policy both dial out while the host is advertising. Giving each its own
+    /// pipeline would put two audio players on the same device, and tearing one down would leave
+    /// the other holding a disposed pipeline.
     /// </para>
     /// <para>
     /// Sharing is safe because only one of them can be streaming: a player belongs to one group at
@@ -659,10 +760,12 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
     /// <remarks>
     /// <para>
     /// <c>waitForConvergence: true</c> is passed because the spec requires availability to be
-    /// withheld until the time filter has converged. Note that SDK 9.1.0 does not fully honour
-    /// it: on timeout it logs "Starting playback without full convergence" and proceeds. That
-    /// gap is upstream and is recorded in <c>docs/COMPLIANCE.md</c> rather than papered over
-    /// here with an inflated timeout, which would only hide it.
+    /// withheld until the time filter has converged. Note that SDK 9.3.2 still does not fully
+    /// honour it: on timeout it logs "Starting playback without full convergence" and proceeds.
+    /// 9.3.0 reworked the filter's probe cadence — a link that stays noisy now falls back to the
+    /// steady-state interval and withholds <c>IsClockSynced</c> — but the timeout path itself is
+    /// unchanged. That gap is upstream and is recorded in <c>docs/COMPLIANCE.md</c> rather than
+    /// papered over here with an inflated timeout, which would only hide it.
     /// </para>
     /// <para>
     /// <c>useMonotonicTimer: true</c> so that a wall-clock jump — a VM host resuming, an NTP
@@ -680,12 +783,14 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
             clockSync,
             bufferFactory: (format, sync) =>
             {
+                // No capacity argument: the decoded buffer takes the SDK's 30 s default, which is
+                // the same figure ClientCapabilities derives the advertised buffer_capacity from.
+                // Passing a different one here is how the two sides come to disagree.
                 var buffer = new TimedAudioBuffer(
                     format,
                     sync,
-                    PlayerCapabilities.BufferCapacityMs,
-                    syncOptions,
-                    _loggerFactory.CreateLogger<TimedAudioBuffer>())
+                    syncOptions: syncOptions,
+                    logger: _loggerFactory.CreateLogger<TimedAudioBuffer>())
                 {
                     TargetBufferMilliseconds = PlayerCapabilities.DefaultMinBufferMs
                 };

@@ -54,6 +54,7 @@ public sealed partial class DiagnosticsViewModel : ObservableObject, IDisposable
         SyncCorrectionBand.Deadband => "within deadband",
         SyncCorrectionBand.RateAdjust => "rate adjust",
         SyncCorrectionBand.DropInsert => "drop/insert",
+        SyncCorrectionBand.HardSync => "hard sync",
         _ => "re-anchor"
     };
 

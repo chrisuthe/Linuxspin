@@ -110,8 +110,12 @@ public sealed partial class SettingsViewModel : ObservableObject, IAsyncDisposab
     public ObservableCollection<AudioDeviceInfo> AudioDevices { get; } = [];
 
     /// <summary>Gets the connection modes, for a bound selector.</summary>
+    /// <remarks>
+    /// Two, not three. <c>ConnectionMode.Auto</c> ran discovery and advertising at once, which
+    /// connection.md forbids and the SDK removes in 10.0.0, so it is not offered.
+    /// </remarks>
     public IReadOnlyList<ConnectionMode> ConnectionModes { get; } =
-        [ConnectionMode.Auto, ConnectionMode.AdvertiseOnly, ConnectionMode.DiscoverOnly];
+        [ConnectionMode.AdvertiseOnly, ConnectionMode.DiscoverOnly];
 
     /// <summary>Gets the auto-connect policies, for a bound selector.</summary>
     public IReadOnlyList<AutoConnectPolicy> AutoConnectPolicies { get; } =
