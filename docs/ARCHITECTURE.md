@@ -123,7 +123,8 @@ asserts the accounting per mode.
 
 ### `SyncCorrectionOptions` — shipped defaults, and why ours differ
 
-Measured against 9.3.2 by reflection, because 9.3.0 moved three of these defaults:
+Measured against 9.3.2 by reflection, because 9.3.0 moved two of these defaults and added a third
+row:
 
 | Option | SDK `Default` (9.1.0) | SDK `Default` (9.3.2) | SDK `CliDefaults` | Ours |
 |---|---|---|---|---|

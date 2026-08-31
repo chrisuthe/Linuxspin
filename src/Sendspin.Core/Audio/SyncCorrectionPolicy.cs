@@ -106,18 +106,20 @@ public sealed class SyncCorrectionPolicy
     /// Errors at or above this are snapped in one step rather than spliced out gradually.
     /// </summary>
     /// <remarks>
-    /// Mirrored, not configured. <c>SyncCorrectionOptions.HardSyncThresholdMicroseconds</c> is
-    /// internal on the 9.x line — the published surface is frozen — so 5 ms is the SDK's figure
-    /// and there is no way to hand it a different one. The value is restated here because
-    /// <see cref="Classify"/> has to know where the tier begins to describe the ladder honestly;
-    /// it does not travel back through <see cref="ToSdkOptions"/>. If a later SDK exposes the
-    /// setter, wire it there and this becomes a real knob.
+    /// Mirrored, not configured, and deliberately not settable.
+    /// <c>SyncCorrectionOptions.HardSyncThresholdMicroseconds</c> is internal on the 9.x line — the
+    /// published surface is frozen — so 5 ms is the SDK's figure and there is no way to hand it a
+    /// different one. Every other value on this type reaches the SDK through
+    /// <see cref="ToSdkOptions"/>; this one cannot, so making it configurable would only let a
+    /// caller produce a <see cref="Classify"/> that describes a ladder the SDK is not running.
+    /// It is restated here solely so <see cref="Classify"/> knows where the tier begins. If a later
+    /// SDK exposes the setter, wire it through <see cref="ToSdkOptions"/> and it becomes a real knob.
     /// <para>
     /// The spec exempts a one-shot resynchronisation from the ±0.5% speed cap, which is what keeps
     /// a large error from being ground out over tens of seconds at 500 ppm.
     /// </para>
     /// </remarks>
-    public long HardSyncThresholdMicroseconds { get; init; } = 5_000;
+    public const long HardSyncThresholdMicroseconds = 5_000;
 
     /// <summary>
     /// Errors at or above this are treated as a discontinuity and re-anchored rather than

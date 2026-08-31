@@ -73,14 +73,14 @@ public sealed class SyncCorrectionPolicyTests
 
         Assert.Equal(250, policy.DeadbandMicroseconds);
         Assert.Equal(2_500, policy.ResamplingThresholdMicroseconds);
-        Assert.Equal(5_000, policy.HardSyncThresholdMicroseconds);
+        Assert.Equal(5_000, SyncCorrectionPolicy.HardSyncThresholdMicroseconds);
         Assert.Equal(500_000, policy.ReanchorThresholdMicroseconds);
 
         Assert.True(
             policy.DeadbandMicroseconds
             < policy.ResamplingThresholdMicroseconds
-            && policy.ResamplingThresholdMicroseconds < policy.HardSyncThresholdMicroseconds
-            && policy.HardSyncThresholdMicroseconds < policy.ReanchorThresholdMicroseconds,
+            && policy.ResamplingThresholdMicroseconds < SyncCorrectionPolicy.HardSyncThresholdMicroseconds
+            && SyncCorrectionPolicy.HardSyncThresholdMicroseconds < policy.ReanchorThresholdMicroseconds,
             "the ladder's thresholds must strictly increase");
 
         SyncCorrectionBand[] expected =

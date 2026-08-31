@@ -95,10 +95,11 @@ public sealed class SettingsPersistenceTests
     /// <remarks>
     /// <c>Auto</c> ran discovery and advertising together, which connection.md does not allow and
     /// the SDK removes in 10.0.0. It was also this repo's default, so most existing installs have
-    /// it on disk — and it is the enum's zero value, so a file that predates the field lands there
-    /// too. Both are written as raw JSON rather than through the enum, because naming
-    /// <c>ConnectionMode.Auto</c> anywhere outside the migration is exactly what this change
-    /// removes.
+    /// it on disk. Both cases are covered because they reach the answer by different routes: a
+    /// file that says <c>Auto</c> is rewritten by the migration, while a file that predates the
+    /// field never sets the property at all and simply keeps its initializer. Written as raw JSON
+    /// rather than through the enum, because naming <c>ConnectionMode.Auto</c> anywhere outside
+    /// the migration is exactly what this change removes.
     /// </remarks>
     [Theory]
     [InlineData("\"connection_mode\": \"Auto\", ")]
