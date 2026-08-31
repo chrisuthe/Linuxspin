@@ -1,6 +1,8 @@
 #!/bin/bash
-# AppRun script for Sendspin Linux Client
-# This script is executed when the AppImage is run
+# The only AppRun in the repository. scripts/build.sh, scripts/build-appimage.sh and the
+# package-appimage CI job all copy this file into the AppDir rather than writing their own,
+# because three inline copies is how the binary name drifted out of sync with what the build
+# scripts actually install.
 
 SELF=$(readlink -f "$0")
 HERE=${SELF%/*}
@@ -12,5 +14,6 @@ export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
 # Set XDG directories if not set
 export XDG_DATA_DIRS="${HERE}/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
 
-# Run the application
-exec "${HERE}/usr/bin/SendspinClient.Linux" "$@"
+# Run the application. The name is the csproj's AssemblyName, which is what every publish
+# writes and what each build script chmod +x's.
+exec "${HERE}/usr/bin/Sendspin.Player" "$@"

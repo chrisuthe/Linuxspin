@@ -36,6 +36,22 @@ finish-args:
   # reviewer to ask about it.
   - --filesystem=xdg-run/pipewire-0
 
+  # ...but on its own that grant is silence, which is why --socket=pulseaudio is here too.
+  # Measured against this runtime rather than assumed: org.freedesktop.Platform 25.08 ships
+  # OpenAL Soft 1.24.3 built with the pulse backend only. It has no "PipeWire Output" device
+  # and dlopens libpulse.so.0 and nothing else — unlike the host's own 1.24.2, which does carry
+  # the PipeWire backend. So nothing in the sandbox can speak the raw protocol the socket above
+  # exposes, and OpenAL falls through to the null backend.
+  #
+  # The reasoning above is kept, not deleted: it is still the right preference, and the
+  # PipeWire grant is retained for the day the runtime's OpenAL is built with that backend (or
+  # the app bundles one that is), at which point OpenAL picks PipeWire ahead of pulse on its own
+  # and the shm cost disappears without another manifest change. Building openal-soft as a
+  # manifest module with -DALSOFT_BACKEND_PIPEWIRE=ON is the other way to get there; it is not
+  # worth carrying a source build of the audio stack for a cost that is bounded by
+  # pipewire-pulse, which is what actually serves this socket.
+  - --socket=pulseaudio
+
   # Notifications and the StatusNotifierItem tray host. The tray name is org.kde.* even on
   # GNOME, where it is served by the AppIndicator extension rather than the shell.
   - --talk-name=org.freedesktop.Notifications
