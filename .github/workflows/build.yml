@@ -325,6 +325,8 @@ jobs:
           app="$(find ./publish/osx-arm64 -maxdepth 2 -name '*.app' -print -quit)"
           if [ -z "$app" ]; then
             echo "::error::No .app bundle was produced"
+            echo "Publish output was:"
+            find ./publish/osx-arm64 -maxdepth 2
             exit 1
           fi
           echo "Bundle: $app"
