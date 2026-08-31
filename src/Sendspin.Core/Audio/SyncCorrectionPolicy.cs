@@ -17,6 +17,12 @@ public enum SyncCorrectionBand
     /// <summary>Too large to walk off at the rate ceiling; the SDK drops or inserts frames.</summary>
     DropInsert,
 
+    /// <summary>
+    /// Too large to splice out gradually. The SDK snaps the whole error in one step, which the
+    /// spec exempts from the ±0.5% speed cap precisely because it is one-shot.
+    /// </summary>
+    HardSync,
+
     /// <summary>A discontinuity rather than drift. The SDK clears and re-anchors.</summary>
     Reanchor
 }
@@ -31,14 +37,17 @@ public enum SyncCorrectionBand
 /// <c>ReanchorRequired</c>, <see cref="IAudioPipeline.ReanchorTiming"/> answers it, and
 /// <see cref="SyncCorrectionCalculator"/> decides drop/insert. This type does not
 /// reimplement any of that. What it does is choose the numbers, because the SDK's shipped
-/// numbers are tuned for a 2% rate ceiling and this player runs at 0.05%.
+/// numbers still leave ten times more rate deviation than this player wants to hold.
 /// </para>
 /// <para>
-/// Why tighter: the SDK's default <see cref="SyncCorrectionOptions.MaxSpeedCorrection"/> is
-/// 0.02 and its docs note that up to 0.04 is "typically imperceptible" against a roughly 3%
-/// pitch-perception threshold. That is true of a brief correction and false of a player
-/// holding a correction for minutes to track a drifting clock. Snapcast holds soft-sync to
-/// 500 ppm — about forty times tighter than the SDK default — and that is the figure here.
+/// Why tighter: 9.3.0 brought the SDK's default
+/// <see cref="SyncCorrectionOptions.MaxSpeedCorrection"/> down from 0.02 to 0.005, the spec's own
+/// MUST cap, and now clamps anything larger where correction is applied
+/// (<see cref="SyncCorrectionOptions.EffectiveMaxSpeedCorrection"/>). That closes the old hazard,
+/// but 0.5% is a ceiling for recovering from a disturbance, not a rate to sit at for minutes while
+/// tracking a drifting clock. Snapcast holds soft-sync to 500 ppm — a tenth of the cap — and that
+/// is the figure here. Being well inside the cap also means nothing is clamped and the SDK raises
+/// no over-cap warning.
 /// </para>
 /// <para>
 /// Why the other numbers have to move with it. The SDK's default resampling threshold is
@@ -47,6 +56,14 @@ public enum SyncCorrectionBand
 /// the group. So <see cref="ResamplingThresholdMicroseconds"/> is *derived* from the ceiling
 /// and the correction target rather than being an independent constant: rate adjustment is
 /// only ever asked to close an error it can actually reach.
+/// </para>
+/// <para>
+/// A consequence worth naming: because <see cref="ResamplingThresholdMicroseconds"/> derives to
+/// 2500 us, below the SDK's 5 ms <see cref="HardSyncThresholdMicroseconds"/>, this player is one of
+/// the few callers that reaches the discrete drop/insert band at all. The SDK's own docs note that
+/// with its shipped thresholds the band is skipped entirely — hard sync takes precedence above
+/// 5 ms — and that it is used only when a caller lowers the resampling threshold below that.
+/// Lowering it is exactly what the 500 ppm ceiling forces.
 /// </para>
 /// <para>
 /// None of these are user-facing. They are buffer internals; the only calibration this app
@@ -66,6 +83,12 @@ public sealed class SyncCorrectionPolicy
     /// Errors below this are ignored. Set under the ±1 ms steady-state target but above the
     /// jitter of a well-behaved clock filter, so the player settles instead of hunting.
     /// </summary>
+    /// <remarks>
+    /// This is a widening of the SDK's default, not a tightening of it: 9.3.0 moved that default
+    /// from 1 ms to 100 us. 250 us is kept because the SDK's own guidance is to raise the band only
+    /// with a measured platform-jitter justification — and a desktop player sharing a machine with
+    /// everything else does not settle at 100 us, it hunts.
+    /// </remarks>
     public long DeadbandMicroseconds { get; init; } = 250;
 
     /// <summary>
@@ -78,6 +101,23 @@ public sealed class SyncCorrectionPolicy
     /// widens <see cref="ResamplingThresholdMicroseconds"/>, since the two are linked.
     /// </summary>
     public double CorrectionTargetSeconds { get; init; } = 5.0;
+
+    /// <summary>
+    /// Errors at or above this are snapped in one step rather than spliced out gradually.
+    /// </summary>
+    /// <remarks>
+    /// Mirrored, not configured. <c>SyncCorrectionOptions.HardSyncThresholdMicroseconds</c> is
+    /// internal on the 9.x line — the published surface is frozen — so 5 ms is the SDK's figure
+    /// and there is no way to hand it a different one. The value is restated here because
+    /// <see cref="Classify"/> has to know where the tier begins to describe the ladder honestly;
+    /// it does not travel back through <see cref="ToSdkOptions"/>. If a later SDK exposes the
+    /// setter, wire it there and this becomes a real knob.
+    /// <para>
+    /// The spec exempts a one-shot resynchronisation from the ±0.5% speed cap, which is what keeps
+    /// a large error from being ground out over tens of seconds at 500 ppm.
+    /// </para>
+    /// </remarks>
+    public long HardSyncThresholdMicroseconds { get; init; } = 5_000;
 
     /// <summary>
     /// Errors at or above this are treated as a discontinuity and re-anchored rather than
@@ -123,9 +163,14 @@ public sealed class SyncCorrectionPolicy
             return SyncCorrectionBand.Deadband;
         }
 
-        return magnitude <= ResamplingThresholdMicroseconds
-            ? SyncCorrectionBand.RateAdjust
-            : SyncCorrectionBand.DropInsert;
+        if (magnitude <= ResamplingThresholdMicroseconds)
+        {
+            return SyncCorrectionBand.RateAdjust;
+        }
+
+        return magnitude <= HardSyncThresholdMicroseconds
+            ? SyncCorrectionBand.DropInsert
+            : SyncCorrectionBand.HardSync;
     }
 
     /// <summary>

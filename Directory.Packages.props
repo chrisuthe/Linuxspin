@@ -11,7 +11,7 @@
   </PropertyGroup>
 
   <ItemGroup Label="Sendspin protocol">
-    <PackageVersion Include="Sendspin.SDK" Version="9.1.0" />
+    <PackageVersion Include="Sendspin.SDK" Version="9.3.2" />
   </ItemGroup>
 
   <ItemGroup Label="UI">

@@ -78,6 +78,13 @@ public sealed class JsonSettingsStore : ISettingsStore
                     return new PlayerSettings();
                 }
 
+                if (settings.ApplyMigrations())
+                {
+                    _logger.LogInformation(
+                        "Migrated settings from {Path}: connection mode Auto is no longer supported and is now {Mode}",
+                        path, settings.ConnectionMode);
+                }
+
                 _logger.LogDebug("Loaded settings from {Path}", path);
                 return settings;
             }

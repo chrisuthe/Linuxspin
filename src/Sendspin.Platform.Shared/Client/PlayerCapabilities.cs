@@ -42,11 +42,6 @@ public static class PlayerCapabilities
     public const int DefaultMinBufferMs = 150;
 
     /// <summary>
-    /// Buffer capacity advertised to the server, in milliseconds.
-    /// </summary>
-    public const int BufferCapacityMs = 8_000;
-
-    /// <summary>
     /// Codecs this build can decode, best first.
     /// </summary>
     /// <remarks>
@@ -88,7 +83,14 @@ public static class PlayerCapabilities
                 ClientRoles.Artwork
             ],
             AudioFormats = BuildFormats(settings.PreferredCodec, device),
-            BufferCapacity = BufferCapacityMs,
+
+            // BufferCapacity is deliberately unset. It is compressed *bytes*, not milliseconds,
+            // and the 8 000 that used to be set here — read as 8 s — advertised about one second
+            // of Opus. Left alone, the SDK derives it from the decoded buffer's 30 s default and
+            // the formats above, using whichever of them packs the most audio into a byte. That
+            // is a bitrate-less Opus entry, which the SDK values at its conservative 64 kbps
+            // fallback; declaring AudioFormat.Bitrate would tighten it, and is deliberately not
+            // done here.
             RequiredLeadTimeMs = DefaultRequiredLeadTimeMs,
             MinBufferMs = DefaultMinBufferMs,
 

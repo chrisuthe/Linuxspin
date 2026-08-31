@@ -26,7 +26,7 @@ public sealed class SettingsPersistenceTests
 
         Assert.Equal(100, settings.Volume);
         Assert.False(settings.Muted);
-        Assert.Equal(ConnectionMode.Auto, settings.ConnectionMode);
+        Assert.Equal(ConnectionMode.AdvertiseOnly, settings.ConnectionMode);
         Assert.Equal(AutoConnectPolicy.Never, settings.AutoConnect);
 
         // Per-track notifications must default off: neither Linux shell deduplicates a
@@ -87,6 +87,53 @@ public sealed class SettingsPersistenceTests
         Assert.Equal(-25.0, loaded.GetManualLatencyOffsetMs("device-abc"));
         Assert.True(loaded.Notifications.TrackChange);
         Assert.False(loaded.Notifications.IncludeArtwork);
+    }
+
+    /// <summary>
+    /// A file written by an older build must not leave the player in a mode the spec forbids.
+    /// </summary>
+    /// <remarks>
+    /// <c>Auto</c> ran discovery and advertising together, which connection.md does not allow and
+    /// the SDK removes in 10.0.0. It was also this repo's default, so most existing installs have
+    /// it on disk — and it is the enum's zero value, so a file that predates the field lands there
+    /// too. Both are written as raw JSON rather than through the enum, because naming
+    /// <c>ConnectionMode.Auto</c> anywhere outside the migration is exactly what this change
+    /// removes.
+    /// </remarks>
+    [Theory]
+    [InlineData("\"connection_mode\": \"Auto\", ")]
+    [InlineData("")]
+    public void Load_MigratesARetiredConnectionModeToAdvertiseOnly(string connectionModeField)
+    {
+        using var paths = new TemporaryPaths();
+        Directory.CreateDirectory(paths.ConfigDirectory);
+        File.WriteAllText(
+            paths.ConfigFile,
+            $$"""{"version": 1, {{connectionModeField}}"volume": 63}""");
+
+        var settings = new JsonSettingsStore(paths, NullLogger<JsonSettingsStore>.Instance).Load();
+
+        Assert.Equal(ConnectionMode.AdvertiseOnly, settings.ConnectionMode);
+
+        // The rest of the file has to survive the migration, or "migrate" would mean "reset".
+        Assert.Equal(63, settings.Volume);
+    }
+
+    /// <summary>
+    /// A mode the user actually chose must come back as they left it.
+    /// </summary>
+    [Theory]
+    [InlineData("DiscoverOnly", ConnectionMode.DiscoverOnly)]
+    [InlineData("AdvertiseOnly", ConnectionMode.AdvertiseOnly)]
+    public void Load_LeavesAConformantConnectionModeAlone(string persisted, ConnectionMode expected)
+    {
+        using var paths = new TemporaryPaths();
+        Directory.CreateDirectory(paths.ConfigDirectory);
+        File.WriteAllText(paths.ConfigFile, $$"""{"version": 1, "connection_mode": "{{persisted}}"}""");
+
+        var settings = new JsonSettingsStore(paths, NullLogger<JsonSettingsStore>.Instance).Load();
+
+        Assert.Equal(expected, settings.ConnectionMode);
     }
 
     /// <summary>

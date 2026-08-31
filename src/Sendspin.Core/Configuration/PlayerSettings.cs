@@ -89,10 +89,15 @@ public sealed class PlayerSettings
     public string PlayerName { get; set; } = string.Empty;
 
     /// <summary>
-    /// Whether we advertise ourselves for servers to connect to, discover servers
-    /// ourselves, or both.
+    /// Whether we advertise ourselves for servers to connect to, or discover servers ourselves.
     /// </summary>
-    public ConnectionMode ConnectionMode { get; set; } = ConnectionMode.Auto;
+    /// <remarks>
+    /// Never both. connection.md requires exactly one connection method at a time, so
+    /// <c>ConnectionMode.Auto</c> — which ran discovery and advertising together — is a spec
+    /// violation the SDK removes in 10.0.0. It is neither offered nor stored here; see
+    /// <see cref="ApplyMigrations"/> for what happens to a file that still says it.
+    /// </remarks>
+    public ConnectionMode ConnectionMode { get; set; } = ConnectionMode.AdvertiseOnly;
 
     /// <summary>Gets or sets the auto-connect behaviour on startup.</summary>
     public AutoConnectPolicy AutoConnect { get; set; } = AutoConnectPolicy.Never;
@@ -143,6 +148,36 @@ public sealed class PlayerSettings
 
     /// <summary>Gets or sets whether the diagnostics view is shown on startup.</summary>
     public bool ShowDiagnostics { get; set; }
+
+    /// <summary>
+    /// Brings a just-loaded settings object forward to what this build supports.
+    /// </summary>
+    /// <remarks>
+    /// Applied on load only, not in <see cref="Clone"/>: a snapshot copied from the live settings
+    /// has already been migrated, and re-running the rewrite on every copy would hide a field that
+    /// somehow got set back to a retired value.
+    /// <para>
+    /// The one migration so far is <c>ConnectionMode.Auto</c> to
+    /// <see cref="ConnectionMode.AdvertiseOnly"/>. Advertising is the closer half of what Auto did:
+    /// a server that was reaching this player by connecting to it keeps working, where
+    /// <see cref="ConnectionMode.DiscoverOnly"/> would silently stop answering.
+    /// </para>
+    /// </remarks>
+    /// <returns>True when something was rewritten, which the caller may want to log.</returns>
+    public bool ApplyMigrations()
+    {
+        // Reading the obsolete member is the point: this is the code that retires it, and it has to
+        // name the value it is retiring. Suppressed here only, so every other use stays an error.
+#pragma warning disable CS0618 // ConnectionMode.Auto is obsolete and removed in SDK 10.0.0
+        if (ConnectionMode != ConnectionMode.Auto)
+#pragma warning restore CS0618
+        {
+            return false;
+        }
+
+        ConnectionMode = ConnectionMode.AdvertiseOnly;
+        return true;
+    }
 
     /// <summary>
     /// Gets the manual latency offset for a device, or 0 when it has never been calibrated.
