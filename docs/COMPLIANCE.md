@@ -4,7 +4,7 @@ What this client implements, what it does not, and — importantly — **which s
 actually talk to**. Nothing here is aspirational: if a row says "not implemented", the code does
 not implement it.
 
-Last reviewed against `Sendspin/spec` HEAD of 2026-07-31 and `Sendspin.SDK` **9.1.0**.
+Last reviewed against `Sendspin/spec` HEAD of 2026-07-31 and `Sendspin.SDK` **9.3.2**.
 
 Companion documents: `docs/NEXT_STEPS.md` is what remains and who it needs;
 `docs/ARCHITECTURE.md` records the measured facts this code rests on, including several that
@@ -29,23 +29,25 @@ contradict what the plan originally assumed.
 **Plain, unencrypted `ws://` servers only.**
 
 The spec mandates Noise `KKpsk2` over `ws://` with the server as initiator, requires clients to
-implement Pairing PSK, and requires the management role of all clients. `Sendspin.SDK` 9.1.0 ships
-none of the three. That work is merged on `sendspin-dotnet` `main` after 9.1.0 (PRs #67 and #73)
-but is not in a published package, and **this repository deliberately does not hand-roll it**:
-Noise and CPace are cross-client protocol concerns that belong in the SDK, and a second
-implementation of a key exchange is a liability rather than an asset.
+implement Pairing PSK, and requires the management role of all clients. `Sendspin.SDK` 9.3.2 ships
+none of the three: 9.3.2 is the **9.x legacy line**, a curated backport for apps that cannot take
+10.0's breaking renames, and encryption is not part of it. That work is merged on `sendspin-dotnet`
+`main` (PRs #67 and #73) but **no 10.x is published on nuget.org at all — not even a prerelease**,
+so "blocked on 10.x" means blocked on something nobody can resolve today. And **this repository
+deliberately does not hand-roll it**: Noise and CPace are cross-client protocol concerns that belong
+in the SDK, and a second implementation of a key exchange is a liability rather than an asset.
 
 The practical consequence, stated plainly rather than discovered at runtime:
 
 - Against a server that **requires** encryption, this build **will not connect at all**.
 - Against a server that still accepts plain `ws://`, it connects and plays.
 
-Releases built on SDK 9.1.0 must therefore be labelled **pre-encryption**. Do not describe them as
+Releases built on SDK 9.3.2 must therefore be labelled **pre-encryption**. Do not describe them as
 spec compliant.
 
 **To lift this:** bump the `Sendspin.SDK` pin in `Directory.Packages.props` to the first published
-10.x, then add pairing UI and the management role. No other change here anticipates it, and none
-should until the API is real.
+10.x — which does not exist yet — then add pairing UI and the management role. No other change here
+anticipates it, and none should until the API is real.
 
 ## Player-role behaviour that is ours
 
@@ -57,7 +59,9 @@ These are not blocked on anything and are implemented here.
 | `static_delay_ms` reported, adjustable, and persisted across restarts | `SettingsStaticDelayStore`, backed by the one settings file. Covered by `SettingsPersistenceTests`. |
 | `required_lead_time_ms` and `min_buffer_ms` reported | `PlayerCapabilities` |
 | Stable, persisted, platform-neutral `client_id` | `ClientIdentity` |
-| Soft-sync bounded well inside ±0.5 % speed deviation | `SyncCorrectionPolicy` caps rate correction at ±500 ppm (0.05 %) and derives the SDK's resampling threshold from that cap |
+| Soft-sync bounded well inside ±0.5 % speed deviation | `SyncCorrectionPolicy` caps rate correction at ±500 ppm (0.05 %) and derives the SDK's resampling threshold from that cap. 9.3.0 made ±0.5 % a cap the SDK itself enforces; 500 ppm is a tenth of it, so nothing is clamped and no over-cap warning is raised — asserted by `SyncCorrectionPolicyTests.ToSdkOptions_StaysInsideTheSpecSpeedCapWithoutBeingClamped` |
+| Exactly one connection method at a time (connection.md) | `SendspinPlayerService.StartAsync` starts discovery **or** advertising, never both. `ConnectionMode.Auto` is no longer offered, and a persisted `Auto` migrates to `AdvertiseOnly` |
+| `buffer_capacity` advertised as a figure the buffer can honour | `PlayerCapabilities.Build` leaves it unset so the SDK derives it from the decoded buffer's 30 s default and the advertised formats. Pinned by `PlayerCapabilitiesTests` |
 | Late chunks dropped rather than played | SDK `TimedAudioBuffer` |
 | No `Thread.Sleep` on an audio or playback thread | Both thread-based backends wait on an event with a bounded timeout |
 | Controller command is `switch`, not `switch_group` | Uses the SDK's `Commands.Switch` constant |
@@ -66,11 +70,16 @@ These are not blocked on anything and are implemented here.
 
 ### Availability is not withheld until the clock filter converges
 
-**Status: cannot be fixed in this repository against SDK 9.1.0.**
+**Status: cannot be fixed in this repository against SDK 9.3.2.**
+
+**Re-verified against 9.3.2, not carried forward.** 9.3.0 reworked the clock filter's probe cadence
+— a link that stays noisy now falls back to the steady-state interval and withholds `IsClockSynced`
+— so the wording below was checked against the shipped assembly rather than assumed still true. The
+timeout path is unchanged: the log string below is byte-identical in 9.1.0 and 9.3.2.
 
 The spec requires a player to withhold availability until its time filter has converged, with no
 "timed out, proceed anyway" path. The pipeline is constructed with `waitForConvergence: true`, but
-SDK 9.1.0 does not honour that absolutely — on timeout it logs
+SDK 9.3.2 does not honour that absolutely — on timeout it logs
 
 ```
 [ClockSync] Timeout after {ElapsedMs}ms. Starting playback without full convergence.
@@ -86,6 +95,26 @@ behaviour without fixing it, and would trade a known bounded gap for an unbounde
 `sendspin-dotnet` — `AI_POLICY.md` bars an agent from opening issues, so this needs a human. The
 issue number belongs in this paragraph once it exists. Until then the row is a declared gap, not a
 ticked box, and no build should describe itself as meeting the convergence-gating requirement.
+
+### Two defects the 9.3.2 bump closed
+
+Recorded because both were real and neither is visible in the diff as a fix.
+
+- **`buffer_capacity` was advertising about one second of audio.** `PlayerCapabilities` set it to
+  `8_000` from a constant named and commented as milliseconds; the field is **compressed bytes**.
+  The spec makes it a hard per-player byte limit that servers fill toward, so the server was doing
+  exactly as told and the player was simply starved. Leaving it unset lets the SDK derive it — with
+  this build's format list, 192 000 bytes, which is 4/5 of what 30 s of the thinnest advertised
+  format occupies. The thinnest is a bitrate-less Opus entry, valued at the SDK's conservative
+  64 kbps fallback; declaring `AudioFormat.Bitrate` would tighten it and is deliberately not done.
+  The decoded PCM ring grows from 8 s to 30 s with it — roughly 3 MB to 11 MB at 48 kHz stereo — an
+  accepted cost.
+- **The reported sync error was converging at twice the physical correction.** Up to 9.2,
+  `NotifyExternalCorrection` moved the read cursor that `SyncErrorMicroseconds` is measured against,
+  while `SyncCorrectedSampleSource` already sizes its reads to the correction — so the same frames
+  were counted twice and the player read near zero while sitting about half the drift out of the
+  group. 9.3.0 made the call stats-only, which fixes it here without a code change. Nothing in this
+  repository was wrong; the number it was displaying was.
 
 ### Realtime-audio safety differs by platform, and one platform is knowingly short
 
@@ -193,8 +222,9 @@ dotnet test  src/Sendspin.Tests/Sendspin.Tests.csproj -c Release
 dotnet list  src/Sendspin.Tests/Sendspin.Tests.csproj package --vulnerable --include-transitive
 ```
 
-At the time of writing: three heads build clean with zero warnings, 125 tests pass, and no project
-reports a vulnerable package.
+At the time of writing: 143 tests pass and no project reports a vulnerable package. The Linux,
+Windows and shared heads build clean with zero warnings on a Linux machine; the macOS head needs
+the `macos` workload and so is built only on the macOS CI runner.
 
 The suite was confirmed to be a real gate rather than decoration by changing
 `VolumeCurve.Exponent` from 1.5 to 1.4 — six tests failed, including the one that drives the SDK's
@@ -212,8 +242,9 @@ grep -c 'continue-on-error:' .github/workflows/build.yml
 ```
 
 **What has actually been run, end to end:** the macOS `.app` launches, mints and persists its client
-identity, creates the tray item, registers with `MPRemoteCommandCenter`, and in `Auto` mode
-advertises and discovers simultaneously — it found two live Music Assistant servers on a real
-network. The audio *path* was exercised on macOS (see the measurements above). Nothing has been
+identity, creates the tray item, registers with `MPRemoteCommandCenter`, and found two live Music
+Assistant servers on a real network. That run was made in the since-retired `Auto` mode, which
+advertised and discovered simultaneously; the discovery half of it is what `DiscoverOnly` now does
+on its own. The audio *path* was exercised on macOS (see the measurements above). Nothing has been
 verified on Windows or Linux, and no synchronised playback against a second client has been measured
 anywhere; see `docs/NEXT_STEPS.md` item 4.

@@ -14,9 +14,11 @@ states what the shipped code does and does not implement.
 **Status: blocked on the SDK, not on effort.**
 
 The spec mandates Noise `KKpsk2` over `ws://` (server always initiator), requires clients to
-implement Pairing PSK, and requires the management role of all clients. `Sendspin.SDK` 9.1.0 ships
-none of the three. That work is merged on `sendspin-dotnet` `main` after 9.1.0 (PRs #67 and #73) but
-is not in a published package.
+implement Pairing PSK, and requires the management role of all clients. `Sendspin.SDK` 9.3.2 ships
+none of the three, and will not: 9.3.2 is the **9.x legacy line**, a curated backport for apps that
+cannot take 10.0's breaking renames. That work is merged on `sendspin-dotnet` `main` (PRs #67 and
+#73) but **no 10.x is published on nuget.org — not even a prerelease**, so this is blocked on
+something nobody can resolve today, not merely on an upgrade nobody has done.
 
 **This repository does not hand-roll it, and should not.** Noise and CPace are cross-client protocol
 concerns; a second implementation of a key exchange is a liability, not a feature. If the SDK is
@@ -35,6 +37,11 @@ at all**. Label releases **pre-encryption**. Do not describe them as spec compli
 4. Add the `management@v1` role to `PlayerCapabilities.Build`.
 5. Update the role table in `docs/COMPLIANCE.md` and drop the pre-encryption labelling.
 
+**Already prepared for, so it is not a migration surprise:** `ConnectionMode.Auto` is removed in
+10.0.0, and this repository no longer uses it — the enum is referenced only by the migration in
+`PlayerSettings.ApplyMigrations`, which rewrites a persisted `Auto` to `AdvertiseOnly`. Delete that
+migration when the enum member goes, not before: it is what carries an existing install across.
+
 ---
 
 ## 2. File the upstream convergence-gating issue
@@ -43,7 +50,10 @@ at all**. Label releases **pre-encryption**. Do not describe them as spec compli
 
 The spec requires a player to withhold availability until its time filter has converged, with no
 "timed out, proceed anyway" path. This **cannot be satisfied from this repository** against SDK
-9.1.0. The pipeline is constructed with `waitForConvergence: true`, but on timeout the SDK logs
+9.3.2 — re-checked against the shipped assembly rather than carried forward, because 9.3.0 reworked
+the clock filter's probe cadence. The timeout path is unchanged: the log string below is
+byte-identical in 9.1.0 and 9.3.2. The pipeline is constructed with `waitForConvergence: true`, but
+on timeout the SDK logs
 
 ```
 [ClockSync] Timeout after {ElapsedMs}ms. Starting playback without full convergence.
@@ -131,7 +141,30 @@ out, but first-run behaviour is genuinely unknown. Start with `dbus-monitor` and
 
 ---
 
-## 5. Wire the conformance harness into CI
+## 5. Surface the rest of the 9.3 buffer statistics
+
+**Status: blocked on the SDK's published surface, not on effort.**
+
+9.3 added the statistics that explain a bad sync number rather than restate it, and the diagnostics
+view can show only one of them. `AudioBufferStats.ClockDriftMs` is public and is displayed.
+`HardSyncStalled`, `HardSyncCount`, `LateChunksDropped` and `ContentHolesDetected` are **documented
+in the SDK's XML but declared `internal`**, because the 9.x line freezes its published surface.
+
+The loss that matters is `HardSyncStalled`. The SDK's own docs call it the actionable one: true means
+splicing has stopped closing the error, and the usual cause is an output latency the platform reports
+wrongly — which is exactly what this app's per-device manual offset exists to correct. Without it a
+user with a mis-reported latency sees a bad number and no hint of what to do about it.
+
+Reading them by reflection was considered and rejected: a shipping diagnostics path that depends on
+another package's private members fails silently and invisibly the first time a name moves.
+
+**First action:** when the pin moves to 10.x (item 1), check whether these are public there and add
+them to `PlayerDiagnosticsSnapshot` and `DiagnosticsView.axaml`. If 10.x also keeps them internal,
+that is worth an upstream issue alongside item 2.
+
+---
+
+## 6. Wire the conformance harness into CI
 
 **Status: named rather than quietly dropped.**
 
@@ -145,7 +178,7 @@ reason** — silent narrowing is worse than no harness.
 
 ---
 
-## 6. One loose thread
+## 7. One loose thread
 
 On the very first run of the built app, the settings file was written with
 `notifications.track_change: true` and `playback_state: true`, contradicting the shipped defaults

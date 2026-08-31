@@ -7,7 +7,7 @@ that feels like it belongs there. Windows 11, macOS (Apple Silicon) and Linux, b
 
 **Read [`docs/COMPLIANCE.md`](docs/COMPLIANCE.md) before deploying this.** It states which spec
 roles are implemented, which are not, and — importantly — **which servers a given build can
-actually talk to**. Builds on SDK 9.1.0 have no transport encryption and cannot connect to a
+actually talk to**. Builds on SDK 9.3.2 have no transport encryption and cannot connect to a
 server that requires it.
 
 | Document | What it is for |
@@ -23,8 +23,9 @@ the obvious answer, and each one cost real effort to establish.
 
 - **Synchronized playback** against the rest of a Sendspin group, using the SDK's Kalman clock
   filter and a real hardware audio clock rather than the OS wall clock.
-- **Both connection modes**: it advertises itself for a server to connect to, discovers servers
-  itself, or does both at once.
+- **Either connection mode**: it advertises itself for a server to connect to, or discovers servers
+  itself. One or the other, never both at once — connection.md allows a client exactly one
+  connection method at a time.
 - **Native OS media integration** — the Windows 11 media flyout, MPRIS on Plasma 6 and GNOME, and
   Now Playing / Control Center on macOS — so hardware media keys work without the app being
   focused.
