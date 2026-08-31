@@ -315,6 +315,26 @@ jobs:
           --runtime osx-arm64
           --output ./publish/osx-arm64
 
+      # The macOS SDK's publish artifact is the .pkg installer, so CreatePackage=false
+      # (see Sendspin.Player.csproj) leaves --output empty rather than filling it: the
+      # .app bundle is built into the project's own output directory and stays there.
+      # Stage it into the publish tree, which is what the steps below and the uploaded
+      # artifact expect.
+      - name: Stage the bundle
+        run: |
+          set -euo pipefail
+          bin=src/Sendspin.Player/bin/Release/net10.0-macos
+          built="$(find "$bin" -maxdepth 2 -name '*.app' -print -quit)"
+          if [ -z "$built" ]; then
+            echo "::error::No .app bundle was built"
+            echo "Build output was:"
+            find "$bin" -maxdepth 2
+            exit 1
+          fi
+          echo "Built bundle: $built"
+          mkdir -p ./publish/osx-arm64
+          cp -R "$built" ./publish/osx-arm64/
+
       # Three things that are silently wrong rather than loudly wrong, so they are
       # checked rather than assumed: a symlinked executable breaks
       # UNUserNotificationCenter, and a missing local-network key means discovery
@@ -325,6 +345,8 @@ jobs:
           app="$(find ./publish/osx-arm64 -maxdepth 2 -name '*.app' -print -quit)"
           if [ -z "$app" ]; then
             echo "::error::No .app bundle was produced"
+            echo "Publish output was:"
+            find ./publish/osx-arm64 -maxdepth 2
             exit 1
           fi
           echo "Bundle: $app"

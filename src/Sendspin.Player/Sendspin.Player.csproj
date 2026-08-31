@@ -76,6 +76,12 @@
     -->
     <PublishAot>false</PublishAot>
     <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
+    <!--
+      The macOS SDK defaults CreatePackage to true on publish, which puts a .pkg installer in the
+      output directory and leaves the .app behind in bin/. What ships here is the bundle itself —
+      CI inspects it and wraps it in a dmg — so the installer is the wrong artifact.
+    -->
+    <CreatePackage>false</CreatePackage>
   </PropertyGroup>
 
   <ItemGroup>
