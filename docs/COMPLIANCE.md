@@ -96,6 +96,36 @@ behaviour without fixing it, and would trade a known bounded gap for an unbounde
 issue number belongs in this paragraph once it exists. Until then the row is a declared gap, not a
 ticked box, and no build should describe itself as meeting the convergence-gating requirement.
 
+### `supported_roles` must carry the `@v1` suffix, and SDK 9.3.2 does not add it
+
+**Found by running the Linux build against Music Assistant; it silenced every platform, not just
+Linux.**
+
+`ClientRoles.Player` and its siblings are the pre-versioning spellings — bare `player`,
+`controller`, `metadata`, `artwork`. A current server matches `supported_roles` against **versioned**
+identifiers, and SDK 9.3.2 is half-migrated: it already emits its support objects keyed
+`player@v1_support` and `artwork@v1_support`, and only the role list kept the old spellings. A server
+therefore sees support objects for roles the client never listed:
+
+```
+non-compliant client: client/hello sent support objects for unlisted roles: player@v1, artwork@v1
+Client offered roles/versions this server does not implement: ['player', 'controller', 'metadata', 'artwork']
+```
+
+It then activates nothing — `server/hello` comes back with `active_roles: []` — registers the client
+as a *protocol* entry rather than a player, and never sends `stream/start`. The client connects,
+clock-syncs, reports `synchronized` and looks entirely healthy while no audio is ever requested of
+it. **Silence with no error on the client side is the signature of this bug**, and it is worth
+recognising because nothing in a client-side log points at it.
+
+`PlayerCapabilities.AdvertisedRoles` now advertises `player@v1`, `controller@v1`, `metadata@v1` and
+`artwork@v1`. Verified live: `active_roles` returns all four, `stream/start` arrives, and audio,
+artwork and metadata all work.
+
+This is ours to fix rather than a blocked-on-10.x item, because `ClientCapabilities.Roles` is a
+plain settable `List<string>` — the SDK imposes no constant. If a 10.x ever ships versioned members
+on `ClientRoles`, this list should be built from those instead of interpolating the suffix.
+
 ### Two defects the 9.3.2 bump closed
 
 Recorded because both were real and neither is visible in the diff as a fix.
