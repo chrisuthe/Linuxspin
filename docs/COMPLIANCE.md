@@ -120,7 +120,9 @@ recognising because nothing in a client-side log points at it.
 
 `PlayerCapabilities.AdvertisedRoles` now advertises `player@v1`, `controller@v1`, `metadata@v1` and
 `artwork@v1`. Verified live: `active_roles` returns all four, `stream/start` arrives, and audio,
-artwork and metadata all work.
+artwork and metadata all work. Pinned by
+`PlayerCapabilitiesTests.Roles_AreAdvertisedWithTheirVersionSuffix` and
+`Roles_CoverEveryRoleTheSdkEmitsASupportObjectFor`, both of which fail against the bare spellings.
 
 This is ours to fix rather than a blocked-on-10.x item, because `ClientCapabilities.Roles` is a
 plain settable `List<string>` — the SDK imposes no constant. If a 10.x ever ships versioned members
