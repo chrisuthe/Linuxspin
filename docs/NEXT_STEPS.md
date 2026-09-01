@@ -209,6 +209,29 @@ is not reachable from the cross-platform test project.
 
 ---
 
+## 8. Every `DispatcherTimer` is late on the Wayland head
+
+**Status: shipping today, measured, fix shape known. Small.**
+
+On the default Linux head `Avalonia.Wayland` 12.1.1 fires `DispatcherTimer` ticks on a coarse
+boundary 100–200 ms after they are due: a 16 ms timer ticks every 140–200 ms, a 100 ms one every
+231 ms, a 500 ms one every 600 ms, at every priority. So the 500 ms progress timer in
+`MainViewModel` and the 500 ms refresh in `DiagnosticsViewModel` both tick every 600 ms on Wayland
+and at 500 ms on X11. The same backend also runs `RequestAnimationFrame` and Avalonia's own animation
+clock at about 25 000 Hz without a frame between, so neither is a substitute. The measurements and
+the table are in the *UI shell* section of `docs/ARCHITECTURE.md`.
+
+**First action:** drive both view-model timers from a `System.Threading.Timer` (or `PeriodicTimer`)
+that posts to `Dispatcher.UIThread` — measured at 62 Hz on both heads for a 16 ms period — rather
+than from `DispatcherTimer`. Re-check the backend on every `Avalonia.Wayland` bump before deciding
+whether the workaround can go:
+
+```
+dotnet run --project scripts/spike/ShellSpike -- clock
+```
+
+---
+
 ## Things that are done and should not be reopened
 
 Recorded so the reasoning is not relitigated from scratch:
