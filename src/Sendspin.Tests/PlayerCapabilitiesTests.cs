@@ -15,11 +15,22 @@ namespace Sendspin.Tests;
 /// </remarks>
 public sealed class PlayerCapabilitiesTests
 {
-    private static SDK.Client.ClientCapabilities Build() =>
-        PlayerCapabilities.Build(
-            new PlayerSettings { ClientId = "id", PlayerName = "Kitchen" },
-            device: null,
-            softwareVersion: "1.0.0");
+    private static SDK.Client.ClientCapabilities Build(string? preferredCodec = null)
+    {
+        var settings = new PlayerSettings { ClientId = "id", PlayerName = "Kitchen" };
+
+        if (preferredCodec is not null)
+        {
+            settings.PreferredCodec = preferredCodec;
+        }
+
+        return PlayerCapabilities.Build(settings, device: null, softwareVersion: "1.0.0");
+    }
+
+    private static List<string> AdvertisedCodecOrder(SDK.Client.ClientCapabilities capabilities) =>
+        [.. capabilities.AudioFormats!
+            .Select(format => format.Codec)
+            .Distinct(StringComparer.OrdinalIgnoreCase)];
 
     /// <summary>
     /// Every advertised role must carry its <c>@v1</c> suffix.
@@ -126,5 +137,23 @@ public sealed class PlayerCapabilitiesTests
 
         Assert.NotEmpty(opus);
         Assert.All(opus, format => Assert.Null(format.Bitrate));
+    }
+
+    /// <summary>
+    /// The preferred codec leads, and the others follow in their declared order.
+    /// </summary>
+    /// <remarks>
+    /// This is the sequence the connect-time log line reports, and the one whose drift started
+    /// all of this: a <c>preferred_codec</c> silently rewritten from <c>flac</c> to <c>pcm</c>
+    /// made the player advertise PCM first, and the server — correctly — took it. The ordering
+    /// itself was never wrong, which is exactly why nothing pointed at the setting.
+    /// </remarks>
+    [Theory]
+    [InlineData(AudioCodecs.Flac, new[] { AudioCodecs.Flac, AudioCodecs.Opus, AudioCodecs.Pcm })]
+    [InlineData(AudioCodecs.Opus, new[] { AudioCodecs.Opus, AudioCodecs.Flac, AudioCodecs.Pcm })]
+    [InlineData(AudioCodecs.Pcm, new[] { AudioCodecs.Pcm, AudioCodecs.Flac, AudioCodecs.Opus })]
+    public void Codecs_AreAdvertisedPreferredFirst(string preferred, string[] expected)
+    {
+        Assert.Equal(expected, AdvertisedCodecOrder(Build(preferred)));
     }
 }
