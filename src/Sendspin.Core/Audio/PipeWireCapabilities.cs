@@ -107,6 +107,37 @@ public sealed record PipeWireGraph(
 
         return new AudioDeviceCapabilities(mixRate, sink.Channels, sink.SampleRates, sink.MaxBitDepth);
     }
+
+    /// <summary>
+    /// Whether this dump told us what rate the graph runs at.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>This is what decides whether a caller may substitute its own rate.</strong> A zero
+    /// <see cref="AudioDeviceCapabilities.MixSampleRate"/> out of <see cref="Describe"/> has two
+    /// entirely different meanings, and conflating them reintroduces the bug this class exists to
+    /// prevent:
+    /// </para>
+    /// <list type="bullet">
+    /// <item><description>
+    /// <strong>Policy known, rate withheld</strong> — the graph runs at a rate this sink cannot
+    /// meet, so <see cref="Describe"/> deliberately reports none. That is a <em>finding</em>, and
+    /// substituting a rate from anywhere else overrides it with the very number that was rejected:
+    /// the OpenAL mixer runs at the graph rate, so probing <c>ALC_FREQUENCY</c> hands back exactly
+    /// the rate PipeWire just said this sink will not take.
+    /// </description></item>
+    /// <item><description>
+    /// <strong>Policy unknown</strong> — the dump carried no <c>settings</c> metadata, so nothing
+    /// is known about the graph clock. That is an <em>absence</em>, and falling back to the mixer
+    /// rate is strictly better than reporting nothing.
+    /// </description></item>
+    /// </list>
+    /// <para>
+    /// So a caller may fall back only when this is false. It is true whenever the dump carried a
+    /// clock policy, whether or not any particular sink could meet it.
+    /// </para>
+    /// </remarks>
+    public bool HasRatePolicy => GraphSampleRate > 0;
 }
 
 /// <summary>

@@ -18,21 +18,14 @@ namespace Sendspin.Platform.Windows.Audio;
 /// </para>
 /// <para>
 /// <strong>What <see cref="AudioDeviceInfo.SupportedSampleRates"/> means here.</strong> Shared
-/// mode only accepts the engine's own mix rate without conversion, so for most devices this is
-/// a single entry. That is the honest answer to "what does this device take as-is"; other rates
-/// still play, with the engine's resampler in the path and its latency visible in the audio
-/// clock.
+/// mode renders at the engine's mix format and converts everything else, so the rates that reach
+/// the converter unresampled are exactly one: the mix rate. Other rates still play, with the
+/// engine's resampler in the path and its latency visible in the audio clock — they are simply not
+/// what that field promises. See <see cref="ProbeSampleRates"/>.
 /// </para>
 /// </remarks>
 public sealed class WasapiDeviceEnumerator : IAudioDeviceEnumerator
 {
-    /// <summary>
-    /// Rates worth asking about. The two consumer families plus their multiples, which is every
-    /// rate the protocol's codecs are produced at.
-    /// </summary>
-    private static readonly int[] CandidateSampleRates =
-        [44100, 48000, 88200, 96000, 176400, 192000];
-
     private readonly ILogger<WasapiDeviceEnumerator> _logger;
 
     public WasapiDeviceEnumerator(ILogger<WasapiDeviceEnumerator> logger)
@@ -124,7 +117,7 @@ public sealed class WasapiDeviceEnumerator : IAudioDeviceEnumerator
                 IsDefault = isDefault,
                 MixSampleRate = mixFormat.SampleRate,
                 MixChannels = mixFormat.Channels,
-                SupportedSampleRates = ProbeSampleRates(client, mixFormat)
+                SupportedSampleRates = ProbeSampleRates(mixFormat)
             };
         }
         catch (COMException ex)
@@ -143,34 +136,30 @@ public sealed class WasapiDeviceEnumerator : IAudioDeviceEnumerator
         }
     }
 
-    private IReadOnlyList<int> ProbeSampleRates(AudioClient client, WaveFormat mixFormat)
-    {
-        var supported = new List<int>();
-
-        foreach (var rate in CandidateSampleRates)
-        {
-            try
-            {
-                var candidate = WaveFormat.CreateIeeeFloatWaveFormat(rate, mixFormat.Channels);
-                if (client.IsFormatSupported(AudioClientShareMode.Shared, candidate))
-                {
-                    supported.Add(rate);
-                }
-            }
-            catch (COMException ex)
-            {
-                _logger.LogDebug(ex, "Audio endpoint refused a {Rate} Hz format query", rate);
-            }
-        }
-
-        // The rate the engine is running at is supported by definition, even if the query above
-        // could not be completed for it.
-        if (!supported.Contains(mixFormat.SampleRate))
-        {
-            supported.Add(mixFormat.SampleRate);
-            supported.Sort();
-        }
-
-        return supported;
-    }
+    /// <summary>
+    /// Returns the rates this endpoint renders without conversion, per the
+    /// <see cref="AudioDeviceInfo.SupportedSampleRates"/> contract.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>In shared mode that is the engine's mix rate, and nothing else.</strong> The engine
+    /// renders at its mix format and converts everything else, so a rate is either the mix rate or
+    /// it is resampled — there is no third case for this player to report. Probing a candidate list
+    /// with <c>IsFormatSupported</c> was answering a different question: what the endpoint will
+    /// <em>accept</em>, which in shared mode includes whatever the engine is willing to convert.
+    /// </para>
+    /// <para>
+    /// Nothing real is lost by narrowing it. An endpoint genuinely running at 96 kHz reports 96 kHz
+    /// as its mix rate, so it still earns its high-resolution tier; what disappears is only the
+    /// claim to rates the engine would have resampled.
+    /// </para>
+    /// <para>
+    /// This was tightened after the equivalent bug was found on macOS. Windows had been safe by
+    /// accident rather than by construction — the probe happening to admit little beyond the mix
+    /// rate — and "safe by accident" stopped being good enough once the advertisement began
+    /// <em>leading</em> with the high-resolution tier rather than appending it.
+    /// </para>
+    /// </remarks>
+    private static IReadOnlyList<int> ProbeSampleRates(WaveFormat mixFormat) =>
+        mixFormat.SampleRate > 0 ? [mixFormat.SampleRate] : [];
 }

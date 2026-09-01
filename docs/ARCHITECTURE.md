@@ -436,6 +436,47 @@ Opus is now constrained to the rates it accepts. The SDK's PCM and FLAC decoders
 same way and do handle 24-bit at 48/96/192 kHz, which is what makes the hi-res tier honest on the
 decode side.
 
+### `SupportedSampleRates` means "runs natively as configured" — on all three platforms
+
+The field is not "rates the hardware is capable of" and not "rates that will play". Almost any rate
+will play. It answers one question: **if the server sent audio at this rate right now, would
+anything resample it before the converter?** If the platform would have to be reconfigured first —
+a device rate switched, a daemon setting changed, an exclusive-mode stream taken — the rate does not
+belong in the list, however capable the hardware is.
+
+| platform | source | why it satisfies the contract |
+| --- | --- | --- |
+| Linux | sink `EnumFormat` ∩ PipeWire's `clock.allowed-rates` | the node's own list is the hardware's capability, not the daemon's willingness |
+| Windows | the engine mix rate | shared mode renders at the mix format and converts everything else |
+| macOS | the current nominal rate only | this player never sets the nominal rate, so every other available rate goes through AUHAL's converter |
+
+**This was written down because its absence shipped a bug.** The field silently meant something
+different per enumerator, and the shared tiering in `PlayerCapabilities` could not tell. macOS filled
+it from `DeviceAvailableNominalSampleRates` — rates the device could be *switched* to — while
+`AuhalRenderPlayer` only ever *reads* `DeviceNominalSampleRate` and never sets it. So a Mac running
+at 48 kHz whose output also lists 96 kHz advertised `flac/96000/16` **ahead of** `flac/48000/16`, and
+CoreAudio resampled it straight back down: more bytes over the network to reach a resampler, at no
+gain in depth — the exact failure the hi-res work exists to prevent.
+
+Windows escaped only by accident: its shared-mode `IsFormatSupported` probe happened to admit little
+beyond the engine mix rate. "Safe by accident" stopped being good enough once the advertisement
+began *leading* with the high-resolution tier instead of appending it, so that probe was narrowed to
+the mix rate too — which loses nothing, because an endpoint genuinely running at 96 kHz reports
+96 kHz as its mix rate and still earns its tier.
+
+The fix is in the enumerator, not in the shared tiering, and that placement is the point. On Linux a
+rate above the current one genuinely *is* native when the daemon's clock policy permits it, so
+"listed but not the current rate" is legitimate there and illegitimate on macOS. Shared code cannot
+distinguish the two; only the enumerator knows which it is. `CoreAudioSampleRates.ResolveNative`
+holds the macOS decision and lives in `Sendspin.Core` so it can be tested, the same split the
+PipeWire parsing uses.
+
+The shared side was tightened too, but for a different gap: a rate reaches the hi-res tier only if
+it is in `SupportedSampleRates` *or* is the device's current `MixSampleRate`. The rate threshold
+alone was never a gate, because `ResolveSampleRates` promotes the mix rate and copies the device
+list before appending the two hardcoded fallbacks — so "above 88.2 kHz" only excluded the fallbacks,
+and the tier was resting on every enumerator happening to include its own mix rate in its list.
+
 ## Realtime audio, per platform
 
 The three platforms genuinely differ, and the honest statement differs with them.

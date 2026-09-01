@@ -114,39 +114,36 @@ public sealed class CoreAudioDeviceEnumerator : IAudioDeviceEnumerator
         return channels;
     }
 
-    private static IReadOnlyList<int> ReadSupportedSampleRates(uint deviceId)
+    /// <summary>
+    /// Returns the rates this device runs natively as configured, per the
+    /// <see cref="AudioDeviceInfo.SupportedSampleRates"/> contract.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>That is the nominal rate, and only the nominal rate.</strong>
+    /// <c>DeviceAvailableNominalSampleRates</c> is tempting and wrong here: it lists what the
+    /// device could be <em>switched</em> to, and this player never switches it —
+    /// <c>AuhalRenderPlayer</c> reads <c>DeviceNominalSampleRate</c> for its latency arithmetic
+    /// and never sets it. So a stream at any other rate in that list goes through AUHAL's
+    /// converter, which is precisely what this field must not promise.
+    /// </para>
+    /// <para>
+    /// This mattered concretely: with the wider list, a Mac running at 48 kHz whose output also
+    /// lists 96 kHz advertised a 96 kHz format <em>ahead</em> of 48 kHz, and CoreAudio resampled
+    /// it straight back down — more bytes over the network to reach a resampler, at no gain in
+    /// depth. The available-rates query is still worth having if this player ever sets the nominal
+    /// rate; until it does, the honest answer is the one rate that needs no conversion.
+    /// </para>
+    /// </remarks>
+    private static IReadOnlyList<int> ReadSupportedSampleRates(uint deviceId, int nominalRate)
     {
         var ranges = CoreAudioInterop.GetPropertyArray<AudioValueRange>(
             deviceId, CoreAudioInterop.DeviceAvailableNominalSampleRates, CoreAudioInterop.ScopeOutput);
 
-        if (ranges.Length == 0)
-        {
-            return [];
-        }
-
-        var rates = new SortedSet<int>();
-
-        foreach (var range in ranges)
-        {
-            if (Math.Abs(range.Maximum - range.Minimum) < 1.0)
-            {
-                rates.Add((int)Math.Round(range.Minimum));
-                continue;
-            }
-
-            // A genuine continuous range, which aggregate and virtual devices do report. The
-            // protocol wants discrete rates, so offer the standard ones the range covers rather
-            // than inventing endpoints no server asks for.
-            foreach (var candidate in (int[])[8000, 11025, 16000, 22050, 32000, 44100, 48000, 88200, 96000, 176400, 192000])
-            {
-                if (candidate >= range.Minimum && candidate <= range.Maximum)
-                {
-                    rates.Add(candidate);
-                }
-            }
-        }
-
-        return [.. rates];
+        // The decision itself is in Core, where it can be tested; this method is the property read.
+        return CoreAudioSampleRates.ResolveNative(
+            nominalRate,
+            [.. ranges.Select(range => new SampleRateRange(range.Minimum, range.Maximum))]);
     }
 
     private AudioDeviceInfo? Describe(uint deviceId, bool isDefault)
@@ -174,14 +171,20 @@ public sealed class CoreAudioDeviceEnumerator : IAudioDeviceEnumerator
         CoreAudioInterop.TryGetProperty<double>(
             deviceId, CoreAudioInterop.DeviceNominalSampleRate, CoreAudioInterop.ScopeGlobal, out var nominalRate);
 
+        var mixRate = nominalRate > 0 ? (int)Math.Round(nominalRate) : 0;
+
         return new AudioDeviceInfo
         {
             Id = uid,
             Name = string.IsNullOrWhiteSpace(name) ? uid : name,
             IsDefault = isDefault,
-            MixSampleRate = nominalRate > 0 ? (int)Math.Round(nominalRate) : 0,
+            MixSampleRate = mixRate,
             MixChannels = channels,
-            SupportedSampleRates = ReadSupportedSampleRates(deviceId)
+            SupportedSampleRates = ReadSupportedSampleRates(deviceId, mixRate)
+
+            // MaxBitDepth is deliberately left unset. AUHAL renders float32 and this enumerator
+            // does not query the stream's physical format, so there is no measured depth to report
+            // — and 0 means "not reported", which advertises 16-bit and changes nothing here.
         };
     }
 }
