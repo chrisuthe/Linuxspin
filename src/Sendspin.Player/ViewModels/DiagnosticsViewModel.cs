@@ -22,6 +22,8 @@ public sealed partial class DiagnosticsViewModel : ObservableObject, IDisposable
     private readonly SyncCorrectionPolicy _policy;
     private readonly UiClock _clock = new(RefreshInterval);
 
+    private bool _isDisposed;
+
     [ObservableProperty]
     private PlayerDiagnosticsSnapshot _snapshot = PlayerDiagnosticsSnapshot.Empty;
 
@@ -101,6 +103,13 @@ public sealed partial class DiagnosticsViewModel : ObservableObject, IDisposable
     /// </summary>
     public void SetVisible(bool visible)
     {
+        if (_isDisposed)
+        {
+            // Startup shows this pane through a dispatcher invoke that can land after shutdown
+            // has disposed the clock; there is nothing left to poll for.
+            return;
+        }
+
         IsVisible = visible;
 
         if (visible)
@@ -115,7 +124,11 @@ public sealed partial class DiagnosticsViewModel : ObservableObject, IDisposable
     }
 
     /// <inheritdoc/>
-    public void Dispose() => _clock.Dispose();
+    public void Dispose()
+    {
+        _isDisposed = true;
+        _clock.Dispose();
+    }
 
     /// <summary>
     /// Notifies the derived properties, which are all computed from

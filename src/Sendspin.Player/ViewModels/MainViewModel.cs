@@ -543,6 +543,12 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         Dispatcher.UIThread.Post(() =>
         {
+            if (_isDisposed)
+            {
+                // Posted before disposal, run after it: the clock is gone, and so is the reason.
+                return;
+            }
+
             IsConnected = e.IsConnected;
             IsConnecting = false;
             ServerName = e.ServerName;

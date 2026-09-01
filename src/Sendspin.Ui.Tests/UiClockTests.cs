@@ -48,14 +48,15 @@ public sealed class UiClockTests(HeadlessSession headless)
         Assert.Equal(0, ticks);
         Assert.True(clock.DroppedTicks >= 10, $"{clock.DroppedTicks} dropped");
 
-        // When it frees up there is exactly one tick waiting, not sixty.
+        // When it frees up there is one tick waiting, not sixty — and it does not fire, because
+        // the clock was stopped before it ran. A callback already in flight at Stop can still
+        // count one more drop, hence the settle before the counter is read.
         clock.Stop();
+        Thread.Sleep(50);
         var droppedAtStop = clock.DroppedTicks;
         Dispatcher.UIThread.RunJobs();
 
         Assert.Equal(0, ticks);
-
-        // ...and that one did not fire, because the clock had been stopped before it ran.
         Assert.Equal(droppedAtStop, clock.DroppedTicks);
     });
 
