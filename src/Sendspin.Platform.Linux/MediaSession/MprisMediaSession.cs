@@ -481,29 +481,29 @@ public sealed class MprisMediaSession : IMediaSession
         switch (context.Request.MemberAsString)
         {
             case "GetAll":
-            {
-                using var writer = context.CreateReplyWriter("a{sv}");
-                writer.WriteDictionary(PropertiesFor(reader.ReadString()));
-                context.Reply(writer.CreateMessage());
-                break;
-            }
-
-            case "Get":
-            {
-                var interfaceName = reader.ReadString();
-                var propertyName = reader.ReadString();
-
-                if (!PropertiesFor(interfaceName).TryGetValue(propertyName, out var value))
                 {
-                    context.ReplyError(ErrorInvalidArgs, $"No such property {interfaceName}.{propertyName}");
+                    using var writer = context.CreateReplyWriter("a{sv}");
+                    writer.WriteDictionary(PropertiesFor(reader.ReadString()));
+                    context.Reply(writer.CreateMessage());
                     break;
                 }
 
-                using var writer = context.CreateReplyWriter("v");
-                writer.WriteVariant(value);
-                context.Reply(writer.CreateMessage());
-                break;
-            }
+            case "Get":
+                {
+                    var interfaceName = reader.ReadString();
+                    var propertyName = reader.ReadString();
+
+                    if (!PropertiesFor(interfaceName).TryGetValue(propertyName, out var value))
+                    {
+                        context.ReplyError(ErrorInvalidArgs, $"No such property {interfaceName}.{propertyName}");
+                        break;
+                    }
+
+                    using var writer = context.CreateReplyWriter("v");
+                    writer.WriteVariant(value);
+                    context.Reply(writer.CreateMessage());
+                    break;
+                }
 
             case "Set":
                 SetProperty(context, ref reader);
