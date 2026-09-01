@@ -119,6 +119,13 @@ public sealed class WasapiRenderPlayer : AudioPlayerBase
     public override string TimingSourceName => Volatile.Read(ref _clockUsable) ? "audio-clock" : "wall-clock";
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// WASAPI's shared-mode render format here is IEEE float in both branches of
+    /// <see cref="CreateRenderFormat"/>, so this is fixed rather than negotiated.
+    /// </remarks>
+    public override string NegotiatedSampleFormat => "float32";
+
+    /// <inheritdoc/>
     protected override int MeasuredOutputLatencyMs
     {
         get

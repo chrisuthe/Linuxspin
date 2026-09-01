@@ -40,6 +40,23 @@ public sealed class AudioDeviceInfo
     /// server instead of a hardcoded list; empty when the platform cannot report them.
     /// </summary>
     public IReadOnlyList<int> SupportedSampleRates { get; init; } = [];
+
+    /// <summary>
+    /// The deepest sample format the device accepts, or 0 when the platform cannot report it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Gates the high-resolution tier in the advertisement: a 24 here is what allows 24-bit
+    /// formats to be offered at all. 0 means "not reported", which is treated as "16-bit only" —
+    /// the conservative reading, and the one that keeps a platform that has not implemented this
+    /// advertising exactly what it does today.
+    /// </para>
+    /// <para>
+    /// Reported by the Linux enumerator from PipeWire. Windows and macOS leave it unset for now
+    /// and so advertise no 24-bit tier; their existing rate reporting is unaffected.
+    /// </para>
+    /// </remarks>
+    public int MaxBitDepth { get; init; }
 }
 
 /// <summary>

@@ -129,6 +129,13 @@ public sealed unsafe class AuhalRenderPlayer : AudioPlayerBase
 
     /// <inheritdoc/>
     /// <remarks>
+    /// The AUHAL stream format is built with <c>BitsPerChannel = sizeof(float) * 8</c>, so this is
+    /// fixed rather than negotiated.
+    /// </remarks>
+    public override string NegotiatedSampleFormat => "float32";
+
+    /// <inheritdoc/>
+    /// <remarks>
     /// The ring's prefill, measured after it is filled rather than assumed. This is a real
     /// constant delay between the sample source and the DAC that no device property reports,
     /// which is exactly the case this property exists for.

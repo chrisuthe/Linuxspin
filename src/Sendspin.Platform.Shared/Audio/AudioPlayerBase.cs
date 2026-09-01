@@ -126,6 +126,19 @@ public abstract class AudioPlayerBase : IAudioPlayer
     public abstract string TimingSourceName { get; }
 
     /// <summary>
+    /// Gets the sample format this backend actually hands the device, e.g. <c>float32</c> or
+    /// <c>int16</c>.
+    /// </summary>
+    /// <remarks>
+    /// Reported alongside rate and channels because the advertised bit depth is a promise about
+    /// the whole path, and the render stage is the one place it can be quietly broken: a client
+    /// that advertises 24-bit and converts to <c>int16</c> before the device has thrown the extra
+    /// bits away without telling anyone. This makes the negotiated depth visible in the same line
+    /// that already reports the negotiated rate.
+    /// </remarks>
+    public virtual string NegotiatedSampleFormat => "unknown";
+
+    /// <summary>
     /// Gets the logger for this player.
     /// </summary>
     protected ILogger Logger { get; }
@@ -166,10 +179,12 @@ public abstract class AudioPlayerBase : IAudioPlayer
             SetState(AudioPlayerState.Stopped);
 
             Logger.LogInformation(
-                "Audio output ready: {Rate} Hz, {Channels} ch, measured latency {LatencyMs} ms " +
+                "Audio output ready: {Rate} Hz, {Channels} ch, {SampleFormat} out " +
+                "(stream {StreamBitDepth}), measured latency {LatencyMs} ms " +
                 "(+{OffsetMs} ms manual), timing source {TimingSource}",
-                format.SampleRate, format.Channels, MeasuredOutputLatencyMs, ManualLatencyOffsetMs,
-                TimingSourceName);
+                format.SampleRate, format.Channels, NegotiatedSampleFormat,
+                format.BitDepth is { } bits ? $"{bits}-bit" : "no declared depth",
+                MeasuredOutputLatencyMs, ManualLatencyOffsetMs, TimingSourceName);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

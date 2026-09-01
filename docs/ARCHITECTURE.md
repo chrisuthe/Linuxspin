@@ -330,6 +330,9 @@ AL_SOFT_source_start_delay available
 Audio output ready: 48000 Hz, 2 ch, measured latency 21 ms (+0 ms manual), timing source audio-clock
 ```
 
+(That line has since gained the negotiated sample format — see *Linux — capability discovery goes
+through PipeWire* below. The rest of the record stands as it was.)
+
 All three hand-bound extensions resolve, `TimingSourceName` reports `audio-clock`, enumeration lists
 both outputs with the right one defaulted, and `SwitchDeviceAsync` reopens either device with
 playback uninterrupted and the clock re-anchored. Nothing in this section had to be revised in the
@@ -353,6 +356,85 @@ The same asymmetry drives the Flatpak's audio grant: `org.freedesktop.Platform` 
 Soft 1.24.3 built with the **pulse backend only**, so `--filesystem=xdg-run/pipewire-0` on its own
 reaches nothing inside the sandbox. See the reasoning kept alongside both grants in
 `packaging/flatpak/io.sendspin.client.yml`.
+
+### Linux — capability discovery goes through PipeWire, playback stays on OpenAL
+
+**OpenAL cannot answer what the device supports, and its one rate-shaped property actively lies.**
+There is no accepted-rate query and no channel-count query in OpenAL at all. `ALC_FREQUENCY` looks
+like it might serve, and does not: open a device with `ALC_FREQUENCY` set and read it back, and it
+returns *exactly what was asked for*, whatever the hardware can do. Measured on both outputs of the
+dev machine:
+
+```
+device: Ryzen HD Audio Controller Analog Stereo
+   req  96000 -> ALC_FREQUENCY  96000
+   req 192000 -> ALC_FREQUENCY 192000
+device: Radeon High Definition Audio Controller Digital Stereo (HDMI 3)
+   req  96000 -> ALC_FREQUENCY  96000
+   req 192000 -> ALC_FREQUENCY 192000     <-- this sink's node caps at 48 kHz
+```
+
+OpenAL Soft runs its own mixer at whatever rate it was asked for and resamples into the backend, so
+it can never answer "no". It is unusable as a gate on an advertisement. The sink node's PipeWire
+`EnumFormat` is the real list, and reading it opens no device — which is what made the OpenAL
+enumerator's old restraint ("only probe the default device, opening one has side effects")
+unnecessary rather than merely inconvenient.
+
+**A node's `EnumFormat` is only half the answer; the daemon's clock policy is the other half.**
+PipeWire clocks the *entire graph* at one rate, chosen from `clock.allowed-rates`, and a stream at
+any other rate is resampled on the way in. On the dev machine the analog sink's `EnumFormat` is
+`rate: Range{default 48000, min 48000, max 192000}` — the converter genuinely reaches 192 kHz — while
+the daemon ships with:
+
+```
+clock.rate           = 48000
+clock.allowed-rates  = [ 48000 ]
+```
+
+Playing a 96 kHz file and sampling the node's negotiated `Format` three times during playback showed
+`48000` throughout: PipeWire resampled and never renegotiated. Setting `clock.force-rate 96000` at
+runtime and replaying moved the node to `96000`. **So the hardware can and the daemon will not**, and
+advertising 96/24 on that box would buy nothing but a resampler. What is reported is therefore the
+*intersection* of the node's `EnumFormat` and the rates the daemon's clock policy will grant, which
+is the only figure that means "this plays without a resampler in the path".
+
+Two consequences worth keeping:
+
+- **`MixSampleRate` is now answered for every device, not just the default.** The graph clock is
+  shared, so one `pw-dump` gives every node's mix rate without opening any of them. But it is
+  withheld from a sink that cannot *meet* the graph rate — force the graph to 96 kHz and the HDMI
+  sink, capped at 48 kHz, must not report 96 kHz as its mix rate. That bug was caught by running the
+  probe against real hardware, not by reading the code.
+- **Where PipeWire is absent the fields stay empty** and the client falls back to the pre-PipeWire
+  behaviour. A plain-ALSA or PulseAudio box is a supported configuration, not a degraded one.
+
+The reader shells out to `pw-dump` rather than binding libpipewire: binding it means a main loop, a
+roundtrip and a registry listener on a background thread to answer a question asked once per
+enumeration. The parsing is in `Sendspin.Core` (a pure function over the JSON, unit-tested against
+the shapes a live daemon emits); only the process invocation lives in `Sendspin.Platform.Linux`.
+
+**The render path is float32 where the driver has it.** `AL_EXT_FLOAT32` is present on OpenAL Soft
+1.24.2, and since the sample source is already `float[]`, the float path performs *no* per-sample
+conversion where the int16 path performed one — it is both the wider and the cheaper route. The
+int16 path is kept for drivers without the extension. Note the extension must be queried with
+`alIsExtensionPresent` on a **current context**: `alcIsExtensionPresent` answers "no" for
+`AL_EXT_FLOAT32`, `AL_EXT_DOUBLE` and `AL_EXT_MCFORMATS` on a driver that plainly has all three,
+because those are AL extensions rather than ALC ones. The negotiated format is reported alongside
+the rate:
+
+```
+Audio output ready: 96000 Hz, 2 ch, float32 out (stream 24-bit), measured latency 13 ms
+(+0 ms manual), timing source audio-clock
+```
+
+**Opus was being advertised at a rate its own decoder rejects.** Unrelated to PipeWire, found while
+checking what the SDK can actually decode: `OpusDecoder` throws
+`ArgumentException("Sample rate is invalid (must be 8/12/16/24/48 Khz)")` on construction for
+anything outside that set, and this player advertised `opus/44100` on *every* platform. A server
+that picked it got a decoder that threw before the first sample — a dead stream, not a degraded one.
+Opus is now constrained to the rates it accepts. The SDK's PCM and FLAC decoders were checked the
+same way and do handle 24-bit at 48/96/192 kHz, which is what makes the hi-res tier honest on the
+decode side.
 
 ## Realtime audio, per platform
 

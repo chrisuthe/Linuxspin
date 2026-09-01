@@ -23,6 +23,16 @@ namespace Sendspin.Platform.Linux.Audio;
 /// present the current device is all OpenAL will admit to, and that single entry is what is
 /// returned.
 /// </para>
+/// <para>
+/// <strong>Capability discovery does not go through OpenAL.</strong> OpenAL has no accepted-rate
+/// or channel query, and the one rate-shaped property it does expose cannot be used as one:
+/// opening a device with <c>ALC_FREQUENCY</c> set and reading it back returns the value that was
+/// asked for, whatever the hardware can do. Measured on this project's dev box, both outputs
+/// echoed 192 000 — including an HDMI sink whose PipeWire node caps at 48 000. OpenAL Soft runs
+/// its own mixer at the requested rate and resamples into the backend, so it can never answer
+/// "no". Where PipeWire is present, <see cref="PipeWireCapabilityReader"/> supplies the real
+/// answer; playback stays on OpenAL either way. See <c>docs/ARCHITECTURE.md</c>.
+/// </para>
 /// </remarks>
 public sealed unsafe class OpenAlDeviceEnumerator : IAudioDeviceEnumerator, IDisposable
 {
@@ -51,6 +61,7 @@ public sealed unsafe class OpenAlDeviceEnumerator : IAudioDeviceEnumerator, IDis
     private const int MaxDevices = 128;
 
     private readonly ILogger<OpenAlDeviceEnumerator> _logger;
+    private readonly PipeWireCapabilityReader _pipeWire;
     private readonly Lock _gate = new();
 
     private ALContext? _alc;
@@ -59,9 +70,20 @@ public sealed unsafe class OpenAlDeviceEnumerator : IAudioDeviceEnumerator, IDis
     private bool _disposed;
 
     public OpenAlDeviceEnumerator(ILogger<OpenAlDeviceEnumerator> logger)
+        : this(logger, pipeWire: null)
+    {
+    }
+
+    /// <summary>
+    /// Test seam: takes a reader whose PipeWire document is supplied rather than run.
+    /// </summary>
+    internal OpenAlDeviceEnumerator(
+        ILogger<OpenAlDeviceEnumerator> logger,
+        PipeWireCapabilityReader? pipeWire)
     {
         ArgumentNullException.ThrowIfNull(logger);
         _logger = logger;
+        _pipeWire = pipeWire ?? new PipeWireCapabilityReader(logger);
     }
 
     /// <inheritdoc/>
@@ -214,11 +236,23 @@ public sealed unsafe class OpenAlDeviceEnumerator : IAudioDeviceEnumerator, IDis
             return [];
         }
 
+        // One dump for the whole list, not one per device: it needs no device to be opened, which
+        // is the entire reason capability discovery moved here.
+        var graph = _pipeWire.Read();
+
         var devices = new List<AudioDeviceInfo>(names.Count);
 
         foreach (var name in names)
         {
             var isDefault = string.Equals(name, defaultName, StringComparison.Ordinal);
+
+            // Where PipeWire answered, its figures stand. Where it did not, the pre-PipeWire
+            // behaviour and its restraint both stay: reading ALC_FREQUENCY means opening the
+            // device, which asks the sound server for a stream, and doing that to every output
+            // just to populate a list is not worth the side effects.
+            var capabilities = graph?.Describe(name)
+                ?? new AudioDeviceCapabilities(
+                    isDefault ? ReadMixSampleRate(alc, name) : 0, Channels: 0, SampleRates: [], MaxBitDepth: 0);
 
             devices.Add(new AudioDeviceInfo
             {
@@ -227,21 +261,18 @@ public sealed unsafe class OpenAlDeviceEnumerator : IAudioDeviceEnumerator, IDis
                 Id = name,
                 Name = name,
                 IsDefault = isDefault,
-
-                // Only the default device is probed. Reading ALC_FREQUENCY means opening the
-                // device, which asks PipeWire or PulseAudio for a stream, and doing that to
-                // every output just to populate a list is not worth the side effects.
-                MixSampleRate = isDefault ? ReadMixSampleRate(alc, name) : 0,
-
-                // OpenAL exposes no channel-count or accepted-rate query at all, so these stay
-                // empty rather than being filled with a plausible-looking guess.
-                MixChannels = 0,
-                SupportedSampleRates = []
+                MixSampleRate = capabilities.MixSampleRate,
+                MixChannels = capabilities.Channels,
+                SupportedSampleRates = capabilities.SampleRates,
+                MaxBitDepth = capabilities.MaxBitDepth
             });
         }
 
-        _logger.LogInformation("OpenAL reported {Count} output device(s) via {Extension}",
-            devices.Count, enumerateAll ? EnumerateAllExtension : EnumerationExtension);
+        _logger.LogInformation(
+            "OpenAL reported {Count} output device(s) via {Extension}; capabilities from {Source}",
+            devices.Count,
+            enumerateAll ? EnumerateAllExtension : EnumerationExtension,
+            graph is null ? "OpenAL only (no PipeWire)" : "PipeWire EnumFormat");
 
         return devices;
     }
