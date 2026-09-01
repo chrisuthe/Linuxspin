@@ -59,7 +59,7 @@
     </Style>
 
     <Style Selector="StackPanel.transport">
-        <Setter Property="Margin" Value="16,8,16,12" />
+        <Setter Property="Margin" Value="0,16,0,0" />
     </Style>
 
     <Style Selector="Border.footer">
@@ -68,13 +68,21 @@
         <Setter Property="Background" Value="{DynamicResource TranslucentSurfaceBrush}" />
     </Style>
 
-    <Style Selector="Border.settingsOverlay">
+    <!-- The settings card and the auto-connect prompt: one card style, laid over the body. -->
+    <Style Selector="Border.settingsOverlay, Border.promptCard">
         <Setter Property="Margin" Value="12" />
         <Setter Property="Padding" Value="16" />
         <Setter Property="CornerRadius" Value="8" />
         <Setter Property="Background" Value="{DynamicResource TranslucentSurfaceBrush}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}" />
+    </Style>
+
+    <!-- The Welcome cards, on the same translucent surface as the footer. -->
+    <Style Selector="Border.card">
+        <Setter Property="Padding" Value="16" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Background" Value="{DynamicResource TranslucentSurfaceBrush}" />
     </Style>
 
     <Style Selector="Border.diagnostics">
@@ -85,25 +93,46 @@
         <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}" />
     </Style>
 
-    <Style Selector="Border.artwork">
-        <Setter Property="Width" Value="180" />
-        <Setter Property="Height" Value="180" />
-        <Setter Property="CornerRadius" Value="8" />
+    <!--
+      The art tile. Two borders: the outer one carries the resting shadow (a BoxShadow, which the
+      spike measured as the cheap kind, set from the code-behind because it wants a Color and
+      the colour is a token) and must not clip, since a shadow lies outside the bounds; the inner
+      one clips the picture to the same radius and paints the placeholder behind it.
+    -->
+    <Style Selector="Border.artTile">
+        <Setter Property="CornerRadius" Value="12" />
+    </Style>
+
+    <Style Selector="Border.artClip">
+        <Setter Property="CornerRadius" Value="12" />
         <Setter Property="ClipToBounds" Value="True" />
         <Setter Property="Background" Value="{DynamicResource ArtPlaceholderBrush}" />
     </Style>
 
     <Style Selector="PathIcon.artworkPlaceholder">
-        <Setter Property="Width" Value="56" />
-        <Setter Property="Height" Value="56" />
+        <Setter Property="Width" Value="80" />
+        <Setter Property="Height" Value="80" />
         <Setter Property="Opacity" Value="0.35" />
         <Setter Property="HorizontalAlignment" Value="Center" />
         <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
 
-    <Style Selector="StackPanel.trackInfo">
-        <Setter Property="Margin" Value="16,0,0,0" />
+    <!-- The progress row's bar: theme foreground on a low-opacity track, 4 px. -->
+    <Style Selector="ProgressBar.track">
+        <Setter Property="Height" Value="4" />
+        <Setter Property="MinHeight" Value="4" />
+        <Setter Property="CornerRadius" Value="2" />
         <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}" />
+        <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundBaseLowBrush}" />
+    </Style>
+
+    <!-- The Welcome card's "broadcasting" dot; the code-behind pulses its opacity. -->
+    <Style Selector="Ellipse.broadcastDot">
+        <Setter Property="Width" Value="8" />
+        <Setter Property="Height" Value="8" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Fill" Value="{DynamicResource SystemControlForegroundAccentBrush}" />
     </Style>
 
     <!--
@@ -142,6 +171,12 @@
 
     <Style Selector="TextBlock.metricValue">
         <Setter Property="FontSize" Value="12" />
+    </Style>
+
+    <!-- The album line under the artist: caption-sized, and quieter still. -->
+    <Style Selector="TextBlock.album">
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Opacity" Value="0.5" />
     </Style>
 
     <Style Selector="TextBlock.warning">
@@ -211,6 +246,18 @@
         <Setter Property="Width" Value="36" />
         <Setter Property="Height" Value="36" />
         <Setter Property="CornerRadius" Value="18" />
+    </Style>
+
+    <!-- Same reason: shuffle and repeat are the transport's 40 px pair, either side of the 48s. -->
+    <Style Selector="Button.iconButton.small, ToggleButton.iconButton.small">
+        <Setter Property="Width" Value="40" />
+        <Setter Property="Height" Value="40" />
+        <Setter Property="CornerRadius" Value="20" />
+    </Style>
+
+    <Style Selector="Button.iconButton.small PathIcon, ToggleButton.iconButton.small PathIcon">
+        <Setter Property="Width" Value="21" />
+        <Setter Property="Height" Value="21" />
     </Style>
 
     <Style Selector="Border.toolbar PathIcon, Border.footer PathIcon">

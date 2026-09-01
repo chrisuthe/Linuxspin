@@ -1152,3 +1152,63 @@ other file under `src/Sendspin.Player`. The progress bar no longer steps by the 
 (`Core/MediaSession/AnchoredPosition.cs`) and projects from there on each tick, so it is right on a
 head whose timer is a quantum late as much as on one whose timer is exact. Phase 5 paces the backdrop
 with the same helper at 60 Hz.
+
+### As shipped (reskin phase 3) — Now Playing, Welcome, the backdrop, the prompt
+
+**Now Playing** (`Views/NowPlayingView.axaml`) is one tree with two compositions. Below 640 px of view
+width it is the reference's stacked column — the art tile, then centred title / artist / album, then
+the progress row, then the transport; at 640 px and above the art sits on the left with the text
+column, progress row and transport left-aligned beside it, vertically centred. The switch is the
+`wide` class on the composition grid, set from `OnSizeChanged` in the code-behind, and every
+difference between the two is a style in the view keyed on that class (grid row and column spans,
+alignments, text alignment). It is a class toggle rather than an Avalonia 12 container query because
+the test that pins which composition is active (`Sendspin.Ui.Tests/NowPlayingViewTests`) and Phase
+5's breathing-art work both read the switch off the one control, and because the art's size is a
+computed value a query could not express anyway: the body width minus the 24 px margins when
+stacked, the body height when split, less what the text and transport need, never more than 320 px
+and never less than 96 (`NowPlayingView.ArtSizeFor`, pinned by a theory). The tile is three borders:
+`ArtBreath`, the wrapper Phase 5 animates, carrying nothing today; `ArtTile`, which holds the resting
+`BoxShadow` (the cheap glow in the effect table above) and must not clip, since a shadow lies outside
+the bounds; and `ArtClip`, which clips the picture to the 12 px radius and paints `ArtPlaceholderBrush`
+behind the `MusicIcon` glyph. The shadow is set from the code-behind because a `BoxShadow` holds a
+`Color`, not a brush, so it reads `.Color` off the `ArtShadowBrush` token and re-reads it on
+`ActualThemeVariantChanged`. The progress row is elapsed / a 4 px bar / duration; for a live stream
+(`MediaSessionState.IsLive`, the one rule) the bar is hidden and the duration slot reads `LIVE`.
+`MainViewModel` exposes `ElapsedText`, `DurationText`, `HasKnownDuration` and `RepeatTooltip`;
+`PositionText` is gone, nothing else bound it. The idle title is null rather than a failed binding, so
+"Nothing playing" is a `TargetNullValue` — the Phase 2 `FallbackValue` alone never showed it.
+
+**The blurred backdrop.** `MainViewModel.LoadArtwork` decodes the artwork file once per artwork
+change (it already deduplicated by path) and, alongside `Artwork`, produces `ArtBackdrop` with
+`Bitmap.CreateScaledBitmap` to 64×64 — a decoded `Bitmap`, which is what that method accepts. Layer 0
+of the window binds it to an `Image` with `Stretch="UniformToFill"`, a `BlurEffect` of radius 32 and
+a −48 px margin so the blur's soft edge falls outside the window instead of fading to the opaque root
+along the border. The blur runs over the 64 px source and is cached — the `blur-once` row above —
+so dragging the window does not repaint it. `HasArtBackdrop` is connected-and-bitmap-present, set in
+the two places that change either, and the veil follows `HasBackdrop` as Phase 2 left it. Both
+bitmaps are unbound before they are disposed, for the render-thread reason in the view model.
+
+**Welcome** (`Views/WelcomeView.axaml`) is cards on `TranslucentSurfaceBrush`. "This player" holds the
+name as a write-through `TextBox` and, while advertising, an accent dot with "Broadcasting, visible
+to servers". The dot pulses at 2 Hz from a `UiClock` in the view's code-behind — an Avalonia
+`Animation` would spin a core on the Wayland head, per the clock table — and the clock runs only while
+the view is attached, the player is advertising and nothing is connected, which is when the card is on
+screen. Which mode the player is in is read once, at view-model construction, exactly as the player
+service reads it: a mode changed in Settings takes effect after a restart, and the card describes what
+the service is doing now. Discover mode shows "Servers on this network" (a `ListBox` of name and
+`host:port`, "Searching for servers…" while empty, Connect, or "Connecting…" while `IsConnecting`);
+advertise mode shows "Waiting for a server" instead. "Connect by address" is an `Expander` beneath
+either, collapsed by default.
+
+**The auto-connect prompt** is an in-window card over the body (`AutoConnectPrompt` in
+`MainWindow.axaml`), shown once per server: when a connection succeeds in discover mode while
+`AutoConnect` is `Never` and `PlayerSettings.AutoConnectPromptedServerId` is not the server just
+connected to. The id is read from `LastServerId`, which the player service writes before it raises
+the connection event. Every answer records the id, so "Not now" is remembered too; "Just once" and
+"Always" write the policy through `SettingsViewModel.AutoConnect` — the same
+`SettingsService.Update` — so the Settings combo shows the answer rather than the value it loaded at
+startup. The service's start-up auto-connect is untouched: a "just once" connection reverts the policy
+to `Never` before it connects, and the server it connects to has already been asked about.
+`Sendspin.Ui.Tests/AutoConnectPromptTests` walks each answer and the once-per-server rule.
+Screenshots: `docs/screenshots/reskin/phase3-{narrow,wide}-{light,dark}.png` and
+`phase3-welcome-{advertise,discover}.png`.
