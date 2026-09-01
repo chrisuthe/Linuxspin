@@ -103,7 +103,8 @@
         <StackPanel Name="Details">
 
             <!--
-              Single lines, trimmed; TrackText's width is the art's in the narrow composition.
+              Single lines, trimmed; TrackText's width in the narrow composition is the art's,
+              floored at MinTextColumnWidth.
               The idle state's title is null, not a failed binding, so it is TargetNullValue that
               puts "Nothing playing" on screen; FallbackValue stays for a binding that breaks.
             -->

@@ -40,10 +40,7 @@ public sealed partial class NowPlayingView : UserControl
     /// <summary>The gap between the art and the text: below it when narrow, beside it when wide.</summary>
     internal const double ArtGap = 24;
 
-    /// <summary>
-    /// The least the text column is given before the art shrinks: beside the art when wide, and
-    /// beneath it when narrow, where the column otherwise follows the art down.
-    /// </summary>
+    /// <summary>The least the text column is given before the art shrinks, beside it or beneath it.</summary>
     internal const double MinTextColumnWidth = 280;
 
     /// <summary>

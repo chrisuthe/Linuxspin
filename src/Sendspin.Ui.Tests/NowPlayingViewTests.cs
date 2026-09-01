@@ -90,7 +90,8 @@ public sealed class NowPlayingViewTests(HeadlessSession headless)
         Assert.Equal(expected, NowPlayingView.ArtSizeFor(isWide, new Size(width, height), detailsHeight));
 
     /// <remarks>
-    /// The art's width until the art drops below the floor, then the floor, then the body.
+    /// The art's width until the art drops below the floor, then the floor, then the body — the
+    /// last only below the shell's 400 px minimum, pinned as the rule rather than as a reachable size.
     /// </remarks>
     [Theory]
     [InlineData(320, 440, 320)]
@@ -104,9 +105,13 @@ public sealed class NowPlayingViewTests(HeadlessSession headless)
     /// <remarks>
     /// The smallest window the shell allows, with the diagnostics panel taking its share of the
     /// body: the art is at its floor, the text column is not, and both times sit beside the bar.
+    /// The hour-long case leaves the bar less than the theme's 200 px minimum, which the track
+    /// style has to override for the bar to stay in its column.
     /// </remarks>
-    [Fact]
-    public void TheTextColumn_StaysReadableWhenTheBodyIsShort() => headless.Run(() =>
+    [Theory]
+    [InlineData(238, 144)]
+    [InlineData(7198, 3744)]
+    public void TheTextColumn_StaysReadableWhenTheBodyIsShort(int durationSeconds, int positionSeconds) => headless.Run(() =>
     {
         using var shell = Shell.Show();
         shell.ViewModel.Diagnostics.SetVisible(true);
@@ -120,8 +125,8 @@ public sealed class NowPlayingViewTests(HeadlessSession headless)
             Title = "Everybody's Got a Hungry Heart, Every Now and Then",
             Artist = "Garth Brooks and the Complete Studio Orchestra",
             Album = "The Long Record",
-            Duration = TimeSpan.FromSeconds(238),
-            Position = TimeSpan.FromSeconds(144),
+            Duration = TimeSpan.FromSeconds(durationSeconds),
+            Position = TimeSpan.FromSeconds(positionSeconds),
         });
         Dispatcher.UIThread.RunJobs();
 
@@ -138,6 +143,8 @@ public sealed class NowPlayingViewTests(HeadlessSession headless)
         Assert.True(text.Bounds.Width <= view.Bounds.Width - 2 * NowPlayingView.EdgeMargin);
 
         Assert.True(bar.IsVisible);
+        Assert.Equal(0, bar.MinWidth);
+        Assert.True(bar.Bounds.Width < 200, $"bar is {bar.Bounds.Width} wide");
         Assert.False(elapsed.Bounds.Intersects(bar.Bounds), $"elapsed at {elapsed.Bounds}, bar at {bar.Bounds}");
         Assert.False(duration.Bounds.Intersects(bar.Bounds), $"duration at {duration.Bounds}, bar at {bar.Bounds}");
         Assert.True(elapsed.Bounds.Right <= bar.Bounds.Left);
