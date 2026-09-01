@@ -1,4 +1,3 @@
-using System.Net.Sockets;
 using Sendspin.Core.Platform;
 using Tmds.DBus.Protocol;
 
@@ -46,10 +45,20 @@ public static class SettingsPortal
             using var connection = new DBusConnection(address);
             var read = ReadFontNameAsync(connection);
 
-            return read.Wait(timeout) ? DesktopFontName.ParseFamily(read.Result) : null;
+            if (read.Wait(timeout))
+            {
+                return DesktopFontName.ParseFamily(read.Result);
+            }
+
+            // Disposing the connection faults the pending read; observe it so it does not
+            // surface as an unobserved task exception later.
+            read.ContinueWith(static t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
+            return null;
         }
-        catch (Exception ex) when (IsPortalUnavailable(ex))
+        catch (Exception)
         {
+            // Best effort, at start-up, before a logger exists: a portal that errors, a bus that
+            // refuses, a variant that is not a string — none of them may stop the app starting.
             return null;
         }
     }
@@ -75,12 +84,4 @@ public static class SettingsPortal
 
         return writer.CreateMessage();
     }
-
-    /// <remarks>
-    /// <see cref="AggregateException"/> is what <c>Task.Wait</c> wraps the D-Bus error in when the
-    /// portal answers "no such key" or is not on the bus at all.
-    /// </remarks>
-    private static bool IsPortalUnavailable(Exception exception) =>
-        exception is DBusExceptionBase or IOException or SocketException or ObjectDisposedException
-            or AggregateException { InnerException: DBusExceptionBase or IOException or SocketException };
 }

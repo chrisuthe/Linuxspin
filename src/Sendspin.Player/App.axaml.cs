@@ -233,24 +233,32 @@ public sealed partial class App : Application
         AccentResources.Apply(Resources, values.AccentColor1);
 
     /// <summary>
-    /// Records which face the platform default resolved to, and which face fills in glyphs it
-    /// lacks — the same two facts the shell spike's <c>font</c> probe reports.
+    /// Records which face the platform default resolved to, which face the controls' font
+    /// resource resolved to, and which face fills in glyphs it lacks — what the shell spike's
+    /// <c>font</c> probe reports.
     /// </summary>
-    private static void LogUiFont(ILogger logger)
+    private void LogUiFont(ILogger logger)
     {
         var fontManager = FontManager.Current;
 
-        var face = fontManager.TryGetGlyphTypeface(new Typeface(FontFamily.Default), out var glyphTypeface)
-            ? glyphTypeface.FamilyName
-            : "(unresolved)";
+        var controlFamily = TryGetResource("ContentControlThemeFontFamily", ActualThemeVariant, out var resource)
+            && resource is FontFamily family
+            ? family
+            : FontFamily.Default;
 
         var fallback = fontManager.TryMatchCharacter(
             'A', FontStyle.Normal, FontWeight.Normal, FontStretch.Normal, null, null, out var fallbackTypeface)
             ? fallbackTypeface.FontFamily.Name
             : "(none)";
 
-        logger.LogInformation("UI font: $Default is {Default}, glyphs from {Face}, fallback face {Fallback}",
-            fontManager.DefaultFontFamily, face, fallback);
+        logger.LogInformation(
+            "UI font: $Default is {Default}, glyphs from {Face}; controls use {ControlFamily}, glyphs from {ControlFace}; fallback face {Fallback}",
+            fontManager.DefaultFontFamily, Resolve(FontFamily.Default), controlFamily, Resolve(controlFamily), fallback);
+
+        static string Resolve(FontFamily family) =>
+            FontManager.Current.TryGetGlyphTypeface(new Typeface(family), out var glyphTypeface)
+                ? glyphTypeface.FamilyName
+                : "(unresolved)";
     }
 
     /// <summary>
