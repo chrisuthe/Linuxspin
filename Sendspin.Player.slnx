@@ -8,5 +8,6 @@
     <Project Path="src/Sendspin.Platform.Windows/Sendspin.Platform.Windows.csproj" />
     <Project Path="src/Sendspin.Player/Sendspin.Player.csproj" />
     <Project Path="src/Sendspin.Tests/Sendspin.Tests.csproj" />
+    <Project Path="src/Sendspin.Ui.Tests/Sendspin.Ui.Tests.csproj" />
   </Folder>
 </Solution>

@@ -63,6 +63,13 @@
   </ItemGroup>
 
   <ItemGroup Label="Test">
+    <!--
+      Headless Avalonia, pinned with the rest of the UI: the UI tests drive real input events.
+      Avalonia.Headless.XUnit is deliberately absent — it depends on xunit.v3, and taking it would
+      put two xunit majors in one solution. Its whole job is running a test body on the headless
+      dispatcher, and HeadlessUnitTestSession, which does that, is in Avalonia.Headless itself.
+    -->
+    <PackageVersion Include="Avalonia.Headless" Version="12.1.1" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />

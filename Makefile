@@ -25,6 +25,8 @@ PROJECT_NAME := Sendspin.Player
 SOLUTION := Sendspin.Player.slnx
 MAIN_PROJECT := src/Sendspin.Player/Sendspin.Player.csproj
 TEST_PROJECT := src/Sendspin.Tests/Sendspin.Tests.csproj
+UI_TEST_PROJECT := src/Sendspin.Ui.Tests/Sendspin.Ui.Tests.csproj
+TEST_PROJECTS := $(TEST_PROJECT) $(UI_TEST_PROJECT)
 
 # Build settings
 CONFIGURATION ?= Debug
@@ -145,19 +147,25 @@ clean:
 # Test Targets
 # =============================================================================
 
+# Named projects rather than the solution: the solution holds three platform heads, and
+# `dotnet test` on it would try to build the ones this OS cannot.
 test:
 	@echo "$(BLUE)Running tests...$(NC)"
-	dotnet test $(TEST_PROJECT) \
-		--configuration $(CONFIGURATION) \
-		--logger "console;verbosity=normal"
+	@for project in $(TEST_PROJECTS); do \
+		dotnet test $$project \
+			--configuration $(CONFIGURATION) \
+			--logger "console;verbosity=normal" || exit 1; \
+	done
 
 coverage:
 	@echo "$(BLUE)Running tests with coverage...$(NC)"
-	dotnet test $(TEST_PROJECT) \
-		--configuration $(CONFIGURATION) \
-		--collect:"XPlat Code Coverage" \
-		--results-directory $(ARTIFACTS_DIR)/test-results \
-		-- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
+	@for project in $(TEST_PROJECTS); do \
+		dotnet test $$project \
+			--configuration $(CONFIGURATION) \
+			--collect:"XPlat Code Coverage" \
+			--results-directory $(ARTIFACTS_DIR)/test-results \
+			-- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover || exit 1; \
+	done
 	@echo "$(GREEN)Coverage report: $(ARTIFACTS_DIR)/test-results$(NC)"
 
 test-watch:

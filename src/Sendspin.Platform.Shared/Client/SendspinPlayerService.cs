@@ -501,7 +501,7 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
 
         var settings = _settings.Current;
         var device = ResolveDevice(settings.AudioDeviceId);
-        var capabilities = PlayerCapabilities.Build(settings, device, _softwareVersion);
+        var capabilities = BuildCapabilities(settings, device);
         var (clockSync, pipeline) = EnsureAudioSession(device);
 
         var host = new SendspinHostService(
@@ -552,7 +552,7 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
 
         var settings = _settings.Current;
         var device = ResolveDevice(settings.AudioDeviceId);
-        var capabilities = PlayerCapabilities.Build(settings, device, _softwareVersion);
+        var capabilities = BuildCapabilities(settings, device);
         var (clockSync, pipeline) = EnsureAudioSession(device);
 
         var connection = new SendspinConnection(
@@ -850,6 +850,29 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
     /// value that changes only when the user picks a different output.
     /// </remarks>
     private string? _activeDeviceName;
+
+    /// <summary>
+    /// Builds the capabilities to advertise and records the codec order they carry.
+    /// </summary>
+    /// <remarks>
+    /// The order is logged because it was previously invisible: a <c>preferred_codec</c> that had
+    /// drifted in settings looked, from the outside, exactly like the server choosing the codec,
+    /// and nothing on this side said otherwise. One line at connect turns that into a glance.
+    /// </remarks>
+    private ClientCapabilities BuildCapabilities(PlayerSettings settings, AudioDeviceInfo? device)
+    {
+        var capabilities = PlayerCapabilities.Build(settings, device, _softwareVersion);
+
+        _logger.LogInformation(
+            "Advertising codecs, preferred first: {Codecs}",
+            string.Join(
+                ", ",
+                capabilities.AudioFormats
+                    .Select(format => format.Codec)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)));
+
+        return capabilities;
+    }
 
     private AudioDeviceInfo? ResolveDevice(string? deviceId)
     {
