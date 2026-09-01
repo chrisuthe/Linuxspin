@@ -11,6 +11,7 @@ using Sendspin.Core.Platform;
 using Sendspin.Core.Presence;
 using Sendspin.Platform.Shared.Client;
 using Sendspin.Platform.Shared.Notifications;
+using Sendspin.Player.Threading;
 using Sendspin.SDK.Discovery;
 
 namespace Sendspin.Player.ViewModels;
@@ -48,7 +49,18 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private readonly NotificationDispatcher _notifications;
     private readonly IPresenceService _presence;
     private readonly ILogger<MainViewModel> _logger;
-    private readonly DispatcherTimer _progressTimer;
+
+    /// <summary>
+    /// Advances the progress bar between the server's position reports, which arrive only when
+    /// metadata changes.
+    /// </summary>
+    /// <remarks>
+    /// The position is projected from the last report by measured time, not stepped by the
+    /// timer's nominal interval: the timer only decides how often the bar repaints, and being
+    /// late on one head (see <see cref="UiClock"/>) then costs smoothness rather than accuracy.
+    /// </remarks>
+    private readonly UiClock _progressClock = new(TimeSpan.FromMilliseconds(500));
+    private readonly AnchoredPosition _anchoredPosition = new();
 
     /// <summary>
     /// Owns every piece of work this view model starts outside a command.
@@ -68,6 +80,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ConnectionStatus))]
+    [NotifyPropertyChangedFor(nameof(HasFooterStatus))]
     [NotifyCanExecuteChangedFor(nameof(DisconnectCommand))]
     [NotifyCanExecuteChangedFor(nameof(PlayPauseCommand))]
     [NotifyCanExecuteChangedFor(nameof(NextCommand))]
@@ -87,6 +100,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private string? _serverName;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasFooterStatus))]
     private string? _statusMessage;
 
     [ObservableProperty]
@@ -117,6 +131,20 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     [ObservableProperty]
     private bool _isSettingsOpen;
+
+    /// <summary>
+    /// Whether the blurred-artwork layer has a bitmap to show. Phase 3 sets it.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasBackdrop))]
+    private bool _hasArtBackdrop;
+
+    /// <summary>
+    /// Whether the ambient backdrop is running. Phase 5 sets it.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasBackdrop))]
+    private bool _hasAmbientBackdrop;
 
     public MainViewModel(
         SendspinPlayerService player,
@@ -161,11 +189,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         _mediaSession.IntentReceived += OnMediaSessionIntent;
         _router.LocalActionRequested += OnLocalActionRequested;
 
-        // The protocol reports position only when metadata changes, so a progress bar driven
-        // purely by those reports would jump once a track. This advances it between reports and
-        // is corrected by each one.
-        _progressTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
-        _progressTimer.Tick += OnProgressTick;
+        _progressClock.Tick += OnProgressTick;
     }
 
     /// <summary>Gets the settings view model.</summary>
@@ -183,6 +207,15 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         : IsConnected
             ? $"Connected to {ServerName ?? "server"}"
             : "Not connected";
+
+    /// <summary>Gets whether either backdrop layer is showing, which is when the veil is needed.</summary>
+    public bool HasBackdrop => HasArtBackdrop || HasAmbientBackdrop;
+
+    /// <summary>
+    /// Gets whether the footer shows the status message in place of the volume row: there is
+    /// one, and no connection for the volume row to be about.
+    /// </summary>
+    public bool HasFooterStatus => !IsConnected && StatusMessage is not null;
 
     /// <summary>Gets whether the group is playing.</summary>
     public bool IsPlaying => State.Status == MediaPlaybackStatus.Playing;
@@ -400,8 +433,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
         _isDisposed = true;
 
-        _progressTimer.Stop();
-        _progressTimer.Tick -= OnProgressTick;
+        _progressClock.Tick -= OnProgressTick;
+        _progressClock.Dispose();
 
         _player.ConnectionChanged -= OnConnectionChanged;
         _player.StateChanged -= OnStateChanged;
@@ -510,18 +543,25 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         Dispatcher.UIThread.Post(() =>
         {
+            if (_isDisposed)
+            {
+                // Posted before disposal, run after it: the clock is gone, and so is the reason.
+                return;
+            }
+
             IsConnected = e.IsConnected;
             IsConnecting = false;
             ServerName = e.ServerName;
 
             if (e.IsConnected)
             {
-                _progressTimer.Start();
+                _progressClock.Start();
             }
             else
             {
-                _progressTimer.Stop();
+                _progressClock.Stop();
                 Position = TimeSpan.Zero;
+                _anchoredPosition.Anchor(TimeSpan.Zero, _progressClock.Elapsed);
                 State = MediaSessionState.Idle;
 
                 // Unbind before disposing. The compositor renders from Image.Source on its own
@@ -545,6 +585,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         {
             State = state;
             Position = state.Position;
+            _anchoredPosition.Anchor(state.Position, _progressClock.Elapsed);
 
             _suppressVolumePush = true;
             try
@@ -587,12 +628,17 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     private void OnProgressTick(object? sender, EventArgs e)
     {
+        var now = _progressClock.Elapsed;
+
         if (!IsPlaying)
         {
+            // Hold the anchor at the paused position, so a resume without a fresh report
+            // continues from here rather than crediting the time spent paused.
+            _anchoredPosition.Anchor(Position, now);
             return;
         }
 
-        Position += _progressTimer.Interval;
+        Position = _anchoredPosition.At(now);
     }
 
     /// <summary>

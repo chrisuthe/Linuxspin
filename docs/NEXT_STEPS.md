@@ -209,22 +209,29 @@ is not reachable from the cross-platform test project.
 
 ---
 
-## 8. Every `DispatcherTimer` is late on the Wayland head
+## 8. Every `DispatcherTimer` is quantised on the Wayland head
 
-**Status: shipping today, measured, fix shape known. Small.**
+**Status: resolved in reskin phase 2 by `UiClock` and elapsed-time position. Re-check on every
+`Avalonia.Wayland` bump.**
 
-On the default Linux head `Avalonia.Wayland` 12.1.1 fires `DispatcherTimer` ticks on a coarse
-boundary 100–200 ms after they are due: a 16 ms timer ticks every 140–200 ms, a 100 ms one every
-231 ms, a 500 ms one every 600 ms, at every priority. So the 500 ms progress timer in
-`MainViewModel` and the 500 ms refresh in `DiagnosticsViewModel` both tick every 600 ms on Wayland
-and at 500 ms on X11. The same backend also runs `RequestAnimationFrame` and Avalonia's own animation
-clock at about 25 000 Hz without a frame between, so neither is a substitute. The measurements and
-the table are in the *UI shell* section of `docs/ARCHITECTURE.md`.
+On the default Linux head `Avalonia.Wayland` 12.1.1 fires `DispatcherTimer` ticks on a coarse quantum
+of 100–140 ms: a 16 ms timer ticks at the quantum, a 100 ms one on time with an occasional 200 ms
+gap, and a 500 ms one on time or one quantum late depending on the run — `618, 501, 618, 500, …` in
+one per-gap run, on time (max 503 ms) in three others. It is not "every 600 ms", which was a counting
+artifact, and it is not reliably on time either; both sets of measurements are in the *UI shell*
+section of `docs/ARCHITECTURE.md`. The same backend runs `RequestAnimationFrame` and Avalonia's own
+animation clock at about 40 000 Hz without a frame between, so neither is a substitute.
 
-**First action:** drive both view-model timers from a `System.Threading.Timer` (or `PeriodicTimer`)
-that posts to `Dispatcher.UIThread` — measured at 62 Hz on both heads for a 16 ms period — rather
-than from `DispatcherTimer`. Re-check the backend on every `Avalonia.Wayland` bump before deciding
-whether the workaround can go:
+**Done:** `src/Sendspin.Player/Threading/UiClock.cs` — a `System.Threading.Timer` posting one tick to
+`Dispatcher.UIThread` at `Render` priority (62 Hz on Wayland, X11 and macOS), dropping a tick while the
+previous one is still queued. Both view-model timers use it, and a hygiene test in `Sendspin.Ui.Tests`
+keeps `DispatcherTimer` out of every other file in the app. `MainViewModel` advances the position by
+the measured time since the server's last report (`Core/MediaSession/AnchoredPosition.cs`) rather than
+by the nominal interval, so the bar is right whatever the timer does. Phase 5 paces the backdrop with
+the same helper at 60 Hz.
+
+**Re-check** the backend on every `Avalonia.Wayland` bump before deciding whether the helper can go
+back to a `DispatcherTimer`:
 
 ```
 dotnet run --project scripts/spike/ShellSpike -- clock

@@ -43,30 +43,37 @@
         </ControlTheme>
     </Styles.Resources>
 
-    <!-- Surfaces -->
+    <!--
+      Surfaces. The toolbar paints nothing of its own so the backdrop can run up behind it; the
+      footer and the settings card sit on the translucent surface token. Both rows use the
+      iconButton at 36 px rather than the transport's 48 (see the buttons below), which is what
+      keeps them slim.
+    -->
 
-    <Style Selector="Border.header">
-        <Setter Property="Padding" Value="16,12" />
-        <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" />
-        <Setter Property="BorderThickness" Value="0,0,0,1" />
-        <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}" />
+    <Style Selector="Border.toolbar">
+        <Setter Property="Padding" Value="12,6" />
     </Style>
 
     <Style Selector="StackPanel.body">
         <Setter Property="Margin" Value="16" />
     </Style>
 
-    <Style Selector="Border.transport">
-        <Setter Property="Padding" Value="16,10" />
-        <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" />
-        <Setter Property="BorderThickness" Value="0,1,0,0" />
-        <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}" />
+    <Style Selector="StackPanel.transport">
+        <Setter Property="Margin" Value="16,8,16,12" />
     </Style>
 
-    <Style Selector="Border.settingsPane">
+    <Style Selector="Border.footer">
+        <Setter Property="Padding" Value="12,8" />
+        <Setter Property="MinHeight" Value="52" />
+        <Setter Property="Background" Value="{DynamicResource TranslucentSurfaceBrush}" />
+    </Style>
+
+    <Style Selector="Border.settingsOverlay">
+        <Setter Property="Margin" Value="12" />
         <Setter Property="Padding" Value="16" />
-        <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" />
-        <Setter Property="BorderThickness" Value="1,0,0,0" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Background" Value="{DynamicResource TranslucentSurfaceBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
         <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}" />
     </Style>
 
@@ -197,6 +204,18 @@
     <Style Selector="ToggleButton.iconButton:checked:disabled /template/ ContentPresenter#PART_ContentPresenter">
         <Setter Property="Background" Value="{DynamicResource SystemControlTransparentBrush}" />
         <Setter Property="Foreground" Value="{DynamicResource SystemControlDisabledBaseMediumLowBrush}" />
+    </Style>
+
+    <!-- After the 48 px rule above, because the later setter wins: the toolbar and footer rows are slim. -->
+    <Style Selector="Border.toolbar ToggleButton.iconButton, Border.footer Button.iconButton, Border.footer ToggleButton.iconButton">
+        <Setter Property="Width" Value="36" />
+        <Setter Property="Height" Value="36" />
+        <Setter Property="CornerRadius" Value="18" />
+    </Style>
+
+    <Style Selector="Border.toolbar PathIcon, Border.footer PathIcon">
+        <Setter Property="Width" Value="20" />
+        <Setter Property="Height" Value="20" />
     </Style>
 
     <Style Selector="Button.playButton">
