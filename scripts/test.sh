@@ -23,7 +23,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 SOLUTION_FILE="$REPO_ROOT/Sendspin.Player.slnx"
-TEST_PROJECT="$REPO_ROOT/src/Sendspin.Tests/Sendspin.Tests.csproj"
+# Named projects rather than the solution: the solution holds three platform heads,
+# and `dotnet test` on it would try to build the ones this OS cannot.
+TEST_PROJECTS=(
+    "$REPO_ROOT/src/Sendspin.Tests/Sendspin.Tests.csproj"
+    "$REPO_ROOT/src/Sendspin.Ui.Tests/Sendspin.Ui.Tests.csproj"
+)
 RESULTS_DIR="$REPO_ROOT/artifacts/test-results"
 
 # Default options
@@ -138,7 +143,9 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --list)
-            dotnet test "$TEST_PROJECT" --list-tests
+            for project in "${TEST_PROJECTS[@]}"; do
+                dotnet test "$project" --list-tests
+            done
             exit 0
             ;;
         -h|--help)
@@ -162,10 +169,12 @@ if ! command -v dotnet &> /dev/null; then
     exit 1
 fi
 
-if [[ ! -f "$TEST_PROJECT" ]]; then
-    error "Test project not found: $TEST_PROJECT"
-    exit 1
-fi
+for project in "${TEST_PROJECTS[@]}"; do
+    if [[ ! -f "$project" ]]; then
+        error "Test project not found: $project"
+        exit 1
+    fi
+done
 
 # Create results directory
 mkdir -p "$RESULTS_DIR"
@@ -174,8 +183,8 @@ mkdir -p "$RESULTS_DIR"
 # Build Test Arguments
 # =============================================================================
 
+# The project is appended per run, so one set of arguments serves every project.
 TEST_ARGS=(
-    test "$TEST_PROJECT"
     --configuration "$CONFIGURATION"
     --results-directory "$RESULTS_DIR"
 )
@@ -225,15 +234,17 @@ run_tests() {
     $COVERAGE && info "  Coverage: enabled ($COVERAGE_FORMAT)"
     echo ""
 
-    if dotnet "${TEST_ARGS[@]}"; then
-        echo ""
-        success "All tests passed!"
-        return 0
-    else
-        echo ""
-        error "Some tests failed!"
-        return 1
-    fi
+    for project in "${TEST_PROJECTS[@]}"; do
+        if ! dotnet test "$project" "${TEST_ARGS[@]}"; then
+            echo ""
+            error "Some tests failed!"
+            return 1
+        fi
+    done
+
+    echo ""
+    success "All tests passed!"
+    return 0
 }
 
 # =============================================================================

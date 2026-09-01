@@ -24,6 +24,9 @@ public sealed class ComboBoxWheelGuardTests(HeadlessSession headless)
 {
     private static readonly string[] Codecs = ["flac", "opus", "pcm"];
 
+    /// <summary>Connection mode, auto-connect, output device and preferred codec.</summary>
+    private const int SettingsComboBoxCount = 4;
+
     [Fact]
     public void AnUnguardedComboBoxStepsItsSelectionOnAWheelNotch() => headless.Run(() =>
     {
@@ -99,9 +102,14 @@ public sealed class ComboBoxWheelGuardTests(HeadlessSession headless)
 
         var comboBoxes = window.GetLogicalDescendants().OfType<ComboBox>().ToList();
 
+        // The count is asserted so that "every" means something: a picker declared inside a
+        // template this walk never realizes would otherwise go unexamined, and the test would
+        // pass on the four it did find. Adding a fifth to SettingsView.axaml is meant to land
+        // here, where the guard is the thing being counted.
+        Assert.Equal(SettingsComboBoxCount, comboBoxes.Count);
+
         // The panel's own style is what installs the guard, so this is the assertion that a
         // ComboBox added to SettingsView.axaml later is covered without anyone remembering to.
-        Assert.NotEmpty(comboBoxes);
         Assert.All(comboBoxes, comboBox => Assert.True(ComboBoxWheelGuard.GetIsEnabled(comboBox)));
     });
 

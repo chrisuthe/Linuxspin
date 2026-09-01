@@ -21,9 +21,14 @@ env:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Tests run once, on Linux: the suite covers Sendspin.Core and
+  # Tests run once, on Linux: Sendspin.Tests covers Sendspin.Core and
   # Sendspin.Platform.Shared, which are plain net10.0 and platform-neutral by
   # design, so running it three times would exercise the same code three times.
+  # Sendspin.Ui.Tests drives the Linux head under Avalonia's headless platform,
+  # which needs no display server.
+  #
+  # Both projects are named. `dotnet test` on the solution would pull in the
+  # macOS head, which cannot restore without the macos workload.
   #
   # There is deliberately no `continue-on-error` here. A gate that cannot fail is
   # not a gate, and this repo previously ran `dotnet test` with it set on both
@@ -41,11 +46,15 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Test
-        run: >
-          dotnet test src/Sendspin.Tests/Sendspin.Tests.csproj
-          --configuration Release
-          --logger "trx;LogFileName=test-results.trx"
-          --results-directory ./test-results
+        run: |
+          set -euo pipefail
+          for project in src/Sendspin.Tests/Sendspin.Tests.csproj \
+                         src/Sendspin.Ui.Tests/Sendspin.Ui.Tests.csproj; do
+            dotnet test "$project" \
+              --configuration Release \
+              --logger "trx;LogFileName=$(basename "$project" .csproj).trx" \
+              --results-directory ./test-results
+          done
 
       - name: Upload test results
         if: always()
