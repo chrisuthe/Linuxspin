@@ -134,19 +134,26 @@ Xcode version disagrees with the pinned SDK pack, override it:
 `TreatWarningsAsErrors` and `AnalysisLevel=latest` are on. Turning either off is not an acceptable
 way to fix a build.
 
-### Native Wayland (opt-in)
+### Windowing backend (Linux)
 
-The app ships X11 by default, which under a Wayland session means XWayland. Avalonia 12.1's native
-Wayland backend gives correct fractional HiDPI and is available behind a flag:
+Under a Wayland session the app runs on Avalonia 12.1's native Wayland backend, which gives correct
+fractional HiDPI. Where there is no session — an X11 desktop, VNC, a forwarded `DISPLAY`, a CI
+container — it runs on X11. That is a decision, not a fallback that happens to work: `WAYLAND_DISPLAY`
+is read up front, because `UseWayland()` with no compositor to talk to aborts rather than degrades.
+
+The Wayland backend is marked experimental and its own README warns that compositor
+crash-and-restart is expected, so X11 stays one variable away:
 
 ```bash
-SENDSPIN_WAYLAND=1 ./Sendspin.Player
+SENDSPIN_X11=1 ./Sendspin.Player      # force X11 (XWayland under a Wayland session)
+SENDSPIN_WAYLAND=1 ./Sendspin.Player  # force Wayland past a session this cannot detect
 ```
 
-It is not the default: `UsePlatformDetect()` never selects it, it is marked experimental, and every
-desktop integration here (MPRIS, StatusNotifierItem, notifications, portals) is D-Bus and therefore
-identical either way. It also does not bind `xdg-activation-v1` or `idle-inhibit`, so raising the
-window and inhibiting the screensaver are worse there, not better.
+`SENDSPIN_X11` wins if both are set. Nothing else changes with the backend: every desktop
+integration here (MPRIS, StatusNotifierItem, notifications, portals) is D-Bus and identical either
+way, and the two protocols the Wayland backend does not bind are already routed around —
+screensaver inhibition goes through `org.freedesktop.portal.Inhibit`, and raising the window goes
+through the activation token the notification daemon hands back.
 
 ## Configuration
 

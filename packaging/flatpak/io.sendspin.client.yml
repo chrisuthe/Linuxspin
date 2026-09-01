@@ -23,11 +23,15 @@ finish-args:
   - --share=network
   - --device=dri
 
-  # X11 by default, because that is the windowing backend the app defaults to. The native
-  # Wayland backend is opt-in (SENDSPIN_WAYLAND=1), so --socket=wayland is granted as well:
-  # fallback-x11 alone would make the opt-in unusable inside the sandbox.
-  - --socket=fallback-x11
+  # Wayland is the backend the app defaults to, so --socket=wayland is what it normally uses.
+  # X11 rather than fallback-x11, which is what this used to grant: fallback-x11 hands over the
+  # X11 socket only when the wayland one is unavailable, so on a Wayland host it grants nothing
+  # and SENDSPIN_X11=1 would have no X server to reach. That flag exists for the user whose
+  # compositor the experimental Wayland backend misbehaves on — exactly the user who is inside
+  # a Wayland session — so an escape hatch that only works where it is not needed is no hatch.
+  # The cost is the X11 socket being held open on hosts that never use it.
   - --socket=wayland
+  - --socket=x11
 
   # PipeWire's own socket rather than --socket=pulseaudio. The pulseaudio socket forces
   # enable-shm=no, which pushes every audio buffer through the socket instead of shared

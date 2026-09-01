@@ -39,8 +39,9 @@ exception is naming a concrete `IPlatformInitializer`, which needs a reference t
 frameworks cannot have; that lives in one file per TFM under
 `src/Sendspin.Player/PlatformSelection/`. Those files contain **wiring only** — a type name and a
 backend call. Behaviour there is the same failure mode as a three-way `#if`: the compiler cannot tell
-you when one of three parallel files falls behind. This is why the Wayland opt-in predicate lives in
-`Core/Platform/WaylandOptIn.cs` with a test, rather than in the Linux file where it started.
+you when one of three parallel files falls behind. This is why the Linux windowing-backend choice
+lives in `Core/Platform/LinuxWindowingBackend.cs` with a test, rather than in the Linux file where
+it started.
 
 **One media-session abstraction, shaped publish-state / receive-intent.** Not the union of SMTC,
 MPRIS and `MPNowPlayingInfoCenter` — that union is three times the surface and every member leaks a

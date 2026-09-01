@@ -219,9 +219,14 @@ Recorded so the reasoning is not relitigated from scratch:
 - **Not consolidating onto one cross-platform audio library.** None of miniaudio, SDL3, RtAudio,
   libsoundio, cubeb or PortAudio gives a live per-callback DAC timestamp on all three platforms, and
   several have no PipeWire backend at all — adopting one would actively regress Linux.
-- **Avalonia stays, and X11 stays the default.** The native Wayland backend is real and available
-  behind `SENDSPIN_WAYLAND=1`, but it is experimental, `UsePlatformDetect()` never selects it, and
-  every desktop integration here is D-Bus and therefore identical either way.
+- **Avalonia stays, and Wayland is the Linux default.** It was X11, on the reasoning that the
+  native Wayland backend was experimental and bought little: `UsePlatformDetect()` never selects
+  it, and every desktop integration here is D-Bus and therefore identical either way. What that
+  reasoning missed is that Wayland buys correct fractional HiDPI, and that the two protocols the
+  backend does not bind are already routed around — idling through the Inhibit portal, raising the
+  window through the notification daemon's activation token. The backend is still experimental, so
+  `SENDSPIN_X11=1` gets back to X11 without a rebuild, and a machine with no Wayland session gets
+  X11 by decision rather than by accident.
 - **iOS is out of scope, and when it comes it is not Avalonia.** `Sendspin/SendspinKit` is a
   complete first-party Swift SDK; SwiftUI plus SendspinKit is the answer there.
 - **No native C audio shim yet.** See `docs/ARCHITECTURE.md` for the per-platform realtime story and
