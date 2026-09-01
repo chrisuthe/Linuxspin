@@ -78,11 +78,17 @@
         <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}" />
     </Style>
 
-    <!-- The Welcome cards, on the same translucent surface as the footer. -->
+    <!--
+      The Welcome cards, on the same translucent surface as the footer, with the settings card's
+      hairline: with no backdrop behind Welcome the surface is the root's own colour, and it is
+      the border that makes a card read as one.
+    -->
     <Style Selector="Border.card">
         <Setter Property="Padding" Value="16" />
         <Setter Property="CornerRadius" Value="8" />
         <Setter Property="Background" Value="{DynamicResource TranslucentSurfaceBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}" />
     </Style>
 
     <Style Selector="Border.diagnostics">

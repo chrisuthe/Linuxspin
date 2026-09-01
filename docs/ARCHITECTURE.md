@@ -1188,7 +1188,9 @@ so dragging the window does not repaint it. `HasArtBackdrop` is connected-and-bi
 the two places that change either, and the veil follows `HasBackdrop` as Phase 2 left it. Both
 bitmaps are unbound before they are disposed, for the render-thread reason in the view model.
 
-**Welcome** (`Views/WelcomeView.axaml`) is cards on `TranslucentSurfaceBrush`. "This player" holds the
+**Welcome** (`Views/WelcomeView.axaml`) is cards on `TranslucentSurfaceBrush` with the settings card's
+1 px `SystemControlForegroundBaseLowBrush` hairline — with no backdrop behind Welcome the surface is
+the root's own colour, and it is the border that makes a card read as one. "This player" holds the
 name as a write-through `TextBox` and, while advertising, an accent dot with "Broadcasting, visible
 to servers". The dot pulses at 2 Hz from a `UiClock` in the view's code-behind — an Avalonia
 `Animation` would spin a core on the Wayland head, per the clock table — and the clock runs only while
