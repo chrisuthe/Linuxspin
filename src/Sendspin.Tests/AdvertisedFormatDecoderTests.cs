@@ -38,16 +38,6 @@ namespace Sendspin.Tests;
 public sealed class AdvertisedFormatDecoderTests
 {
     /// <summary>
-    /// The device shapes the advertisement is driven across, keyed by the name the theory takes.
-    /// </summary>
-    /// <remarks>
-    /// A shape earns its place by reaching formats the others do not. The 44.1 kHz family is not a
-    /// duplicate of the 48 kHz one — it is the other hi-res lineage, and it is the only shape that
-    /// reaches <c>176400</c>. The low-rate shape is the only one that advertises Opus anywhere but
-    /// 48 kHz: <c>PlayerCapabilities</c> permits five Opus rates and hardware reporting alone
-    /// decides which are ever offered, so without it four of the five are asserted by nobody.
-    /// </remarks>
-    /// <summary>
     /// Every shape name <see cref="Shape"/> knows, for the cases that sweep all of them.
     /// </summary>
     /// <remarks>
@@ -58,6 +48,16 @@ public sealed class AdvertisedFormatDecoderTests
     /// </remarks>
     private static readonly string[] Shapes = ["none", "48k-only", "hi-res", "44k1-family", "low-rate"];
 
+    /// <summary>
+    /// The device shape one <see cref="Shapes"/> name stands for, or null for "no device at all".
+    /// </summary>
+    /// <remarks>
+    /// A shape earns its place by reaching formats the others do not. The 44.1 kHz family is not a
+    /// duplicate of the 48 kHz one — it is the other hi-res lineage, and it is the only shape that
+    /// reaches <c>176400</c>. The low-rate shape is the only one that advertises Opus anywhere but
+    /// 48 kHz: <c>PlayerCapabilities</c> permits five Opus rates and hardware reporting alone
+    /// decides which are ever offered, so without it four of the five are asserted by nobody.
+    /// </remarks>
     private static AudioDeviceInfo? Shape(string name) => name switch
     {
         "none" => null,
