@@ -51,6 +51,21 @@ public sealed class LinuxWindowingWiringTests
     }
 
     /// <remarks>
+    /// Every member, so adding one to the enum without wiring it fails here rather than silently
+    /// landing on whichever backend the catch-all arm names.
+    /// </remarks>
+    [Fact]
+    public void ConfigureWindowing_HandlesEveryBackendTheEnumDeclares()
+    {
+        foreach (var backend in Enum.GetValues<LinuxWindowingBackend>())
+        {
+            Assert.NotNull(
+                PlatformSelection.ConfigureWindowing(AppBuilder.Configure<TestApp>(), backend)
+                    .WindowingSubsystemInitializer);
+        }
+    }
+
+    /// <remarks>
     /// The rendering stack is chained onto the choice rather than repeated per branch, so both
     /// backends must land on the same one. A branch that grew its own is the drift this guards.
     /// </remarks>

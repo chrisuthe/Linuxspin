@@ -55,7 +55,8 @@ internal static class PlatformSelection
         (backend switch
         {
             LinuxWindowingBackend.Wayland => builder.UseWayland(),
-            _ => builder.UseX11(),
+            LinuxWindowingBackend.X11 => builder.UseX11(),
+            _ => throw new ArgumentOutOfRangeException(nameof(backend), backend, "No windowing call for this backend."),
         })
         .UseSkia()
         .UseHarfBuzz();
