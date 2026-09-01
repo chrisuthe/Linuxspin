@@ -183,7 +183,7 @@ mkdir -p "$RESULTS_DIR"
 # Build Test Arguments
 # =============================================================================
 
-# The project is appended per run, so one set of arguments serves every project.
+# The project is supplied per run, so one set of arguments serves every project.
 TEST_ARGS=(
     --configuration "$CONFIGURATION"
     --results-directory "$RESULTS_DIR"
@@ -203,18 +203,8 @@ if [[ -n "$FILTER" ]]; then
     TEST_ARGS+=(--filter "$FILTER")
 fi
 
-# Output format
-case "$OUTPUT_FORMAT" in
-    trx)
-        TEST_ARGS+=(--logger "trx;LogFileName=test-results.trx")
-        ;;
-    html)
-        TEST_ARGS+=(--logger "html;LogFileName=test-results.html")
-        ;;
-    console)
-        # Default, no additional args needed
-        ;;
-esac
+# Output format is applied per project inside run_tests: one LogFileName across two
+# projects leaves only the second run's results behind.
 
 # Coverage
 if $COVERAGE; then
@@ -235,7 +225,18 @@ run_tests() {
     echo ""
 
     for project in "${TEST_PROJECTS[@]}"; do
-        if ! dotnet test "$project" "${TEST_ARGS[@]}"; then
+        local name
+        name="$(basename "$project" .csproj)"
+
+        local report=()
+        case "$OUTPUT_FORMAT" in
+            trx) report=(--logger "trx;LogFileName=$name.trx") ;;
+            html) report=(--logger "html;LogFileName=$name.html") ;;
+        esac
+
+        # Before TEST_ARGS: its coverage form ends in a `--` passthrough, and anything
+        # after that belongs to the data collector rather than to `dotnet test`.
+        if ! dotnet test "$project" ${report[@]+"${report[@]}"} "${TEST_ARGS[@]}"; then
             echo ""
             error "Some tests failed!"
             return 1
