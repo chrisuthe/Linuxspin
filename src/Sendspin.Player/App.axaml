@@ -4,11 +4,28 @@
              RequestedThemeVariant="Default">
 
     <!--
-      RequestedThemeVariant="Default" is what makes the app follow the system light/dark
-      setting, and switch live when it changes, rather than pinning a theme. The player this
-      one takes its feature set from is dark-only with custom chrome; that is the opposite of
-      feeling native, so it is not copied.
+      The shell belongs to the OS. RequestedThemeVariant="Default" is what makes the app follow
+      the system light/dark setting, and switch live when it changes, rather than pinning a
+      theme; the accent comes from the platform through Fluent's SystemAccentColor and is never
+      overridden; the font is the platform's. The layout inside the window comes from Sendspin
+      for Windows — the colours do not.
     -->
+
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceInclude Source="avares://Sendspin.Player/Styles/Tokens.axaml" />
+                <ResourceInclude Source="avares://Sendspin.Player/Styles/Icons.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+
+            <!--
+              Fluent's own value is "fonts:Inter#Inter, $Default", which is why Inter was the face
+              of every control. $Default alone is the platform's font — see Program.cs for what
+              that resolves to and how Inter stays the glyph fallback.
+            -->
+            <FontFamily x:Key="ContentControlThemeFontFamily">$Default</FontFamily>
+        </ResourceDictionary>
+    </Application.Resources>
 
     <Application.Styles>
         <FluentTheme />

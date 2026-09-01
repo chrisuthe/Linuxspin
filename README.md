@@ -36,8 +36,9 @@ the obvious answer, and each one cost real effort to establish.
 - **A diagnostics view** showing sync error, correction band, playback rate in ppm, buffer depth,
   clock offset and drift, and — the most useful single field — whether the timing source is
   actually the audio hardware clock.
-- **Resizable, native chrome, follows the system light/dark theme.** Deliberately not a fixed-size
-  dark-only custom-chrome window.
+- **Native shell, system theme and accent, platform font.** Resizable, with the OS's own
+  decorations; follows the desktop's light/dark setting and accent live. The layout inside the
+  window comes from Sendspin for Windows; the colours do not.
 
 ## Requirements
 

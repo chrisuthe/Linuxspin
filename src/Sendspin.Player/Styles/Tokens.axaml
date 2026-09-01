@@ -1,0 +1,48 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+      The app-specific values Fluent does not already have, and nothing else. Everything visible
+      is expressed against Fluent's own resources (SystemAccentColor, the control brushes, the
+      chrome and layer colours), which Avalonia keeps in step with the desktop's light/dark
+      setting and accent; these few derive from those same colours so they follow too. No literal
+      colour appears here or in any other axaml in the project — Sendspin.Ui.Tests pins that.
+
+      Each token is a brush whose Color is a DynamicResource, so it tracks the theme live rather
+      than being a snapshot. That is also why the glow default is a brush and not a Color: a
+      Color resource cannot follow the accent. Read .Color off it for a BoxShadow.
+
+      The dictionaries are split by variant so Phase 5 can tune each side of the veil and the
+      glow on its own; today the only per-variant difference is the glow, which has to be darker
+      than a light page and lighter than a dark one to read at all.
+    -->
+
+    <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+            <!-- Goes over blurred artwork so theme-foreground text always has contrast. -->
+            <SolidColorBrush x:Key="VeilBrush" Color="{DynamicResource SystemAltHighColor}" Opacity="0.75" />
+            <!-- The footer and card surface. -->
+            <SolidColorBrush x:Key="TranslucentSurfaceBrush" Color="{DynamicResource SystemAltHighColor}" Opacity="0.6" />
+            <!-- The fill behind the "no artwork" glyph. -->
+            <SolidColorBrush x:Key="ArtPlaceholderBrush" Color="{DynamicResource SystemListLowColor}" />
+            <!-- The art glow until a palette has been extracted from the artwork. -->
+            <SolidColorBrush x:Key="GlowDefaultBrush" Color="{DynamicResource SystemAccentColorDark1}" />
+        </ResourceDictionary>
+
+        <ResourceDictionary x:Key="Dark">
+            <SolidColorBrush x:Key="VeilBrush" Color="{DynamicResource SystemAltHighColor}" Opacity="0.75" />
+            <SolidColorBrush x:Key="TranslucentSurfaceBrush" Color="{DynamicResource SystemAltHighColor}" Opacity="0.6" />
+            <SolidColorBrush x:Key="ArtPlaceholderBrush" Color="{DynamicResource SystemListLowColor}" />
+            <SolidColorBrush x:Key="GlowDefaultBrush" Color="{DynamicResource SystemAccentColorLight1}" />
+        </ResourceDictionary>
+    </ResourceDictionary.ThemeDictionaries>
+
+    <!--
+      Glyphs drawn over the accent. Fluent's own text-on-accent brush is white whatever the
+      accent is, and Plasma's accent is a light highlight colour in a light scheme. This is the
+      start-up value only: App recomputes it from the accent's luminance whenever the platform
+      reports a colour change (see Theme/AccentResources.cs).
+    -->
+    <SolidColorBrush x:Key="OnAccentBrush" Color="{DynamicResource SystemChromeWhiteColor}" />
+
+</ResourceDictionary>

@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Media;
 
 namespace Sendspin.Player;
 
@@ -48,13 +49,36 @@ internal static class Program
     /// Builds the Avalonia application.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Also called by the XAML designer, so it must not do application initialisation. The
     /// windowing backend is chosen per platform — see
     /// <see cref="PlatformSelection.ConfigureWindowing"/>, which is where the Linux head's
     /// Wayland-by-default choice and its X11 escape hatch live.
+    /// </para>
+    /// <para>
+    /// <strong>The UI font is the platform's, with Inter as glyph fallback.</strong>
+    /// <c>WithInterFont()</c> only registers the embedded collection; what made Inter the face of
+    /// every control was Fluent's <c>ContentControlThemeFontFamily</c> resource naming it first,
+    /// and App.axaml overrides that resource to <c>$Default</c>. <c>DefaultFamilyName</c> is what
+    /// <c>$Default</c> resolves to: on Linux it is the desktop's interface font read from the
+    /// Settings portal (fontconfig's own default is DejaVu Sans inside the Flatpak, which is not
+    /// the desktop's font); on Windows and macOS it is left null, which means "ask the platform".
+    /// On Windows that answer is measured: plain Segoe UI, the face the WPF reference app uses.
+    /// On macOS it is measured too, and wrong: Helvetica rather than SF Pro. The SF override is
+    /// a follow-up once the family name Skia resolves to SF is known — see
+    /// <see cref="PlatformSelection.ReadDesktopFontFamily"/> on each head. The pair was measured
+    /// in the "System font" section of docs/ARCHITECTURE.md; macOS also confirmed that the
+    /// embedded <c>fonts:Inter#Inter</c> is the only way Inter resolves on a box without it
+    /// installed, which is why <c>WithInterFont()</c> stays.
+    /// </para>
     /// </remarks>
     public static AppBuilder BuildAvaloniaApp() =>
         PlatformSelection.ConfigureWindowing(AppBuilder.Configure<App>())
             .WithInterFont()
+            .With(new FontManagerOptions
+            {
+                DefaultFamilyName = PlatformSelection.ReadDesktopFontFamily(),
+                FontFallbacks = [new FontFallback { FontFamily = new FontFamily("fonts:Inter#Inter") }],
+            })
             .LogToTrace();
 }

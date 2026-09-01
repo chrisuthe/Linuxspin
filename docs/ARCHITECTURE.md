@@ -597,8 +597,9 @@ dotnet run --project scripts/spike/ShellSpike -- theme | font | chrome | clock |
 ```
 
 Every mode prints `[spike]` lines; the numbers below are those lines. `SENDSPIN_X11=1` selects the X11
-head exactly as it does for the player. **GNOME and Windows 11 were not available and are marked
-unmeasured**, each with the procedure — which is the same probe, run there.
+head exactly as it does for the player. **GNOME was not available and is marked unmeasured** with the
+procedure — the same probe, run there. Windows 11 was measured on a separate box for theme and
+font (below); its Mica and client-area rows are still marked unmeasured until that run is written up.
 
 The macOS figures were taken after two defects in the probe were fixed, and no macOS number here
 predates those fixes:
@@ -747,11 +748,15 @@ it, and on Plasma it is a variant-dependent derivative from the start. Anything 
 desktop accent needs a platform-specific source, and anything that merely wants to be tasteful should
 carry its own colour.
 
-**Windows 11 — unmeasured.** Same property set (`RequestedThemeVariant="Default"`, and
-`SystemAccentColor` for the accent). Procedure: `dotnet run --project scripts/spike/ShellSpike --
-theme --seconds 60`, flip Settings › Personalization › Colors and read the `ColorValuesChanged`
-lines. That backend does not go through a portal either, so the no-portal fallback above is
-Linux-only.
+**Windows 11 — measured** (10.0.26200, Avalonia 12.1.1), same property set. The theme and the accent
+are correct at `Opened` with no asynchronous settle, unlike the portal read above. The accent reported
+is the OS `AccentPalette` base slot (`#0076E4` on that box), not `AccentColorMenu`. And
+`PlatformSettings.ColorValuesChanged` is a storm there: one accent change produced about **20
+duplicate events in 600 ms**, one of them with completely unchanged values, and each variant flip
+raises it twice. Anything hung off that event goes through `Core/Theme/SystemColorChangeFilter.cs`,
+which drops a report whose accent and variant match the last one accepted; `Player/Theme/
+PlatformColorChanges.cs` is the one subscription in the app and re-raises only what passes.
+
 
 ### System font — Inter wins only because Fluent asks for it first
 
@@ -859,11 +864,35 @@ installed, and nothing in `~/Library/Fonts` or `/Library/Fonts` supplies one. A 
 `DefaultFamilyName` therefore needs a resolve-check at start-up rather than a hardcoded name trusted
 to exist. **Acting on this in the player is a separate task; this section measures and records.**
 
-**Windows — unmeasured.** The intent is Segoe UI Variable. What `$Default` resolves to there is
-whatever `SKTypeface.Default.FamilyName` says — that may well be plain `Segoe UI` rather than the
-Variable face, in which case `DefaultFamilyName` has to be named per platform as it does on macOS.
-Procedure: `dotnet run --project scripts/spike/ShellSpike -- font` and read the
-`FontManager.DefaultFontFamily` line.
+**Windows — measured** (Windows 11 10.0.26200, Avalonia 12.1.1): `FontManager.DefaultFontFamily`
+resolves to plain `Segoe UI`, not Segoe UI Variable. That is the face the WPF reference app uses, so
+it is the right answer and `DefaultFamilyName` stays unset there. Glyph fallback through the composite
+works: 日 → `Yu Gothic UI`.
+
+**Decided and shipped (reskin phase 1).** The shape above is what `Program.cs` and `App.axaml` do,
+with one addition for the Flatpak row: the Settings portal serves the desktop's interface font as
+`org.gnome.desktop.interface` / `font-name`, and the KDE backend answers it as well as the GNOME
+one. Measured on this box, host and sandbox alike:
+
+| Where | `ReadOne org.gnome.desktop.interface font-name` | `fc-match "Noto Sans"` | `fc-match sans-serif` |
+|---|---|---|---|
+| Host | `"Noto Sans  10"` (the KDE backend's double space) | `NotoSans-Regular.ttf` | `NotoSans-Regular.ttf` |
+| `org.freedesktop.Platform//25.08` sandbox | `"Noto Sans  10"` | `NotoSans-Regular.ttf`, from `/run/host/fonts` | `DejaVuSans.ttf` |
+
+So the Linux head reads that key once, before the app builder runs, and hands the family to
+`FontManagerOptions.DefaultFamilyName` (`PlatformSelection.Linux.cs` →
+`Platform.Linux/Portals/SettingsPortal.cs`; the Pango description is reduced to a family by
+`Core/Platform/DesktopFontName.cs`, which strips the size and style words because fontconfig turns an
+unknown family back into its default). Inside the Flatpak the same call reaches the portal — the
+Settings portal needs no permission — and the family resolves against the host fonts the sandbox
+already sees, which is what takes the Flatpak from DejaVu Sans to the desktop's face. No bus, no
+portal or no key leaves `DefaultFamilyName` null, which is fontconfig's answer as before. The app logs
+what it ended up with at start-up (`UI font: $Default is …, glyphs from …, fallback face …`), which
+is the `font` probe's report without a second binary. Windows leaves the name null on the measurement
+above; macOS leaves it null on the Helvetica measurement; the table above shows `.AppleSystemUIFont` is the
+name that resolves to the system face and that an unresolvable name kills the process, so the macOS
+override is a follow-up that ships with a resolve check (`PlatformSelection.MacOS.cs`).
+
 
 ### Decorations and client-area extension — the hint does nothing under KWin
 

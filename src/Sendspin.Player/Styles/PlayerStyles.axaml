@@ -2,11 +2,48 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <!--
-      Everything here is expressed against the Fluent theme's own resources rather than fixed
-      colours, so the app follows the system light/dark setting and the system accent instead of
-      pinning one look. Hard-coded colours are what make an app look imported on someone else's
-      desktop.
+      Everything here is expressed against the Fluent theme's own resources plus the handful of
+      tokens in Tokens.axaml, never against fixed colours, so the app follows the system
+      light/dark setting and the system accent instead of pinning one look. Hard-coded colours
+      are what make an app look imported on someone else's desktop. The shell belongs to the OS
+      — native decorations, system theme and accent, the platform's UI font — and the content
+      area belongs to the music: its composition comes from Sendspin for Windows, its colours
+      do not.
     -->
+
+    <Styles.Resources>
+        <!--
+          PathIcon strokes its geometry instead of filling it. Every glyph in Icons.axaml is a
+          24-unit stroke drawing at 1.7 units; the Viewbox scales the whole drawing, stroke
+          included, to whatever size the icon is given, so a 32 px icon is the 24 px one enlarged
+          and not the same hairline stretched. Foreground is left unset so it inherits — the
+          theme foreground in the body, OnAccentBrush inside an accent-filled button. "filled"
+          is for play and pause, the two glyphs that are solid shapes.
+        -->
+        <ControlTheme x:Key="{x:Type PathIcon}" TargetType="PathIcon">
+            <Setter Property="Width" Value="24" />
+            <Setter Property="Height" Value="24" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Viewbox Stretch="Uniform">
+                        <Path Name="PART_Glyph"
+                              Width="24" Height="24"
+                              Stretch="None"
+                              Data="{TemplateBinding Data}"
+                              Stroke="{TemplateBinding Foreground}"
+                              StrokeThickness="1.7"
+                              StrokeLineCap="Round"
+                              StrokeJoin="Round" />
+                    </Viewbox>
+                </ControlTemplate>
+            </Setter>
+            <Style Selector="^.filled /template/ Path#PART_Glyph">
+                <Setter Property="Fill" Value="{Binding $parent[PathIcon].Foreground}" />
+            </Style>
+        </ControlTheme>
+    </Styles.Resources>
+
+    <!-- Surfaces -->
 
     <Style Selector="Border.header">
         <Setter Property="Padding" Value="16,12" />
@@ -46,11 +83,12 @@
         <Setter Property="Height" Value="180" />
         <Setter Property="CornerRadius" Value="8" />
         <Setter Property="ClipToBounds" Value="True" />
-        <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundListLowBrush}" />
+        <Setter Property="Background" Value="{DynamicResource ArtPlaceholderBrush}" />
     </Style>
 
-    <Style Selector="TextBlock.artworkPlaceholder">
-        <Setter Property="FontSize" Value="56" />
+    <Style Selector="PathIcon.artworkPlaceholder">
+        <Setter Property="Width" Value="56" />
+        <Setter Property="Height" Value="56" />
         <Setter Property="Opacity" Value="0.35" />
         <Setter Property="HorizontalAlignment" Value="Center" />
         <Setter Property="VerticalAlignment" Value="Center" />
@@ -61,34 +99,37 @@
         <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
 
-    <Style Selector="TextBlock.h1">
+    <!--
+      Text. One scale: title, subtitle, body, caption, sectionCaption. The older names
+      (h1/h2/h3/subtle/fieldLabel/metricLabel/metricValue/warning) are aliases of it, listed on
+      the same selector rather than given their own sizes, until the views that use them are
+      rewritten and they can go. sectionCaption is for settings headings and expects its text
+      already upper-cased — Avalonia has no text-transform.
+    -->
+
+    <Style Selector="TextBlock.title, TextBlock.h1">
         <Setter Property="FontSize" Value="24" />
         <Setter Property="FontWeight" Value="SemiBold" />
     </Style>
 
-    <Style Selector="TextBlock.h2">
+    <Style Selector="TextBlock.subtitle, TextBlock.h2">
         <Setter Property="FontSize" Value="16" />
-        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="FontWeight" Value="Medium" />
     </Style>
 
-    <Style Selector="TextBlock.h3">
+    <Style Selector="TextBlock.body, TextBlock.h3">
         <Setter Property="FontSize" Value="14" />
-        <Setter Property="Opacity" Value="0.85" />
     </Style>
 
-    <Style Selector="TextBlock.subtle">
+    <Style Selector="TextBlock.caption, TextBlock.subtle, TextBlock.metricLabel">
         <Setter Property="FontSize" Value="12" />
         <Setter Property="Opacity" Value="0.65" />
     </Style>
 
-    <Style Selector="TextBlock.warning">
-        <Setter Property="FontSize" Value="12" />
-        <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCautionBrush}" />
-    </Style>
-
-    <Style Selector="TextBlock.fieldLabel">
+    <Style Selector="TextBlock.sectionCaption, TextBlock.fieldLabel">
         <Setter Property="FontSize" Value="12" />
         <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="LetterSpacing" Value="1" />
         <Setter Property="Opacity" Value="0.8" />
     </Style>
 
@@ -96,18 +137,126 @@
         <Setter Property="FontSize" Value="12" />
     </Style>
 
-    <Style Selector="TextBlock.metricLabel">
+    <Style Selector="TextBlock.warning">
         <Setter Property="FontSize" Value="12" />
-        <Setter Property="Opacity" Value="0.65" />
+        <Setter Property="Foreground" Value="{DynamicResource SystemControlErrorTextForegroundBrush}" />
     </Style>
 
-    <Style Selector="Button.transportButton">
-        <Setter Property="MinWidth" Value="56" />
-        <Setter Property="Margin" Value="0,0,6,0" />
+    <!--
+      Buttons. iconButton is a 48 px circle that is invisible at rest and shows Fluent's list
+      hover brush under the pointer; a checked toggle draws its glyph in the accent rather than
+      filling the circle. playButton is the one accent-filled disc, with OnAccentBrush for its
+      glyph so it stays readable on a light highlight as well as a saturated accent. primary is
+      Fluent's own "accent" button — the same AccentButton brushes — with a 6 px radius and,
+      again, OnAccentBrush for its text; Fluent's accent foreground is white unconditionally.
+    -->
+
+    <Style Selector="Button.iconButton, ToggleButton.iconButton">
+        <Setter Property="Width" Value="48" />
+        <Setter Property="Height" Value="48" />
+        <Setter Property="MinWidth" Value="0" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="CornerRadius" Value="24" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Background" Value="{DynamicResource SystemControlTransparentBrush}" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
 
-    <Style Selector="ToggleButton.transportButton">
-        <Setter Property="MinWidth" Value="56" />
-        <Setter Property="Margin" Value="0,0,6,0" />
+    <Style Selector="Button.iconButton:pointerover /template/ ContentPresenter#PART_ContentPresenter, ToggleButton.iconButton:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundListLowBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource SystemControlTransparentBrush}" />
+    </Style>
+
+    <Style Selector="Button.iconButton:pressed /template/ ContentPresenter#PART_ContentPresenter, ToggleButton.iconButton:pressed /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundListMediumBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource SystemControlTransparentBrush}" />
+    </Style>
+
+    <Style Selector="Button.iconButton:disabled /template/ ContentPresenter#PART_ContentPresenter, ToggleButton.iconButton:disabled /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource SystemControlTransparentBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource SystemControlTransparentBrush}" />
+    </Style>
+
+    <Style Selector="ToggleButton.iconButton:checked /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource SystemControlTransparentBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource SystemControlTransparentBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundAccentBrush}" />
+    </Style>
+
+    <Style Selector="ToggleButton.iconButton:checked:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundListLowBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundAccentBrush}" />
+    </Style>
+
+    <Style Selector="ToggleButton.iconButton:checked:pressed /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundListMediumBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundAccentBrush}" />
+    </Style>
+
+    <Style Selector="ToggleButton.iconButton:checked:disabled /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource SystemControlTransparentBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource SystemControlDisabledBaseMediumLowBrush}" />
+    </Style>
+
+    <Style Selector="Button.playButton">
+        <Setter Property="Width" Value="72" />
+        <Setter Property="Height" Value="72" />
+        <Setter Property="MinWidth" Value="0" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="CornerRadius" Value="36" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Background" Value="{DynamicResource SystemControlHighlightAccentBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource OnAccentBrush}" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+
+    <Style Selector="Button.playButton PathIcon">
+        <Setter Property="Width" Value="32" />
+        <Setter Property="Height" Value="32" />
+    </Style>
+
+    <Style Selector="Button.playButton:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource SystemControlHighlightAccentBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource OnAccentBrush}" />
+        <Setter Property="Opacity" Value="0.9" />
+    </Style>
+
+    <Style Selector="Button.playButton:pressed /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource SystemControlHighlightAccentBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource OnAccentBrush}" />
+        <Setter Property="Opacity" Value="0.8" />
+    </Style>
+
+    <Style Selector="Button.playButton:disabled /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource SystemControlHighlightAccentBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource OnAccentBrush}" />
+        <Setter Property="Opacity" Value="0.4" />
+    </Style>
+
+    <Style Selector="Button.primary">
+        <Setter Property="CornerRadius" Value="6" />
+        <Setter Property="Background" Value="{DynamicResource AccentButtonBackground}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource AccentButtonBorderBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource OnAccentBrush}" />
+    </Style>
+
+    <Style Selector="Button.primary:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource AccentButtonBackgroundPointerOver}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource AccentButtonBorderBrushPointerOver}" />
+        <Setter Property="Foreground" Value="{DynamicResource OnAccentBrush}" />
+    </Style>
+
+    <Style Selector="Button.primary:pressed /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource AccentButtonBackgroundPressed}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource AccentButtonBorderBrushPressed}" />
+        <Setter Property="Foreground" Value="{DynamicResource OnAccentBrush}" />
+    </Style>
+
+    <Style Selector="Button.primary:disabled /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource AccentButtonBackgroundDisabled}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource AccentButtonBorderBrushDisabled}" />
+        <Setter Property="Foreground" Value="{DynamicResource AccentButtonForegroundDisabled}" />
     </Style>
 </Styles>

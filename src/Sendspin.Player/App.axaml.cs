@@ -3,6 +3,8 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Avalonia.Media;
+using Avalonia.Platform;
 using Avalonia.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -17,6 +19,7 @@ using Sendspin.Discord;
 using Sendspin.Platform.Shared.Client;
 using Sendspin.Platform.Shared.Media;
 using Sendspin.Platform.Shared.Notifications;
+using Sendspin.Player.Theme;
 using Sendspin.Player.ViewModels;
 using Sendspin.Player.Views;
 using Sendspin.SDK.Client;
@@ -32,6 +35,7 @@ public sealed partial class App : Application
     private ServiceProvider? _services;
     private MainWindow? _mainWindow;
     private TrayIconController? _tray;
+    private PlatformColorChanges? _colorChanges;
     private bool _shutdownStarted;
 
     /// <summary>
@@ -75,6 +79,17 @@ public sealed partial class App : Application
             AppVersion, platform.PlatformName);
 
         _services.GetRequiredService<IPlatformPaths>().EnsureDirectoriesExist();
+
+        LogUiFont(logger);
+
+        if (PlatformSettings is { } platformSettings)
+        {
+            // Fluent tracks the accent itself; the glyph colour drawn over it is ours to keep
+            // in step, from the same event.
+            _colorChanges = new PlatformColorChanges(platformSettings);
+            _colorChanges.Changed += OnColorValuesChanged;
+            _colorChanges.Publish();
+        }
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
@@ -214,6 +229,38 @@ public sealed partial class App : Application
 
     private void OnShowRequested(object? sender, EventArgs e) => ShowMainWindow();
 
+    private void OnColorValuesChanged(PlatformColorValues values) =>
+        AccentResources.Apply(Resources, values.AccentColor1);
+
+    /// <summary>
+    /// Records which face the platform default resolved to, which face the controls' font
+    /// resource resolved to, and which face fills in glyphs it lacks — what the shell spike's
+    /// <c>font</c> probe reports.
+    /// </summary>
+    private void LogUiFont(ILogger logger)
+    {
+        var fontManager = FontManager.Current;
+
+        var controlFamily = TryGetResource("ContentControlThemeFontFamily", ActualThemeVariant, out var resource)
+            && resource is FontFamily family
+            ? family
+            : FontFamily.Default;
+
+        var fallback = fontManager.TryMatchCharacter(
+            'A', FontStyle.Normal, FontWeight.Normal, FontStretch.Normal, null, null, out var fallbackTypeface)
+            ? fallbackTypeface.FontFamily.Name
+            : "(none)";
+
+        logger.LogInformation(
+            "UI font: $Default is {Default}, glyphs from {Face}; controls use {ControlFamily}, glyphs from {ControlFace}; fallback face {Fallback}",
+            fontManager.DefaultFontFamily, Resolve(FontFamily.Default), controlFamily, Resolve(controlFamily), fallback);
+
+        static string Resolve(FontFamily family) =>
+            FontManager.Current.TryGetGlyphTypeface(new Typeface(family), out var glyphTypeface)
+                ? glyphTypeface.FamilyName
+                : "(unresolved)";
+    }
+
     /// <summary>
     /// Tears down in a defined order, before the framework exits.
     /// </summary>
@@ -244,6 +291,9 @@ public sealed partial class App : Application
         logger?.LogInformation("Shutting down");
 
         _tray?.Detach();
+
+        _colorChanges?.Dispose();
+        _colorChanges = null;
 
         if (SingleInstance is { } guard)
         {

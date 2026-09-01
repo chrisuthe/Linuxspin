@@ -4,6 +4,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="using:Sendspin.Player.ViewModels"
         xmlns:views="using:Sendspin.Player.Views"
+        xmlns:media="using:Sendspin.Core.MediaSession"
         mc:Ignorable="d"
         x:Class="Sendspin.Player.Views.MainWindow"
         x:DataType="vm:MainViewModel"
@@ -13,9 +14,9 @@
         WindowStartupLocation="CenterScreen">
 
     <!--
-      Resizable, with real platform decorations and no fixed size. The player this one takes its
-      feature set from is a fixed 410x736 phone-shaped dark-only window with custom chrome; that
-      is the opposite of feeling native, so the chrome is deliberately not copied.
+      Native shell: resizable, the platform's own decorations, the system's light/dark variant
+      and accent, the platform's font. The composition inside the window comes from Sendspin for
+      Windows — a phone-shaped, dark-only, custom-chrome player — and its colours do not.
     -->
 
     <Grid RowDefinitions="Auto,*,Auto">
@@ -53,8 +54,8 @@
                     <Grid ColumnDefinitions="Auto,*" IsVisible="{Binding IsConnected}">
                         <Border Grid.Column="0" Classes="artwork">
                             <Panel>
-                                <TextBlock Text="♪" Classes="artworkPlaceholder"
-                                           IsVisible="{Binding Artwork, Converter={x:Static ObjectConverters.IsNull}}" />
+                                <PathIcon Data="{StaticResource MusicIcon}" Classes="artworkPlaceholder"
+                                          IsVisible="{Binding Artwork, Converter={x:Static ObjectConverters.IsNull}}" />
                                 <Image Source="{Binding Artwork}" Stretch="UniformToFill" />
                             </Panel>
                         </Border>
@@ -107,7 +108,7 @@
                                    IsVisible="{Binding !DiscoveredServers.Count}" />
 
                         <Button Content="Connect"
-                                Classes="accent"
+                                Classes="primary"
                                 Command="{Binding ConnectCommand}"
                                 HorizontalAlignment="Left" />
 
@@ -144,27 +145,53 @@
         <!-- Transport -->
         <Border Grid.Row="2" Classes="transport" IsEnabled="{Binding IsConnected}">
             <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto,Auto">
-                <Button Grid.Column="0" Content="⏮" Classes="transportButton"
-                        Command="{Binding PreviousCommand}" ToolTip.Tip="Previous" />
-                <Button Grid.Column="1" Content="{Binding PlayPauseLabel}" Classes="transportButton accent"
-                        Command="{Binding PlayPauseCommand}" />
-                <Button Grid.Column="2" Content="⏭" Classes="transportButton"
-                        Command="{Binding NextCommand}" ToolTip.Tip="Next" />
+                <Button Grid.Column="0" Classes="iconButton"
+                        Command="{Binding PreviousCommand}" ToolTip.Tip="Previous">
+                    <PathIcon Data="{StaticResource PreviousIcon}" />
+                </Button>
+
+                <!-- Play or pause is an icon choice, not a label: the two glyphs swap on IsPlaying. -->
+                <Button Grid.Column="1" Classes="playButton"
+                        Command="{Binding PlayPauseCommand}" ToolTip.Tip="{Binding PlayPauseLabel}">
+                    <Panel>
+                        <PathIcon Classes="filled" Data="{StaticResource PlayIcon}" IsVisible="{Binding !IsPlaying}" />
+                        <PathIcon Classes="filled" Data="{StaticResource PauseIcon}" IsVisible="{Binding IsPlaying}" />
+                    </Panel>
+                </Button>
+
+                <Button Grid.Column="2" Classes="iconButton"
+                        Command="{Binding NextCommand}" ToolTip.Tip="Next">
+                    <PathIcon Data="{StaticResource NextIcon}" />
+                </Button>
 
                 <!--
                   Shuffle and repeat show the server's state in their tooltips rather than as
                   checkmarks: NativeMenuItem.IsChecked does not work on Windows (Avalonia#8751),
                   so a checkmark would be right on two platforms and silently absent on the third.
                 -->
-                <ToggleButton Grid.Column="3" Content="🔀" Classes="transportButton"
+                <ToggleButton Grid.Column="3" Classes="iconButton"
                               IsChecked="{Binding State.Shuffle, Mode=OneWay}"
-                              Command="{Binding ToggleShuffleCommand}" ToolTip.Tip="Shuffle" />
-                <Button Grid.Column="4" Content="🔁" Classes="transportButton"
+                              Command="{Binding ToggleShuffleCommand}" ToolTip.Tip="Shuffle">
+                    <PathIcon Data="{StaticResource ShuffleIcon}" />
+                </ToggleButton>
+                <Button Grid.Column="4" Classes="iconButton"
                         Command="{Binding CycleRepeatCommand}"
-                        ToolTip.Tip="{Binding State.Repeat}" />
+                        ToolTip.Tip="{Binding State.Repeat}">
+                    <Panel>
+                        <PathIcon Data="{StaticResource RepeatIcon}"
+                                  IsVisible="{Binding State.Repeat, Converter={x:Static ObjectConverters.NotEqual}, ConverterParameter={x:Static media:MediaRepeatMode.One}}" />
+                        <PathIcon Data="{StaticResource RepeatOneIcon}"
+                                  IsVisible="{Binding State.Repeat, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static media:MediaRepeatMode.One}}" />
+                    </Panel>
+                </Button>
 
                 <StackPanel Grid.Column="6" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                    <ToggleButton Content="🔇" IsChecked="{Binding IsMuted}" ToolTip.Tip="Mute" />
+                    <ToggleButton Classes="iconButton" IsChecked="{Binding IsMuted}" ToolTip.Tip="Mute">
+                        <Panel>
+                            <PathIcon Data="{StaticResource SpeakerIcon}" IsVisible="{Binding !IsMuted}" />
+                            <PathIcon Data="{StaticResource MutedIcon}" IsVisible="{Binding IsMuted}" />
+                        </Panel>
+                    </ToggleButton>
                     <Slider Value="{Binding Volume}" Minimum="0" Maximum="100" Width="140"
                             ToolTip.Tip="{Binding Volume}" />
                 </StackPanel>

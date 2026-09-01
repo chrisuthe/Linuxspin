@@ -1,6 +1,7 @@
 using Avalonia;
 using Sendspin.Core.Platform;
 using Sendspin.Platform.Linux.Platform;
+using Sendspin.Platform.Linux.Portals;
 
 namespace Sendspin.Player;
 
@@ -28,6 +29,19 @@ internal static class PlatformSelection
     {
         // Nothing to do: neither the X11 nor the Wayland backend needs pre-initialisation.
     }
+
+    /// <summary>
+    /// Reads the desktop's interface font family from the Settings portal, or null when the
+    /// portal does not serve one.
+    /// </summary>
+    /// <remarks>
+    /// The portal answers on Plasma as well as GNOME (measured: <c>"Noto Sans  10"</c> from the
+    /// KDE backend on this box, and the same key from inside the Flatpak sandbox, where
+    /// fontconfig's own default would otherwise be DejaVu Sans). Null leaves Avalonia to ask
+    /// fontconfig. Bounded, because the app builder cannot wait on a portal that never answers.
+    /// </remarks>
+    public static string? ReadDesktopFontFamily() =>
+        SettingsPortal.TryReadInterfaceFontFamily(TimeSpan.FromMilliseconds(500));
 
     /// <summary>
     /// Selects the windowing backend.
