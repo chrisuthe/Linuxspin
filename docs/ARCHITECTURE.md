@@ -696,7 +696,7 @@ agree). Measured with `ShellSpike font`, which resolves the glyph typeface a `Te
 |---|---|---|---|---|
 | Host | Noto Sans | Inter | Noto Sans | `NotoSans-Regular.ttf` |
 | Flatpak (`org.freedesktop.Platform//25.08`) | **DejaVu Sans** | Inter | **DejaVu Sans** | `DejaVuSans.ttf` |
-| AppImage (`scripts/build-appimage.sh` layout, `AppRun` env) | Noto Sans | Inter | Noto Sans | host's |
+| AppImage — built with `appimagetool` from the probe's publish in the `scripts/build-appimage.sh` AppDir layout with its `AppRun`, and run as the `.AppImage` | Noto Sans | Inter | Noto Sans | host's |
 
 The Flatpak row is the reason to measure: the sandbox brings its own fontconfig, and its
 `sans-serif` is DejaVu Sans, so "the platform default" inside the Flatpak is a different face from
@@ -813,7 +813,7 @@ every configuration, so "per frame" below is per presented frame.
 | Clock | Wayland head | X11 head |
 |---|---|---|
 | `RequestAnimationFrame` re-armed in the callback | **25 124 Hz** (0.04 ms/tick) | 59.6 Hz |
-| `DispatcherTimer` 16 ms, any priority | **5.0 Hz** (200 ms/tick) | 62.3 Hz |
+| `DispatcherTimer` 16 ms, any priority | **5–7 Hz** (140–200 ms/tick across runs) | 62.3 Hz |
 | `DispatcherTimer` 100 ms | **4.3 Hz** (231 ms/tick) | 10.0 Hz |
 | `DispatcherTimer` 500 ms | **1.7 Hz** (600 ms/tick) | 2.0 Hz |
 | `System.Threading.Timer` 16 ms → `Dispatcher.UIThread.Post` | 62.3 Hz | 62.3 Hz |
@@ -825,8 +825,9 @@ again as soon as it is re-armed, 25 000 times a second, and the renderer still p
 (the FPS overlay read `Frame #74` while the callback counter read 25 259). The plan's loop as written
 costs 0.04 ms × 25 000 = **a full core** on Wayland to animate nothing faster. Avalonia's own
 `Animation`/`Transitions` clock has the same problem there, and `DispatcherTimer` has the opposite
-one — every due time lands on a coarse boundary about 100–200 ms late (16 → 200 ms, 100 → 231 ms,
-500 → 600 ms), which means the player's two 500 ms `DispatcherTimer`s — the progress bar and the
+one — every due time lands on a coarse boundary about 100–200 ms late (16 → 140–200 ms depending
+on the run, 100 → 231 ms, 500 → 600 ms; the last two reproduce exactly, the first varies), which
+means the player's two 500 ms `DispatcherTimer`s — the progress bar and the
 diagnostics refresh — already tick every 600 ms on the Wayland head today. X11 is correct on every
 row. Until `Avalonia.Wayland` is fixed (re-check each bump with `ShellSpike clock`), **the backdrop has to be
 paced by a thread-pool timer posting to the dispatcher**, which is the one clock that behaves on both
