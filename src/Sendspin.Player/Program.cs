@@ -51,7 +51,7 @@ internal static class Program
     /// Also called by the XAML designer, so it must not do application initialisation. The
     /// windowing backend is chosen per platform — see
     /// <see cref="PlatformSelection.ConfigureWindowing"/>, which is where the Linux head's
-    /// X11-by-default and opt-in Wayland decision lives.
+    /// Wayland-by-default choice and its X11 escape hatch live.
     /// </remarks>
     public static AppBuilder BuildAvaloniaApp() =>
         PlatformSelection.ConfigureWindowing(AppBuilder.Configure<App>())

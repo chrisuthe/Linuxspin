@@ -33,9 +33,30 @@ internal static class PlatformSelection
     /// Selects the windowing backend.
     /// </summary>
     /// <remarks>
-    /// X11 by default, which under a Wayland session means XWayland. The opt-in and the reasoning
-    /// behind the default both live in <see cref="WaylandOptIn"/>.
+    /// <para>
+    /// Wayland by default; the choice and the reasoning behind it live in
+    /// <see cref="LinuxWindowingSelection"/>.
+    /// </para>
+    /// <para>
+    /// The rendering stack is chained onto whichever backend comes back, not spelled out per
+    /// branch. <c>UsePlatformDetect()</c> wires Skia and HarfBuzz along with the windowing
+    /// backend; the backend calls underneath it do not, and a branch that named one and forgot
+    /// the other is what made <c>SENDSPIN_WAYLAND=1</c> abort at startup with "no rendering
+    /// system configured". One chain cannot be wired for one backend and forgotten for another.
+    /// </para>
     /// </remarks>
     public static AppBuilder ConfigureWindowing(AppBuilder builder) =>
-        WaylandOptIn.IsRequested ? builder.UseWayland() : builder.UsePlatformDetect();
+        ConfigureWindowing(builder, LinuxWindowingSelection.Selected);
+
+    /// <summary>
+    /// Wires a named backend. Separate from the environment read so a test can name one.
+    /// </summary>
+    internal static AppBuilder ConfigureWindowing(AppBuilder builder, LinuxWindowingBackend backend) =>
+        (backend switch
+        {
+            LinuxWindowingBackend.Wayland => builder.UseWayland(),
+            _ => builder.UseX11(),
+        })
+        .UseSkia()
+        .UseHarfBuzz();
 }

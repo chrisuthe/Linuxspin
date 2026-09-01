@@ -25,9 +25,10 @@
     <PackageVersion Include="Avalonia.Fonts.Inter" Version="12.1.1" />
     <PackageVersion Include="Avalonia.Themes.Fluent" Version="12.1.1" />
     <!--
-      The native Wayland backend, referenced so the opt-in flag is real rather than a promise.
-      It is deliberately not the default: UsePlatformDetect() never selects it, it is marked
-      experimental, and its own README warns that compositor crash-and-restart is expected.
+      The native Wayland backend, and the Linux head's default. UsePlatformDetect() never selects
+      it, so the app names it directly; see Core/Platform/LinuxWindowingBackend.cs for why it wins
+      and how SENDSPIN_X11 gets back to X11. The escape hatch is not optional: the backend is
+      marked experimental and its own README warns that compositor crash-and-restart is expected.
     -->
     <PackageVersion Include="Avalonia.Wayland" Version="12.1.1" />
     <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.0" />

@@ -103,8 +103,17 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Opt-in native Wayland backend; only the Linux head can use it. -->
+    <!-- The native Wayland backend, the Linux head's default; only that head can use it. -->
     <PackageReference Condition="'$(TargetFramework)' == 'net10.0'" Include="Avalonia.Wayland" />
+  </ItemGroup>
+
+  <!--
+    So the UI test project can assert what ConfigureWindowing wires. The windowing choice is a
+    decision and lives in Core, but which Avalonia calls each backend needs is wiring, and wiring
+    that was wrong is exactly what shipped a Wayland branch missing its rendering stack.
+  -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Sendspin.Ui.Tests" />
   </ItemGroup>
 
   <ItemGroup>
