@@ -102,6 +102,23 @@ public sealed unsafe class OpenAlRenderPlayer : AudioPlayerBase
     /// </summary>
     private const int AlSourceSpatializeSoft = 0x1214;
 
+    /// <summary>
+    /// <c>AL_EXT_FLOAT32</c>, which adds the float sample formats below.
+    /// </summary>
+    /// <remarks>
+    /// Queried with <c>alIsExtensionPresent</c> on a <em>current context</em>, not with
+    /// <c>alcIsExtensionPresent</c> on the device: this is an AL extension, and the ALC query
+    /// answers "no" for it on a driver that plainly has it. That distinction cost a while to find,
+    /// so it is written down here.
+    /// </remarks>
+    private const string Float32Extension = "AL_EXT_FLOAT32";
+
+    /// <summary><c>AL_FORMAT_MONO_FLOAT32</c>. Not in Silk.NET's enum.</summary>
+    private const int AlFormatMonoFloat32 = 0x10010;
+
+    /// <summary><c>AL_FORMAT_STEREO_FLOAT32</c>. Not in Silk.NET's enum.</summary>
+    private const int AlFormatStereoFloat32 = 0x10011;
+
     private readonly Lock _deviceGate = new();
     private readonly ManualResetEventSlim _stopSignal = new(initialState: false, spinCount: 0);
     private readonly uint[] _buffers = new uint[BufferCount];
@@ -122,6 +139,7 @@ public sealed unsafe class OpenAlRenderPlayer : AudioPlayerBase
 
     private int _sampleRate;
     private BufferFormat _bufferFormat;
+    private bool _rendersFloat;
     private int _deviceLatencyMilliseconds;
     private int _queuedBuffers;
     private double _smoothedDeviceLatencyMilliseconds;
@@ -141,6 +159,16 @@ public sealed unsafe class OpenAlRenderPlayer : AudioPlayerBase
     /// </remarks>
     public override string TimingSourceName =>
         _extensions?.HasDeviceClock == true ? "audio-clock" : "wall-clock";
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <c>float32</c> whenever <c>AL_EXT_FLOAT32</c> resolved. That is the honest ceiling of this
+    /// path rather than a claim of 32 real bits at the converter: the samples reach OpenAL
+    /// unquantised, and what the DAC resolves from them is between OpenAL Soft's mixer and the
+    /// backend. It is strictly better than <c>int16</c>, which throws away everything past 16 bits
+    /// here regardless of what the device could take.
+    /// </remarks>
+    public override string NegotiatedSampleFormat => _rendersFloat ? "float32" : "int16";
 
     /// <inheritdoc/>
     /// <remarks>
@@ -184,7 +212,7 @@ public sealed unsafe class OpenAlRenderPlayer : AudioPlayerBase
         if (format.Channels is not (1 or 2))
         {
             throw new NotSupportedException(
-                $"OpenAL can queue mono or stereo 16-bit buffers; the stream has {format.Channels} channels.");
+                $"OpenAL can queue mono or stereo buffers; the stream has {format.Channels} channels.");
         }
 
         lock (_deviceGate)
@@ -198,7 +226,6 @@ public sealed unsafe class OpenAlRenderPlayer : AudioPlayerBase
             try
             {
                 _sampleRate = format.SampleRate;
-                _bufferFormat = format.Channels == 2 ? BufferFormat.Stereo16 : BufferFormat.Mono16;
 
                 var al = AL.GetApi();
                 var alc = ALContext.GetApi();
@@ -228,6 +255,9 @@ public sealed unsafe class OpenAlRenderPlayer : AudioPlayerBase
                     throw new InvalidOperationException("OpenAL could not make the new context current.");
                 }
 
+                // Only now that a context is current can AL extensions be asked about at all.
+                SelectBufferFormat(al, format);
+
                 _source = al.GenSource();
                 fixed (uint* buffers = _buffers)
                 {
@@ -240,7 +270,10 @@ public sealed unsafe class OpenAlRenderPlayer : AudioPlayerBase
                 var framesPerBuffer = format.SampleRate * BufferMilliseconds / 1_000;
                 var samplesPerBuffer = framesPerBuffer * format.Channels;
                 _sampleBuffer = new float[samplesPerBuffer];
-                _pcmBuffer = new short[samplesPerBuffer];
+
+                // The float path queues _sampleBuffer straight through, so the int16 staging
+                // buffer is not allocated at all rather than allocated and left unused.
+                _pcmBuffer = _rendersFloat ? [] : new short[samplesPerBuffer];
 
                 DisableSpatialisation(al, format.Channels);
                 ApplyGain(al);
@@ -493,6 +526,45 @@ public sealed unsafe class OpenAlRenderPlayer : AudioPlayerBase
     }
 
     /// <summary>
+    /// Chooses the buffer format, preferring float32 where the driver has it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Float is preferred unconditionally, not only for a hi-res stream. The sample source is
+    /// already <c>float[]</c>, so the float path performs <em>no</em> conversion where the int16
+    /// path performs one per sample — it is both the wider and the cheaper route, and there is no
+    /// stream for which int16 is the better choice when float is available.
+    /// </para>
+    /// <para>
+    /// The context must be current before this is called; <c>alIsExtensionPresent</c> answers for
+    /// the current context.
+    /// </para>
+    /// </remarks>
+    private void SelectBufferFormat(AL al, AudioFormat format)
+    {
+        _rendersFloat = al.IsExtensionPresent(Float32Extension);
+
+        _bufferFormat = (_rendersFloat, format.Channels) switch
+        {
+            (true, 2) => (BufferFormat)AlFormatStereoFloat32,
+            (true, _) => (BufferFormat)AlFormatMonoFloat32,
+            (false, 2) => BufferFormat.Stereo16,
+            (false, _) => BufferFormat.Mono16
+        };
+
+        if (!_rendersFloat && format.BitDepth > 16)
+        {
+            // Worth saying out loud: the stream carries more than this path can deliver, and the
+            // advertisement that won it a 24-bit stream was made on the enumerator's evidence, not
+            // this driver's.
+            Logger.LogWarning(
+                "This OpenAL driver has no {Extension}, so a {BitDepth}-bit stream is being " +
+                "rendered through the int16 path and its extra bits are discarded",
+                Float32Extension, format.BitDepth);
+        }
+    }
+
+    /// <summary>
     /// Keeps the buffer queue full until asked to stop.
     /// </summary>
     private void RenderLoop()
@@ -619,23 +691,41 @@ public sealed unsafe class OpenAlRenderPlayer : AudioPlayerBase
     {
         var read = SampleSource?.Read(_sampleBuffer, 0, _sampleBuffer.Length) ?? 0;
 
-        if (read < _sampleBuffer.Length)
-        {
-            // Short read: pad with silence rather than queueing a shorter buffer, so one starved
-            // pass costs a gap of known length instead of shifting every later buffer earlier.
-            _pcmBuffer.AsSpan(read).Clear();
-        }
-
-        if (read > 0)
-        {
-            ConvertToInt16(_sampleBuffer.AsSpan(0, read), _pcmBuffer);
-        }
-
         ReportUnderrun(read == 0);
 
-        fixed (short* pcm = _pcmBuffer)
+        if (_rendersFloat)
         {
-            al.BufferData(buffer, _bufferFormat, pcm, _pcmBuffer.Length * sizeof(short), _sampleRate);
+            if (read < _sampleBuffer.Length)
+            {
+                // Short read: pad with silence rather than queueing a shorter buffer, so one
+                // starved pass costs a gap of known length instead of shifting every later buffer
+                // earlier. Cleared in the sample buffer itself here, because it is what gets
+                // queued — anything left from the previous pass would replay as a stutter.
+                _sampleBuffer.AsSpan(read).Clear();
+            }
+
+            fixed (float* samples = _sampleBuffer)
+            {
+                al.BufferData(
+                    buffer, _bufferFormat, samples, _sampleBuffer.Length * sizeof(float), _sampleRate);
+            }
+        }
+        else
+        {
+            if (read < _sampleBuffer.Length)
+            {
+                _pcmBuffer.AsSpan(read).Clear();
+            }
+
+            if (read > 0)
+            {
+                ConvertToInt16(_sampleBuffer.AsSpan(0, read), _pcmBuffer);
+            }
+
+            fixed (short* pcm = _pcmBuffer)
+            {
+                al.BufferData(buffer, _bufferFormat, pcm, _pcmBuffer.Length * sizeof(short), _sampleRate);
+            }
         }
 
         al.SourceQueueBuffers(source, 1, &buffer);
