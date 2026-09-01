@@ -37,16 +37,20 @@ public static class TestAppBuilder
 /// an <c>[AvaloniaFact]</c> attribute; that package is not referenced because it is built against
 /// xunit.v3 and the rest of the solution is on xunit 2.
 /// </remarks>
-public sealed class HeadlessSession : IDisposable
+public sealed class HeadlessSession
 {
     private readonly HeadlessUnitTestSession _session =
         HeadlessUnitTestSession.GetOrStartForAssembly(typeof(HeadlessSession).Assembly);
 
     /// <summary>Runs <paramref name="body"/> on the UI thread and rethrows anything it throws.</summary>
+    /// <remarks>
+    /// The session is deliberately never disposed. It is cached per assembly, and disposing it
+    /// does not clear that cache — a second test collection would then be handed a dead session,
+    /// which is a worse failure than the one thing disposal buys. Its dispatcher runs on a
+    /// background thread, so nothing keeps the test host alive.
+    /// </remarks>
     public void Run(Action body) =>
         _session.Dispatch(body, CancellationToken.None).GetAwaiter().GetResult();
-
-    public void Dispose() => _session.Dispose();
 }
 
 /// <summary>Shares one dispatcher thread across every UI test; starting one per test is slow.</summary>
