@@ -579,3 +579,292 @@ output is swallowed inside a macios-hosted `.app`; log to a file during bring-up
 over `--socket=pulseaudio`, which forces `enable-shm=no` and pushes every buffer through the socket.
 Album art must go to `$XDG_RUNTIME_DIR/app/$FLATPAK_ID/`, not `/tmp` — the sandbox's `/tmp` is not
 the host's and the shell cannot follow a path into it.
+
+## UI shell
+
+What the windowing layer actually does when asked to follow the desktop, and what the living-backdrop
+effect loop costs. Measured on the dev machine — Fedora 44, KDE Plasma 6.7.4 on Wayland,
+`xdg-desktop-portal` 1.22.1 with the KDE 6.7.4 and GTK 1.15.3 backends, Avalonia 12.1.1, an NVIDIA
+RTX 4060 plus an AMD Phoenix iGPU, windows opened on a 2560×2160@60 Hz output at scale 1.25 — with a
+throwaway probe kept under `scripts/spike/ShellSpike/` so any of it can be re-run:
+
+```
+dotnet run --project scripts/spike/ShellSpike -- theme | font | chrome | clock | effects <case>
+```
+
+Every mode prints `[spike]` lines; the numbers below are those lines. `SENDSPIN_X11=1` selects the X11
+head exactly as it does for the player. **GNOME, Windows 11 and macOS were not available and are marked
+unmeasured**, each with the procedure — which is the same probe, run there.
+
+One fact that frames all the rendering numbers: on this box **both Linux heads render on the AMD
+iGPU**. The probe lists the process's open DRM nodes after a frame, and it is `/dev/dri/renderD128`
+(vendor `0x1002`) on Wayland, on X11 and inside the Flatpak; the NVIDIA EGL vendor library is mapped
+but no NVIDIA render node is ever opened. "GPU" below means the iGPU.
+
+### Theme and accent on Linux — the portal is read, live, on both heads
+
+`Avalonia.FreeDesktop`'s `DBusPlatformSettings` reads `org.freedesktop.portal.Settings` once at
+start-up (`ReadOne org.freedesktop.appearance color-scheme` / `accent-color`) and subscribes to
+`SettingChanged`. With `RequestedThemeVariant="Default"` that is the whole mechanism; there is nothing
+else to wire. Measured by running the probe on both heads at once and flipping the desktop from a
+third terminal:
+
+| Command (wall clock) | Portal reports | Wayland head `ActualThemeVariant` | X11 head `ActualThemeVariant` |
+|---|---|---|---|
+| `plasma-apply-colorscheme BreezeLight` at 14:49:53.425 | `color-scheme` → `2` | `Light` at 14:49:53.596 (**+171 ms**) | `Light` at 14:49:53.593 (**+168 ms**) |
+| `plasma-apply-colorscheme BreezeDark` at 14:50:03.781 | `color-scheme` → `1` | `Dark` at 14:50:03.905 (+124 ms) | `Dark` at 14:50:03.902 (+121 ms) |
+
+Both heads flip live and at the same moment, because the portal read is D-Bus and identical either
+way. `Application.ActualThemeVariantChanged`, `Window.ActualThemeVariantChanged` and
+`PlatformSettings.ColorValuesChanged` all fire; a screenshot of the player in each state is in
+`docs/screenshots/spike/app-{wayland,x11}-{light,dark}.png`.
+
+**Accent.** `PlatformSettings.GetColorValues().AccentColor1` is exactly the portal's `accent-color`:
+`(0.239216, 0.682353, 0.913725)` arrives as `#3DAEE9`, Fluent's `SystemAccentColor` resource reads
+`#3DAEE9`, and the pixel the probe samples from an `accent`-classed `Button` and from a `Border`
+bound to that resource is `#3DAEE9` — portal, resource and rendered colour agree byte for byte. But
+**what the KDE portal serves as the accent is the colour scheme's selection colour, not the accent
+the user picked**, and it only refreshes on a scheme change. Three experiments:
+
+- Switching schemes: `plasma-apply-colorscheme Nordic` at 14:53:07.719 → portal `accent-color`
+  `(0.560784, 0.737255, 0.733333)` = Nordic's `Colors:Selection/BackgroundNormal=143,188,187` → the
+  app's `SystemAccentColor` and the rendered pixel are `#8FBCBB` at 14:53:07.841 (**+122 ms**).
+- `plasma-apply-colorscheme --accent-color '#E9643D'` rewrites the `Colors:*` groups in `kdeglobals`
+  (`Colors:Selection/BackgroundNormal` became `169,76,49`) but never writes `General/AccentColor`,
+  and the portal kept answering `#3DAEE9` five seconds later; the app saw a `ColorValuesChanged`
+  with the unchanged accent. Re-applying the *same* scheme afterwards does not undo the tint
+  (`plasma-apply-colorscheme` skips a scheme whose hash already matches); switching to another scheme
+  and back does.
+- Writing `General/AccentColor=233,100,61` with `kwriteconfig6 --notify` changes nothing until the
+  next scheme change; then the portal serves the **tinted selection colour** — `#EF9277`
+  (`239,146,119`) under BreezeLight, `#A94C31` (`169,76,49`) under BreezeDark — never `#E9643D`
+  itself.
+
+So on Plasma the app's accent is Plasma's *highlight* colour, a light or dark derivative of the user's
+choice that changes with the variant. The reskin should treat `SystemAccentColor` as "the desktop's
+highlight", not as a saturated brand colour. Whether System Settings' accent picker triggers the
+scheme re-apply that makes the portal notice is **unmeasured** (it needs a click): pick an accent
+there while `ShellSpike theme --seconds 30` runs and read the `ColorValuesChanged` lines.
+
+**No portal.** With `DBUS_SESSION_BUS_ADDRESS` unset — and, in case the library falls back to
+`$XDG_RUNTIME_DIR/bus`, also with it pointed at `unix:path=/nonexistent` — both heads settle at
+`ActualThemeVariant=Light`, `AccentColor1=#0078D7`, resource and rendered pixel `#0078D7`. That is
+`DefaultPlatformSettings.GetColorValues()` (variant `Light`, no accent) plus Fluent's built-in accent.
+Taking the bus away also takes MPRIS, notifications and the tray with it, so this is the spike's
+probe of the fallback, not a supported configuration.
+
+**First paint can be the fallback.** The portal read is asynchronous and the window is shown before it
+completes: in one of the seven portal-backed Wayland launches the `opened` report was `Light / #0078D7` and the `Dark /
+#3DAEE9` change arrived **22 ms** later (14:52:20.094 → 14:52:20.116). Anything that captures the
+variant on `Opened` — a splash colour, a first-frame screenshot — should wait for
+`ActualThemeVariantChanged` instead.
+
+**Flatpak.** The probe was published self-contained and wrapped with the player's own manifest
+(same runtime `org.freedesktop.Platform//25.08`, same `finish-args`, only the command changed), built
+with `org.flatpak.Builder` from Flathub because `flatpak-builder` is not installed here. Inside the
+sandbox the portal round-trip works unchanged: `Dark / #3DAEE9` at start, `Light` **141 ms** after
+`plasma-apply-colorscheme BreezeLight` (14:57:19.809 → 14:57:19.950), `Dark` 150 ms after the
+reverse. No extra permission was needed — the Settings portal is reachable from every sandbox.
+
+**GNOME — unmeasured.** Same property set. Procedure: run `ShellSpike theme --seconds 30`, then
+`gsettings set org.gnome.desktop.interface color-scheme prefer-dark` / `default` and, on GNOME 47+,
+`gsettings set org.gnome.desktop.interface accent-color teal`; the portal's GTK/GNOME backend serves
+both keys, so the expectation is the same live flip. The thing to check is the accent: the GNOME
+backend is expected to serve the accent the user picked rather than a derived highlight, in which
+case `AccentColor1` is a saturated colour there — the opposite of Plasma, and the reskin has to be
+happy with both.
+
+**Windows 11 and macOS — unmeasured.** Same property set (`RequestedThemeVariant="Default"`, and
+`SystemAccentColor` for the accent). Procedure: `dotnet run --project scripts/spike/ShellSpike --
+theme --seconds 60`, flip Settings › Personalization › Colors (Windows) or System Settings ›
+Appearance (macOS) and read the `ColorValuesChanged` lines. Neither backend goes through a portal,
+so the no-portal fallback above is Linux-only.
+
+### System font — Inter wins only because Fluent asks for it first
+
+`.WithInterFont()` does one thing: it registers `InterFontCollection` under the `fonts:Inter` key. It
+sets no default. What makes Inter the face of every control is **Fluent's own resource**
+`ContentControlThemeFontFamily = "fonts:Inter#Inter, $Default"` — a composite whose first entry
+resolves only when that collection exists. `$Default` is `FontManagerOptions.DefaultFamilyName` if
+set, otherwise Skia's `SKTypeface.Default.FamilyName`, which on Linux is fontconfig's answer to an
+empty pattern — the same as `fc-match sans-serif` — and **not** the desktop's configured UI font
+(`kreadconfig6 --group General --key font` says `Noto Sans,10`; on this host the two happen to
+agree). Measured with `ShellSpike font`, which resolves the glyph typeface a `TextBlock` with no
+`FontFamily` actually ends up with:
+
+| Where | `$Default` resolves to | Default `TextBlock`, with `WithInterFont()` | … with `SPIKE_NO_INTER=1` | `fc-match sans-serif` there |
+|---|---|---|---|---|
+| Host | Noto Sans | Inter | Noto Sans | `NotoSans-Regular.ttf` |
+| Flatpak (`org.freedesktop.Platform//25.08`) | **DejaVu Sans** | Inter | **DejaVu Sans** | `DejaVuSans.ttf` |
+| AppImage (`scripts/build-appimage.sh` layout, `AppRun` env) | Noto Sans | Inter | Noto Sans | host's |
+
+The Flatpak row is the reason to measure: the sandbox brings its own fontconfig, and its
+`sans-serif` is DejaVu Sans, so "the platform default" inside the Flatpak is a different face from
+the desktop around it. Host fonts *are* visible from the sandbox (873 `fc-list` entries, mounted under
+`/run/host/fonts`), which is also why `Inter` resolves *by plain name* in all three columns — this
+host has Inter installed as a system font. Do not read that as a guarantee; on a host without it,
+only the embedded `fonts:Inter#Inter` resolves. The AppImage sees the host's fontconfig unchanged.
+Character fallback is unaffected in every configuration: U+65E5 (日) resolves to `Noto Sans CJK JP`
+from the system collection whichever face is primary.
+
+**The shape for "platform default, Inter as fallback".** `FontManagerOptions` alone cannot do it,
+because the Fluent resource puts Inter first. Both halves are needed, and this is the pair that was
+measured working (`SPIKE_FONT_SHAPE=a`: `TextBlock` → `Noto Sans`, `TryMatchCharacter('A')` → `Inter`):
+
+```csharp
+// Program.cs — WithInterFont() stays; it only registers the embedded collection.
+AppBuilder.Configure<App>()
+    ...
+    .WithInterFont()
+    .With(new FontManagerOptions
+    {
+        // DefaultFamilyName deliberately unset: null means "ask the platform", which is the point.
+        FontFallbacks = new[] { new FontFallback { FontFamily = new FontFamily("fonts:Inter#Inter") } },
+    })
+```
+
+```xml
+<!-- App.axaml — overrides Fluent's "fonts:Inter#Inter, $Default" -->
+<Application.Resources>
+    <FontFamily x:Key="ContentControlThemeFontFamily">$Default</FontFamily>
+</Application.Resources>
+```
+
+`FontFallbacks` is consulted *first* in `FontManager.TryMatchCharacter`, before the family's own
+composite list and before the system collection — which is why the `'A'` probe answers `Inter`. That
+only matters for a glyph the primary face lacks; a face that has the glyph never reaches fallback.
+The composite alternative (`$Default, fonts:Inter#Inter` as the resource, no `FontManagerOptions`;
+`SPIKE_FONT_SHAPE=b`) also renders the platform face and is one line instead of two, but leaves
+Inter behind the whole system collection in the fallback order.
+
+**Windows and macOS — unmeasured.** The intent is Segoe UI Variable on Windows and the system font on
+macOS. What `$Default` resolves to there is whatever `SKTypeface.Default.FamilyName` says — on
+Windows that may well be plain `Segoe UI` rather than the Variable face, in which case
+`DefaultFamilyName` has to be named per platform. Procedure: `dotnet run --project
+scripts/spike/ShellSpike -- font` and read the `FontManager.DefaultFontFamily` line.
+
+### Decorations and client-area extension — the hint does nothing under KWin
+
+In 12.1.1 both Linux backends honour `ExtendClientAreaToDecorationsHint` **only when Avalonia is
+already drawing the decorations itself**. Wayland: `WindowImpl.IsClientAreaExtendedToDecorations`
+returns the hint only when the compositor answered *client-side* over `zxdg_decoration_manager_v1`,
+and KWin answers server-side. X11: `SetExtendClientAreaToDecorationsHint` is guarded by
+`X11PlatformOptions.EnableDrawnDecorations`, which is `[Experimental("AVALONIA_X11_CSD")]` and off.
+`SetExtendClientAreaTitleBarHeightHint` is an empty method on both. Measured with `ShellSpike chrome`
+(hint on, title-bar hint −1), screenshots in `docs/screenshots/spike/chrome-*.png`:
+
+| Head | Options | `IsExtendedIntoWindowDecorations` | `WindowDecorationMargin` | `FrameSize` | What is on screen |
+|---|---|---|---|---|---|
+| Wayland | default | `False` | `0,0,0,0` | not reported | KWin's Breeze title bar, content starts below it, moves and resizes by the compositor |
+| Wayland | `ForceDrawnDecorations` | `True` | `8.8,39.2,8.8,8.8` | not reported | Avalonia's own caption and buttons; the content's top 48 px sit under that caption |
+| X11 | default | `False` | `0,0,0,0` | `880×628` | KWin's title bar (28 logical px), content below it |
+| X11 | `EnableDrawnDecorations` | `True` | `8.8,39.2,8.8,8.8` | `880×600` | Avalonia's own caption, as on Wayland |
+
+So the top inset the hint "comes out as" on Linux is **zero** unless native decorations are given up
+altogether, and then it is 39.2 px of Avalonia chrome, not a compositor title bar with art behind it.
+The macOS-style "art bleeds up behind the traffic lights, system buttons stay" composition does not
+exist on Linux in this Avalonia; the choice is native decorations *or* Avalonia-drawn ones. Leaving
+the hint set is harmless under KWin, but see GNOME. Whether the CSD window still moves by its caption
+was not exercised (it needs a drag); Avalonia's managed decorations call `BeginMoveDrag` for it.
+
+Two things read off the same run, both worth keeping:
+
+- `ActualTransparencyLevel` is **`Transparent`** on both heads with an empty `TransparencyLevelHint`:
+  the window has an alpha channel by default, so a partially transparent `Background` shows the
+  desktop through, not the window's own backdrop. Anything translucent inside the window needs an
+  opaque root behind it.
+- On the Wayland head `RenderScaling` reads `1` in `OnOpened` and only becomes the output's 1.25
+  after the first configure (the screenshots are the same pixel size on both heads). Do not size
+  bitmaps from it that early.
+
+**GNOME — unmeasured, and the one place the hint bites.** Mutter does not implement
+`xdg-decoration`, so the Wayland backend takes the client-side answer and draws its own chrome
+whether or not the hint is set; with the hint set it additionally extends the client area (the
+`ForceDrawnDecorations` row above is what GNOME should look like). Procedure: `ShellSpike chrome`
+under GNOME, read `IsExtendedIntoWindowDecorations` and `WindowDecorationMargin`, and look at whether
+the title text is drawn by Avalonia.
+
+**macOS — unmeasured.** Intended: `ExtendClientAreaToDecorationsHint="True"`,
+`ExtendClientAreaTitleBarHeightHint="-1"`, no custom caption buttons, art allowed under the title
+region. Check: `ShellSpike chrome`, expect `IsExtendedIntoWindowDecorations=True`, a non-zero top in
+`WindowDecorationMargin` (that is the traffic-light strip), and the red band in the screenshot sitting
+behind the traffic lights with the window still moving by that strip.
+
+**Windows 11 Mica — unmeasured.** Intended: `TransparencyLevelHint="Mica, None"`
+(`WindowTransparencyLevel.Mica` first, `None` as the pre-22H2 fallback — the property is an ordered
+list and `ActualTransparencyLevel` reports which one was granted) with a `Background` of about 35 %
+opacity so Mica shows through. Check: `SPIKE_TRANSPARENCY=mica,none ShellSpike chrome` on Windows 11
+22H2+ and read `ActualTransparencyLevel=Mica`; on Windows 10 expect `None` and an opaque window, and
+confirm the 35 % background then composes over `TransparencyBackgroundFallback` rather than over
+nothing.
+
+### Effect loop cost — and the clock it must not be driven by on Wayland
+
+The living backdrop as planned — three `RadialGradientBrush` ellipses with per-frame
+`ScaleTransform`/`TranslateTransform` and colour updates, re-armed from
+`TopLevel.RequestAnimationFrame` — was built as `ShellSpike effects <case>` in an 880×600 window and
+measured as **process CPU milliseconds per rendered frame** (`Process.TotalProcessorTime` delta over
+the frames, after a 3 s warm-up, `DOTNET_TieredCompilation=0` so the JIT thread is not in the
+number). The renderer's own `RendererDebugOverlays.Fps` was screenshotted alongside and read 58–60 in
+every configuration, so "per frame" below is per presented frame.
+
+**First, the clock.** `ShellSpike clock` drives a counter with each candidate for three seconds:
+
+| Clock | Wayland head | X11 head |
+|---|---|---|
+| `RequestAnimationFrame` re-armed in the callback | **25 124 Hz** (0.04 ms/tick) | 59.6 Hz |
+| `DispatcherTimer` 16 ms, any priority | **5.0 Hz** (200 ms/tick) | 62.3 Hz |
+| `DispatcherTimer` 100 ms | **4.3 Hz** (231 ms/tick) | 10.0 Hz |
+| `DispatcherTimer` 500 ms | **1.7 Hz** (600 ms/tick) | 2.0 Hz |
+| `System.Threading.Timer` 16 ms → `Dispatcher.UIThread.Post` | 62.3 Hz | 62.3 Hz |
+| `Task.Delay(16)` loop on the UI thread | 61.3 Hz | 61.3 Hz |
+| Avalonia `Animation`, 1 s loop — property change rate | **24 268 Hz** | 60.3 Hz |
+
+On the Wayland head in 12.1.1, **`RequestAnimationFrame` is not tied to a frame**: the callback runs
+again as soon as it is re-armed, 25 000 times a second, and the renderer still presents 60 of them
+(the FPS overlay read `Frame #74` while the callback counter read 25 259). The plan's loop as written
+costs 0.04 ms × 25 000 = **a full core** on Wayland to animate nothing faster. Avalonia's own
+`Animation`/`Transitions` clock has the same problem there, and `DispatcherTimer` has the opposite
+one — every due time lands on a coarse boundary about 100–200 ms late (16 → 200 ms, 100 → 231 ms,
+500 → 600 ms), which means the player's two 500 ms `DispatcherTimer`s — the progress bar and the
+diagnostics refresh — already tick every 600 ms on the Wayland head today. X11 is correct on every
+row. Until `Avalonia.Wayland` is fixed (re-check each bump with `ShellSpike clock`), **the backdrop has to be
+paced by a thread-pool timer posting to the dispatcher**, which is the one clock that behaves on both
+heads; that is the driver every number below uses (`SPIKE_DRIVER=threadtimer`).
+
+**Then the cost**, CPU ms per frame at 60 Hz. "Software" on X11 is
+`X11PlatformOptions.RenderingMode = [Software]`; on Wayland the backend has no such option, so EGL
+was made to fail (`__EGL_VENDOR_LIBRARY_FILENAMES=/nonexistent`) and the backend fell through to its
+`wl_shm` framebuffer surface — the probe confirms only `libEGL.so.1` and `libSkiaSharp.so` mapped and
+no DRM node open, which is what an AppImage on a box without working GL gets.
+
+| Case | Wayland, GPU | X11, GPU | X11, software | Wayland, shm |
+|---|---|---|---|---|
+| `baseline` — a counter `TextBlock` and nothing else | 1.72 | 1.89 | 4.86 | 4.17 |
+| `gradient-mutate` — three ellipses, `GradientStop.Color` mutated | 1.81 | 1.91 | 12.50 | 11.12 |
+| `gradient-swap` — same, `Fill` replaced with a new `ImmutableRadialGradientBrush` | 1.82 | 2.05 | 12.50 | 11.38 |
+| `glow-boxshadow` — 320 px tile, `BoxShadow.Blur` animated 10–60 | 1.95 | 1.95 | 6.32 | 5.36 |
+| `glow-dropshadow` — same tile, `DropShadowEffect.BlurRadius` animated | 1.96 | 2.05 | 12.26 | 10.44 |
+| `blur-once` — 64 px scaled artwork, `Image` with `BlurEffect(32)` behind the counter | 1.87 | 1.94 | 4.93 | 4.32 |
+
+(Driven by a `DispatcherTimer` instead, every X11 figure reads higher — 3.4–4.1 on GPU, 6.6–16.1 on
+software — and the difference is the dispatcher timer's own dispatch, not the effect; so the table
+uses the thread-pool timer in every column.)
+
+What the table answers:
+
+- **Mutating gradient stops versus swapping the brush: no difference.** 1.81 vs 1.82 ms on the
+  Wayland GPU column, 1.91 vs 2.05 on X11, 12.50 vs 12.50 on software, 11.12 vs 11.38 on shm. Pick
+  whichever reads better; there is no performance argument.
+- **`BoxShadow` is the cheap glow, and only on software does it matter.** On GPU the two are
+  identical (1.95 vs 1.96 ms, both within 0.25 ms of the empty window). On software raster the
+  `DropShadowEffect` glow costs **7.4 ms** over baseline on X11 and 6.3 ms on shm; the `BoxShadow`
+  glow **1.5 ms** and 1.2 ms. The plan's assumption holds where it costs anything.
+- **The scaled-and-blurred artwork is a one-off.** `blur-once` sits within 0.15 ms of baseline in
+  every column (+0.15, +0.05, +0.07, +0.15), so the `BlurEffect` on a 64 px bitmap is paid once and
+  cached, not re-run per frame. (`Bitmap.CreateScaledBitmap` throws *"Invalid source bitmap type"*
+  for a `WriteableBitmap`; it wants a decoded `Bitmap`, which real artwork already is.)
+- **The three-ellipse backdrop is 7–7.6 ms of CPU per frame on software rendering** at 880×600 —
+  close to half the 16.7 ms frame on one core, and it scales with window area. On GPU it is 0.1 ms.
+  So the backdrop is free where GL works and needs a "reduced motion / no GL" switch where it does
+  not; the probe's `mapped graphics libraries` line is how to tell the two apart at runtime.

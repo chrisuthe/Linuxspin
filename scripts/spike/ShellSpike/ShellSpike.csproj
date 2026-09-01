@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Throwaway probe, not product code. It picks up the repo's Directory.Build.props and the
+    central package pins on purpose, so it measures the exact Avalonia the player ships — but the
+    analysers are off, because a probe that has to satisfy the style rules stops being cheap to
+    change between measurements.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <EnableNETAnalyzers>false</EnableNETAnalyzers>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+    <!-- The client-side-decoration switches are [Experimental]; the probe exists to try them. -->
+    <NoWarn>$(NoWarn);AVALONIA_X11_CSD;AVALONIA_X11_FORCE_CSD;AVALONIA_WAYLAND_FORCE_CSD</NoWarn>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="Avalonia.Desktop" />
+    <PackageReference Include="Avalonia.Themes.Fluent" />
+    <PackageReference Include="Avalonia.Fonts.Inter" />
+    <PackageReference Include="Avalonia.Wayland" />
+  </ItemGroup>
+
+</Project>
