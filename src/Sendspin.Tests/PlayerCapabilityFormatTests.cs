@@ -185,33 +185,32 @@ public sealed class PlayerCapabilityFormatTests
     }
 
     /// <summary>
-    /// Opus is never offered at a rate its decoder rejects.
+    /// Opus is advertised, and always without a bit depth.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The SDK's <c>OpusDecoder</c> throws <c>ArgumentException("Sample rate is invalid (must be
-    /// 8/12/16/24/48 Khz)")</c> on construction for anything else. This player used to advertise
-    /// <c>opus/44100</c> on every platform: a server that picked it got a decoder that threw before
-    /// the first sample, which is a dead stream rather than a degraded one.
+    /// This used to also assert the rate, against an <c>int[] decodable</c> literal restating the
+    /// SDK's 8/12/16/24/48 kHz rule. That array is gone. It was the SDK's rule copied into the
+    /// test, so it passed whether or not the real decoder still agreed — a future SDK narrowing
+    /// the set would have left this green while the client shipped the dead-stream bug the test
+    /// was written to prevent. The rate is now proven against the decoder itself, in
+    /// <see cref="AdvertisedFormatDecoderTests.EveryAdvertisedFormat_ConstructsTheRealDecoder"/>.
     /// </para>
     /// <para>
-    /// Asserted against the hi-res device too, because that is where a naive tiering would offer
-    /// <c>opus/96000</c> and <c>opus/192000</c>.
+    /// What is left is the part that is genuinely a property of the advertisement rather than of
+    /// the decoder: Opus is offered at all, and it carries no depth, because it is a lossy
+    /// transform codec and not a PCM container. No decoder rejects a stray <c>bit_depth</c> — it
+    /// is simply meaningless — so nothing downstream would catch it.
     /// </para>
     /// </remarks>
     [Fact]
-    public void Opus_IsOnlyOfferedAtRatesItsDecoderAccepts()
+    public void Opus_IsOfferedWithoutABitDepth()
     {
-        int[] decodable = [8_000, 12_000, 16_000, 24_000, 48_000];
-
         foreach (var device in new[] { PinnedTo48k, HiResCapable, null })
         {
             var opus = Formats(device).Where(format => format.Codec == AudioCodecs.Opus).ToList();
 
             Assert.NotEmpty(opus);
-            Assert.All(opus, format => Assert.Contains(format.SampleRate, decodable));
-
-            // And it carries no depth: it is a lossy transform codec, not a PCM container.
             Assert.All(opus, format => Assert.Null(format.BitDepth));
         }
     }
