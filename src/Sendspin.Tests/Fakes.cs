@@ -196,6 +196,12 @@ internal sealed class InertAudioPipeline : IAudioPipeline
 
     public int DetectedOutputLatencyMs => 0;
 
+    /// <summary>Volumes the SDK pushed into the pipeline, oldest first.</summary>
+    public List<int> Volumes { get; } = [];
+
+    /// <summary>Mute states the SDK pushed into the pipeline, oldest first.</summary>
+    public List<bool> Mutes { get; } = [];
+
     public event EventHandler<AudioPipelineState>? StateChanged;
 
     public event EventHandler<AudioPipelineError>? ErrorOccurred;
@@ -220,20 +226,13 @@ internal sealed class InertAudioPipeline : IAudioPipeline
     {
     }
 
-    public void ReanchorTiming() => Reanchors++;
+    public void ReanchorTiming()
+    {
+    }
 
     public void ProcessAudioChunk(AudioChunk chunk)
     {
     }
-
-    /// <summary>Volumes the SDK pushed into the pipeline, oldest first.</summary>
-    public List<int> Volumes { get; } = [];
-
-    /// <summary>Mute states the SDK pushed into the pipeline, oldest first.</summary>
-    public List<bool> Mutes { get; } = [];
-
-    /// <summary>How many times timing was re-anchored.</summary>
-    public int Reanchors { get; private set; }
 
     public void SetVolume(int volume) => Volumes.Add(volume);
 
@@ -323,12 +322,11 @@ internal sealed class InMemoryStaticDelayStore : IStaticDelayStore
 /// </remarks>
 internal sealed class RecordingConnection : ISendspinConnection
 {
+    private readonly List<string> _sent = [];
+
     public ConnectionState State { get; private set; } = ConnectionState.Disconnected;
 
     public Uri? ServerUri => new("ws://test.invalid/sendspin");
-
-    /// <summary>Every message sent, as the JSON that would have gone out.</summary>
-    public List<string> Sent { get; } = [];
 
     /// <summary>
     /// Called with each message as it is sent. The handshake is a request/response — the SDK's
@@ -346,9 +344,21 @@ internal sealed class RecordingConnection : ISendspinConnection
     /// <summary>Delivers an inbound frame, as the transport's receive loop would.</summary>
     public void Receive(string json) => TextMessageReceived?.Invoke(this, json);
 
-    /// <summary>The messages sent so far of one protocol type, newest last.</summary>
-    public List<string> SentOfType(string messageType) =>
-        [.. Sent.Where(json => MessageSerializer.GetMessageType(json) == messageType)];
+    /// <summary>
+    /// The messages sent so far of one protocol type, newest last.
+    /// </summary>
+    /// <remarks>
+    /// A snapshot taken under the same lock the send path writes under. The SDK's time-sync loop
+    /// sends from its own task while a test polls this, so an unlocked read is an enumeration
+    /// racing an append.
+    /// </remarks>
+    public List<string> SentOfType(string messageType)
+    {
+        lock (_sent)
+        {
+            return [.. _sent.Where(json => MessageSerializer.GetMessageType(json) == messageType)];
+        }
+    }
 
     public Task ConnectAsync(Uri serverUri, CancellationToken cancellationToken = default)
     {
@@ -378,9 +388,9 @@ internal sealed class RecordingConnection : ISendspinConnection
     {
         var json = MessageSerializer.Serialize(message);
 
-        lock (Sent)
+        lock (_sent)
         {
-            Sent.Add(json);
+            _sent.Add(json);
         }
 
         OnSent?.Invoke(this, json);
