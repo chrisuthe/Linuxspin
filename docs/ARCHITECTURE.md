@@ -447,7 +447,7 @@ belong in the list, however capable the hardware is.
 | platform | source | why it satisfies the contract |
 | --- | --- | --- |
 | Linux | sink `EnumFormat` ∩ PipeWire's `clock.allowed-rates` | the node's own list is the hardware's capability, not the daemon's willingness |
-| Windows | shared-mode `IsFormatSupported` | shared mode is the mode this player renders in; it takes nothing else unresampled |
+| Windows | the engine mix rate | shared mode renders at the mix format and converts everything else |
 | macOS | the current nominal rate only | this player never sets the nominal rate, so every other available rate goes through AUHAL's converter |
 
 **This was written down because its absence shipped a bug.** The field silently meant something
@@ -456,8 +456,13 @@ it from `DeviceAvailableNominalSampleRates` — rates the device could be *switc
 `AuhalRenderPlayer` only ever *reads* `DeviceNominalSampleRate` and never sets it. So a Mac running
 at 48 kHz whose output also lists 96 kHz advertised `flac/96000/16` **ahead of** `flac/48000/16`, and
 CoreAudio resampled it straight back down: more bytes over the network to reach a resampler, at no
-gain in depth — the exact failure the hi-res work exists to prevent. Windows escaped only by
-accident of its shared-mode probe semantics.
+gain in depth — the exact failure the hi-res work exists to prevent.
+
+Windows escaped only by accident: its shared-mode `IsFormatSupported` probe happened to admit little
+beyond the engine mix rate. "Safe by accident" stopped being good enough once the advertisement
+began *leading* with the high-resolution tier instead of appending it, so that probe was narrowed to
+the mix rate too — which loses nothing, because an endpoint genuinely running at 96 kHz reports
+96 kHz as its mix rate and still earns its tier.
 
 The fix is in the enumerator, not in the shared tiering, and that placement is the point. On Linux a
 rate above the current one genuinely *is* native when the daemon's clock policy permits it, so

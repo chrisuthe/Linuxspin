@@ -193,12 +193,12 @@ public static class PlayerCapabilities
     /// <para>
     /// <strong>The two fallbacks stay even when the device did report its rates</strong>, and that
     /// is deliberate. They can mean offering a rate the device does not take as-is — a sink pinned
-    /// to 48 kHz by its daemon still gets 44.1 kHz offered, and the sound server resamples it. That
-    /// is the same position the Windows enumerator already documents: <em>takes as-is</em> is what
-    /// <see cref="AudioDeviceInfo.SupportedSampleRates"/> means, the advertisement is a superset of
-    /// it ordered by preference, and the resampler's delay is included in the latency the device
-    /// reports rather than hidden. Refusing 44.1 kHz would force a resample for the majority of all
-    /// music anyway, only on the server's side and with no better result.
+    /// to 48 kHz by its daemon still gets 44.1 kHz offered, and the sound server resamples it. The
+    /// contract on <see cref="AudioDeviceInfo.SupportedSampleRates"/> is what a device runs
+    /// natively; this list is a superset of that, ordered by preference, and the resampler's delay
+    /// is included in the latency the device reports rather than hidden. Refusing 44.1 kHz would
+    /// force a resample for the majority of all music anyway, only on the server's side and with no
+    /// better result.
     /// </para>
     /// <para>
     /// What the device's report <em>does</em> gate is the high-resolution tier, where the
