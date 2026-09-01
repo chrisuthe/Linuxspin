@@ -325,6 +325,67 @@ public sealed class PipeWireCapabilityTests
     }
 
     /// <summary>
+    /// A withheld rate and an unknown rate are told apart, so only the second licenses a fallback.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Both come out of <c>Describe</c> as <c>MixSampleRate == 0</c>, and treating them alike
+    /// reintroduces the defect this class exists to prevent. When the policy <em>is</em> known and
+    /// the rate was withheld, the caller must not substitute one: the OpenAL mixer runs at the
+    /// graph rate, so probing it hands back exactly the rate PipeWire rejected for that sink, and
+    /// <c>PlayerCapabilities</c> treats a device's own mix rate as native by definition — so the
+    /// advertisement would lead with a hi-res tier the sink resamples.
+    /// </para>
+    /// <para>
+    /// That is the macOS bug in Linux clothing, which is why the distinction is a property on the
+    /// graph rather than an inference in the enumerator.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void AWithheldRateIsDistinguishedFromAnUnknownOne()
+    {
+        // Policy known (forced to 96 kHz), sink capped at 48 kHz: cannot meet it.
+        var withheld = PipeWireCapabilityParser.Parse(
+            Dump(forceRate: 96_000, rateMin: 48_000, rateMax: 48_000))!;
+
+        Assert.True(withheld.HasRatePolicy);
+        Assert.Equal(0, withheld.Describe("Ryzen HD Audio Controller Analog Stereo")!.MixSampleRate);
+
+        // No settings metadata at all: nothing is known about the graph clock.
+        const string noPolicy = """
+        [
+          {
+            "id": 63,
+            "type": "PipeWire:Interface:Node",
+            "info": {
+              "props": {
+                "media.class": "Audio/Sink",
+                "node.name": "sink",
+                "node.description": "Sink"
+              },
+              "params": {
+                "EnumFormat": [
+                  {
+                    "mediaType": "audio",
+                    "mediaSubtype": "raw",
+                    "format": { "default": "S16LE" },
+                    "rate": { "default": 48000, "min": 44100, "max": 192000 },
+                    "channels": 2
+                  }
+                ]
+              }
+            }
+          }
+        ]
+        """;
+
+        var unknown = PipeWireCapabilityParser.Parse(noPolicy)!;
+
+        Assert.False(unknown.HasRatePolicy);
+        Assert.Equal(0, unknown.Describe("Sink")!.MixSampleRate);
+    }
+
+    /// <summary>
     /// Describing a device the graph does not own returns null, so the caller falls back rather
     /// than reading the absence as a report of no capability.
     /// </summary>

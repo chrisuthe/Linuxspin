@@ -239,18 +239,25 @@ public sealed unsafe class OpenAlDeviceEnumerator : IAudioDeviceEnumerator, IDis
             var capabilities = graph?.Describe(name)
                 ?? new AudioDeviceCapabilities(MixSampleRate: 0, Channels: 0, SampleRates: [], MaxBitDepth: 0);
 
-            // The mix rate falls back per-device rather than only when PipeWire is missing
-            // entirely. PipeWire can answer about a sink and still not supply a rate: a dump that
-            // carries no settings metadata leaves the clock policy unknown, and a sink that cannot
-            // meet the graph rate has none to report. Both used to skip this probe merely because
-            // Describe returned non-null, which threw away a figure the pre-PipeWire code had.
+            // Fall back to the OpenAL mixer rate only where PipeWire supplied no clock policy at
+            // all — a dump with no settings metadata, or no PipeWire on this machine. That case is
+            // an absence, and the mixer rate beats reporting nothing.
             //
-            // The old restraint still holds where it applies: reading ALC_FREQUENCY means opening
-            // the device, which asks the sound server for a stream, so it is done for the default
-            // device only.
+            // It must NOT fire when the policy is known and Describe withheld the rate anyway,
+            // which it does deliberately for a sink that cannot meet the graph rate. The mixer runs
+            // at the graph rate, so ALC_FREQUENCY would hand back precisely the rate PipeWire just
+            // rejected for this sink — and because PlayerCapabilities treats a device's own mix
+            // rate as native by definition, that rate would then lead the advertisement with a
+            // hi-res tier the sink will have resampled. See PipeWireGraph.HasRatePolicy.
+            //
+            // The old restraint still holds where the fallback does apply: reading ALC_FREQUENCY
+            // means opening the device, which asks the sound server for a stream, so it is done for
+            // the default device only.
+            var mayProbeOpenAl = graph is not { HasRatePolicy: true };
+
             var mixSampleRate = capabilities.MixSampleRate > 0
                 ? capabilities.MixSampleRate
-                : isDefault ? ReadMixSampleRate(alc, name) : 0;
+                : mayProbeOpenAl && isDefault ? ReadMixSampleRate(alc, name) : 0;
 
             devices.Add(new AudioDeviceInfo
             {
