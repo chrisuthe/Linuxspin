@@ -36,6 +36,20 @@ internal static class PlatformSelection
     public static void PreInitializeHost() => AppKit.NSApplication.Init();
 
     /// <summary>
+    /// The desktop font family <c>$Default</c> should resolve to, or null to let the platform
+    /// answer.
+    /// </summary>
+    /// <remarks>
+    /// Null for now, and measured: <c>FontManager.DefaultFontFamily</c> resolves to
+    /// <c>Helvetica</c> on macOS 26 (Avalonia 12.1.1), not the system UI font (SF Pro). So
+    /// <c>$Default</c> is the wrong face here and a per-platform name will be needed; which
+    /// family name Skia resolves to SF is still being measured, and guessing one would be worse
+    /// than Helvetica. The SF override is a follow-up once the resolvable name is known
+    /// (<c>dotnet run --project scripts/spike/ShellSpike -- font</c>, with the candidate names).
+    /// </remarks>
+    public static string? ReadDesktopFontFamily() => null;
+
+    /// <summary>
     /// Selects the windowing backend.
     /// </summary>
     public static AppBuilder ConfigureWindowing(AppBuilder builder) => builder.UsePlatformDetect();

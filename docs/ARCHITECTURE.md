@@ -674,11 +674,18 @@ backend is expected to serve the accent the user picked rather than a derived hi
 case `AccentColor1` is a saturated colour there — the opposite of Plasma, and the reskin has to be
 happy with both.
 
-**Windows 11 and macOS — unmeasured.** Same property set (`RequestedThemeVariant="Default"`, and
-`SystemAccentColor` for the accent). Procedure: `dotnet run --project scripts/spike/ShellSpike --
-theme --seconds 60`, flip Settings › Personalization › Colors (Windows) or System Settings ›
-Appearance (macOS) and read the `ColorValuesChanged` lines. Neither backend goes through a portal,
-so the no-portal fallback above is Linux-only.
+**Windows 11 — measured** (10.0.26200, Avalonia 12.1.1), same property set. The theme and the accent
+are correct at `Opened` with no asynchronous settle, unlike the portal read above. The accent reported
+is the OS `AccentPalette` base slot (`#0076E4` on that box), not `AccentColorMenu`. And
+`PlatformSettings.ColorValuesChanged` is a storm there: one accent change produced about **20
+duplicate events in 600 ms**, one of them with completely unchanged values, and each variant flip
+raises it twice. Anything hung off that event goes through `Core/Theme/SystemColorChangeFilter.cs`,
+which drops a report whose accent and variant match the last one accepted; `Player/Theme/
+PlatformColorChanges.cs` is the one subscription in the app and re-raises only what passes.
+
+**macOS — measured** (macOS 26, Avalonia 12.1.1), same property set: the theme flips live in about
+**95 ms** after System Settings › Appearance changes. The backend does not go through a portal, so the
+no-portal fallback above is Linux-only.
 
 ### System font — Inter wins only because Fluent asks for it first
 
@@ -737,11 +744,40 @@ The composite alternative (`$Default, fonts:Inter#Inter` as the resource, no `Fo
 `SPIKE_FONT_SHAPE=b`) also renders the platform face and is one line instead of two, but leaves
 Inter behind the whole system collection in the fallback order.
 
-**Windows and macOS — unmeasured.** The intent is Segoe UI Variable on Windows and the system font on
-macOS. What `$Default` resolves to there is whatever `SKTypeface.Default.FamilyName` says — on
-Windows that may well be plain `Segoe UI` rather than the Variable face, in which case
-`DefaultFamilyName` has to be named per platform. Procedure: `dotnet run --project
-scripts/spike/ShellSpike -- font` and read the `FontManager.DefaultFontFamily` line.
+**Windows — measured** (Windows 11 10.0.26200, Avalonia 12.1.1): `FontManager.DefaultFontFamily`
+resolves to plain `Segoe UI`, not Segoe UI Variable. That is the face the WPF reference app uses, so
+it is the right answer and `DefaultFamilyName` stays unset there. Glyph fallback through the composite
+works: 日 → `Yu Gothic UI`.
+
+**macOS — measured, and wrong** (macOS 26, Avalonia 12.1.1): `FontManager.DefaultFontFamily` resolves
+to `Helvetica`, not the system UI font (SF Pro). So `$Default` is the wrong face there and a
+per-platform `DefaultFamilyName` will be needed; which family name Skia resolves to SF is still being
+measured, so the name is left unset rather than guessed. Also measured on that box: the embedded
+`fonts:Inter#Inter` is the only way Inter resolves when it is not installed as a system font, which is
+what keeps `WithInterFont()` in.
+
+**Decided and shipped (reskin phase 1).** The shape above is what `Program.cs` and `App.axaml` do,
+with one addition for the Flatpak row: the Settings portal serves the desktop's interface font as
+`org.gnome.desktop.interface` / `font-name`, and the KDE backend answers it as well as the GNOME
+one. Measured on this box, host and sandbox alike:
+
+| Where | `ReadOne org.gnome.desktop.interface font-name` | `fc-match "Noto Sans"` | `fc-match sans-serif` |
+|---|---|---|---|
+| Host | `"Noto Sans  10"` (the KDE backend's double space) | `NotoSans-Regular.ttf` | `NotoSans-Regular.ttf` |
+| `org.freedesktop.Platform//25.08` sandbox | `"Noto Sans  10"` | `NotoSans-Regular.ttf`, from `/run/host/fonts` | `DejaVuSans.ttf` |
+
+So the Linux head reads that key once, before the app builder runs, and hands the family to
+`FontManagerOptions.DefaultFamilyName` (`PlatformSelection.Linux.cs` →
+`Platform.Linux/Portals/SettingsPortal.cs`; the Pango description is reduced to a family by
+`Core/Platform/DesktopFontName.cs`, which strips the size and style words because fontconfig turns an
+unknown family back into its default). Inside the Flatpak the same call reaches the portal — the
+Settings portal needs no permission — and the family resolves against the host fonts the sandbox
+already sees, which is what takes the Flatpak from DejaVu Sans to the desktop's face. No bus, no
+portal or no key leaves `DefaultFamilyName` null, which is fontconfig's answer as before. The app logs
+what it ended up with at start-up (`UI font: $Default is …, glyphs from …, fallback face …`), which
+is the `font` probe's report without a second binary. Windows leaves the name null on the measurement
+above; macOS leaves it null on the Helvetica measurement, with the SF override as a follow-up once
+the resolvable name is known (`PlatformSelection.MacOS.cs`).
 
 ### Decorations and client-area extension — the hint does nothing under KWin
 

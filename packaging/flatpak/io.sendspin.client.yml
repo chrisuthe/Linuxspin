@@ -61,6 +61,15 @@ finish-args:
   - --talk-name=org.freedesktop.Notifications
   - --talk-name=org.kde.StatusNotifierWatcher
 
+  # Fonts: nothing to declare, and nothing bundled. The runtime's own fontconfig default is
+  # DejaVu Sans, not the desktop's font, so the app asks the Settings portal (reachable from
+  # every sandbox, no permission needed) for org.gnome.desktop.interface/font-name at start-up
+  # and names that family as its default; it resolves against the host fonts the sandbox already
+  # sees under /run/host/fonts. Measured on Plasma 6.7 — "Noto Sans  10" from the portal, and
+  # fc-match "Noto Sans" answering NotoSans-Regular.ttf inside org.freedesktop.Platform//25.08.
+  # The embedded Inter stays as the glyph fallback. See the "System font" section of
+  # docs/ARCHITECTURE.md.
+
   # Deliberately NOT declared: --own-name=org.mpris.MediaPlayer2.*
   # Flatpak auto-grants org.mpris.MediaPlayer2.<app_id>.* and declaring it is a Flathub linter
   # error. The bus name the app claims is org.mpris.MediaPlayer2.io.sendspin.client, which falls
