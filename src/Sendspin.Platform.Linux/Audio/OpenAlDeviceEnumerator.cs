@@ -70,20 +70,10 @@ public sealed unsafe class OpenAlDeviceEnumerator : IAudioDeviceEnumerator, IDis
     private bool _disposed;
 
     public OpenAlDeviceEnumerator(ILogger<OpenAlDeviceEnumerator> logger)
-        : this(logger, pipeWire: null)
-    {
-    }
-
-    /// <summary>
-    /// Test seam: takes a reader whose PipeWire document is supplied rather than run.
-    /// </summary>
-    internal OpenAlDeviceEnumerator(
-        ILogger<OpenAlDeviceEnumerator> logger,
-        PipeWireCapabilityReader? pipeWire)
     {
         ArgumentNullException.ThrowIfNull(logger);
         _logger = logger;
-        _pipeWire = pipeWire ?? new PipeWireCapabilityReader(logger);
+        _pipeWire = new PipeWireCapabilityReader(logger);
     }
 
     /// <inheritdoc/>
@@ -246,13 +236,21 @@ public sealed unsafe class OpenAlDeviceEnumerator : IAudioDeviceEnumerator, IDis
         {
             var isDefault = string.Equals(name, defaultName, StringComparison.Ordinal);
 
-            // Where PipeWire answered, its figures stand. Where it did not, the pre-PipeWire
-            // behaviour and its restraint both stay: reading ALC_FREQUENCY means opening the
-            // device, which asks the sound server for a stream, and doing that to every output
-            // just to populate a list is not worth the side effects.
             var capabilities = graph?.Describe(name)
-                ?? new AudioDeviceCapabilities(
-                    isDefault ? ReadMixSampleRate(alc, name) : 0, Channels: 0, SampleRates: [], MaxBitDepth: 0);
+                ?? new AudioDeviceCapabilities(MixSampleRate: 0, Channels: 0, SampleRates: [], MaxBitDepth: 0);
+
+            // The mix rate falls back per-device rather than only when PipeWire is missing
+            // entirely. PipeWire can answer about a sink and still not supply a rate: a dump that
+            // carries no settings metadata leaves the clock policy unknown, and a sink that cannot
+            // meet the graph rate has none to report. Both used to skip this probe merely because
+            // Describe returned non-null, which threw away a figure the pre-PipeWire code had.
+            //
+            // The old restraint still holds where it applies: reading ALC_FREQUENCY means opening
+            // the device, which asks the sound server for a stream, so it is done for the default
+            // device only.
+            var mixSampleRate = capabilities.MixSampleRate > 0
+                ? capabilities.MixSampleRate
+                : isDefault ? ReadMixSampleRate(alc, name) : 0;
 
             devices.Add(new AudioDeviceInfo
             {
@@ -261,7 +259,7 @@ public sealed unsafe class OpenAlDeviceEnumerator : IAudioDeviceEnumerator, IDis
                 Id = name,
                 Name = name,
                 IsDefault = isDefault,
-                MixSampleRate = capabilities.MixSampleRate,
+                MixSampleRate = mixSampleRate,
                 MixChannels = capabilities.Channels,
                 SupportedSampleRates = capabilities.SampleRates,
                 MaxBitDepth = capabilities.MaxBitDepth

@@ -28,29 +28,28 @@ public sealed class PipeWireCapabilityReader
     /// How long <c>pw-dump</c> is given before it is abandoned.
     /// </summary>
     /// <remarks>
-    /// Enumeration blocks the caller, so this is a bound on how long a broken audio stack can
-    /// stall a device list. Two seconds is far above the few milliseconds a healthy daemon takes
-    /// and far below anything a person would sit through.
+    /// <para>
+    /// This is a bound on how long a wedged audio stack can stall a device list, and the caller
+    /// makes it a user-visible bound: <c>SettingsViewModel.RefreshDevices</c> enumerates
+    /// synchronously from its constructor and from the refresh button, on the UI thread. So the
+    /// figure is chosen against what a person would notice, not against what a process needs.
+    /// </para>
+    /// <para>
+    /// Measured, a healthy daemon answers in about 10 ms. Half a second is fifty times that — far
+    /// beyond any plausible slow-but-working case — while keeping the worst case a hitch rather
+    /// than a freeze. The earlier two seconds was a hang by the standards of the thread it runs on.
+    /// Making enumeration properly asynchronous would remove the stall rather than bound it, but
+    /// that is a change to the view model and its bindings rather than to this reader.
+    /// </para>
     /// </remarks>
-    private const int TimeoutMilliseconds = 2_000;
+    private const int TimeoutMilliseconds = 500;
 
     private readonly ILogger _logger;
-    private readonly Func<string?> _dump;
 
     public PipeWireCapabilityReader(ILogger logger)
-        : this(logger, RunPwDump)
-    {
-    }
-
-    /// <summary>
-    /// Test seam: takes the document from <paramref name="dump"/> instead of running a process.
-    /// </summary>
-    internal PipeWireCapabilityReader(ILogger logger, Func<string?> dump)
     {
         ArgumentNullException.ThrowIfNull(logger);
-        ArgumentNullException.ThrowIfNull(dump);
         _logger = logger;
-        _dump = dump;
     }
 
     /// <summary>
@@ -62,7 +61,7 @@ public sealed class PipeWireCapabilityReader
 
         try
         {
-            json = _dump();
+            json = RunPwDump();
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception
                                        or InvalidOperationException
