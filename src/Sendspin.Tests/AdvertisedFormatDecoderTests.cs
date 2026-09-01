@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Extensions.Logging.Abstractions;
 using Sendspin.Core.Audio;
 using Sendspin.Core.Configuration;
@@ -46,6 +47,17 @@ public sealed class AdvertisedFormatDecoderTests
     /// 48 kHz: <c>PlayerCapabilities</c> permits five Opus rates and hardware reporting alone
     /// decides which are ever offered, so without it four of the five are asserted by nobody.
     /// </remarks>
+    /// <summary>
+    /// Every shape name <see cref="Shape"/> knows, for the cases that sweep all of them.
+    /// </summary>
+    /// <remarks>
+    /// The <c>[InlineData]</c> lists below have to repeat these as literals, because attribute
+    /// arguments must be compile-time constants. That is a drift risk of exactly the kind this file
+    /// exists to rule out — a shape added here and missed in a list would narrow the sweep silently
+    /// — so <see cref="EveryShape_IsCoveredByEveryTheory"/> holds the two in agreement.
+    /// </remarks>
+    private static readonly string[] Shapes = ["none", "48k-only", "hi-res", "44k1-family", "low-rate"];
+
     private static AudioDeviceInfo? Shape(string name) => name switch
     {
         "none" => null,
@@ -117,15 +129,16 @@ public sealed class AdvertisedFormatDecoderTests
         {
             try
             {
-                using var decoder = factory.Create(format) as IDisposable;
+                using var decoder = factory.Create(format);
 
                 // A constructed decoder that budgets no samples per frame is not a working one.
                 // This is the cheapest assertion that the format was really configured for, rather
                 // than accepted and left inert.
-                var frame = ((IAudioDecoder)decoder!).MaxSamplesPerFrame;
-                if (frame <= 0)
+                if (decoder.MaxSamplesPerFrame <= 0)
                 {
-                    unkeepable.Add($"{Describe(format)}: constructed but MaxSamplesPerFrame is {frame}");
+                    unkeepable.Add(
+                        $"{Describe(format)}: constructed but MaxSamplesPerFrame is "
+                        + decoder.MaxSamplesPerFrame.ToString(CultureInfo.InvariantCulture));
                 }
             }
             catch (Exception ex)
@@ -143,23 +156,23 @@ public sealed class AdvertisedFormatDecoderTests
     }
 
     /// <summary>
-    /// No advertised format depends on a <c>codec_header</c> to be decodable.
+    /// Nothing the advertisement offers carries a <c>codec_header</c>.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// This is the assertion that stops the test above from being quietly hollow. Capabilities are
-    /// sent in <c>client/hello</c>, before any stream exists, so there is no header to advertise
-    /// with — <see cref="AudioFormat.CodecHeader"/> is necessarily null at this point. If a codec
-    /// could only be constructed <em>with</em> one, the test above would be proving decodability of
-    /// a format the server will never actually send, and the honest reading would be that the codec
-    /// is untested.
+    /// This asserts a property of <see cref="PlayerCapabilities.Build"/>, not of the SDK, and it
+    /// exists to keep the sweep above honest rather than to catch a decoder regression. Its job is
+    /// to pin the sweep's <em>input</em>: capabilities go out in <c>client/hello</c> before any
+    /// stream exists, so a real <see cref="AudioFormat.CodecHeader"/> is not available to send, and
+    /// the formats fed to the decoder above must match that. Were someone later to make a stubborn
+    /// codec construct by handing the sweep a synthetic header, the sweep would go green while
+    /// proving decodability of a format the client never actually advertises. This fails first.
     /// </para>
     /// <para>
-    /// FLAC is the codec that has a header concept at all: <c>CodecHeader</c> carries its STREAMINFO
-    /// block. It is decodable without one because <c>FlacDecoder</c> synthesises the block from the
-    /// format's own rate, depth and channel count. That is an SDK behaviour rather than a guarantee,
-    /// so it is pinned here — if a future SDK requires the real header, this fails loudly instead of
-    /// letting the client advertise FLAC it can no longer start.
+    /// FLAC is the only advertised codec with a header concept — <c>CodecHeader</c> carries its
+    /// STREAMINFO block — and it constructs without one because <c>FlacDecoder</c> synthesises the
+    /// block from the format's own rate, depth and channels. That is the SDK behaviour the sweep
+    /// above relies on, and the sweep is what fails if it ever stops holding.
     /// </para>
     /// </remarks>
     [Theory]
@@ -168,7 +181,7 @@ public sealed class AdvertisedFormatDecoderTests
     [InlineData("hi-res")]
     [InlineData("44k1-family")]
     [InlineData("low-rate")]
-    public void AdvertisedFormats_AreDecodableWithNoCodecHeader(string shape)
+    public void AdvertisedFormats_CarryNoCodecHeader(string shape)
     {
         Assert.All(
             Advertised(Shape(shape)),
@@ -201,8 +214,43 @@ public sealed class AdvertisedFormatDecoderTests
 
         Assert.Contains("Sample rate", ex.Message, StringComparison.OrdinalIgnoreCase);
 
-        Assert.DoesNotContain(
-            Advertised(Shape("48k-only")),
-            format => format.Codec == AudioCodecs.Opus && format.SampleRate == 44_100);
+        foreach (var shape in Shapes)
+        {
+            Assert.DoesNotContain(
+                Advertised(Shape(shape)),
+                format => format.Codec == AudioCodecs.Opus && format.SampleRate == 44_100);
+        }
+    }
+
+    /// <summary>
+    /// Every theory in this file runs over every shape in <see cref="Shapes"/>.
+    /// </summary>
+    /// <remarks>
+    /// The one assertion here that is about the tests rather than the client. <c>[InlineData]</c>
+    /// cannot be driven from an array, so each theory repeats the shape names by hand; without this
+    /// check, adding a sixth shape and forgetting one list would leave that theory quietly covering
+    /// less than it appears to. Reflection over the attributes is the only way to notice, and a
+    /// sweep whose breadth is its whole value should not be trusted to a copy-paste.
+    /// </remarks>
+    [Fact]
+    public void EveryShape_IsCoveredByEveryTheory()
+    {
+        var theories = typeof(AdvertisedFormatDecoderTests)
+            .GetMethods()
+            .Where(method => method.GetCustomAttributes(typeof(TheoryAttribute), inherit: false).Length > 0)
+            .ToList();
+
+        Assert.NotEmpty(theories);
+
+        foreach (var theory in theories)
+        {
+            var covered = theory
+                .GetCustomAttributes(typeof(InlineDataAttribute), inherit: false)
+                .Cast<InlineDataAttribute>()
+                .Select(data => (string)data.GetData(theory).Single()[0]!)
+                .ToList();
+
+            Assert.Equal(Shapes.Order(), covered.Order());
+        }
     }
 }
