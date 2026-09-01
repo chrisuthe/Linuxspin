@@ -1,7 +1,7 @@
-using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Sendspin.Core.Audio;
 using Sendspin.Core.Diagnostics;
+using Sendspin.Player.Threading;
 
 namespace Sendspin.Player.ViewModels;
 
@@ -20,7 +20,7 @@ public sealed partial class DiagnosticsViewModel : ObservableObject, IDisposable
 
     private readonly IDiagnosticsProvider _provider;
     private readonly SyncCorrectionPolicy _policy;
-    private readonly DispatcherTimer _timer;
+    private readonly UiClock _clock = new(RefreshInterval);
 
     [ObservableProperty]
     private PlayerDiagnosticsSnapshot _snapshot = PlayerDiagnosticsSnapshot.Empty;
@@ -36,8 +36,7 @@ public sealed partial class DiagnosticsViewModel : ObservableObject, IDisposable
         _provider = provider;
         _policy = policy;
 
-        _timer = new DispatcherTimer { Interval = RefreshInterval };
-        _timer.Tick += (_, _) => Refresh();
+        _clock.Tick += (_, _) => Refresh();
     }
 
     /// <summary>
@@ -107,16 +106,16 @@ public sealed partial class DiagnosticsViewModel : ObservableObject, IDisposable
         if (visible)
         {
             Refresh();
-            _timer.Start();
+            _clock.Start();
         }
         else
         {
-            _timer.Stop();
+            _clock.Stop();
         }
     }
 
     /// <inheritdoc/>
-    public void Dispose() => _timer.Stop();
+    public void Dispose() => _clock.Dispose();
 
     /// <summary>
     /// Notifies the derived properties, which are all computed from

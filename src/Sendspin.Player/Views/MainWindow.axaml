@@ -9,195 +9,290 @@
         x:Class="Sendspin.Player.Views.MainWindow"
         x:DataType="vm:MainViewModel"
         Title="Sendspin Player"
-        Width="880" Height="600"
-        MinWidth="520" MinHeight="420"
-        WindowStartupLocation="CenterScreen">
+        Width="440" Height="700"
+        MinWidth="400" MinHeight="560"
+        WindowStartupLocation="CenterScreen"
+        Background="{x:Null}">
 
     <!--
       Native shell: resizable, the platform's own decorations, the system's light/dark variant
       and accent, the platform's font. The composition inside the window comes from Sendspin for
-      Windows — a phone-shaped, dark-only, custom-chrome player — and its colours do not.
+      Windows — a phone-shaped, dark-only, custom-chrome player — and its colours do not. The
+      per-platform hints (Mica on Windows 11, the extended title strip on macOS) are set in the
+      code-behind, which is also where the opaque root's opacity and the toolbar's inset are
+      kept in step with what the platform actually granted.
+
+      The window's own background is null so that the layer stack below is the only thing that
+      paints: on Linux the window has an alpha channel by default, and on Windows Mica needs to
+      show through, so the first layer is an opaque root and everything translucent sits on it.
     -->
 
-    <Grid RowDefinitions="Auto,*,Auto">
+    <Panel Name="LayerStack">
 
-        <!-- Header: connection state and the panel toggles -->
-        <Border Grid.Row="0" Classes="header">
-            <Grid ColumnDefinitions="*,Auto,Auto">
-                <StackPanel Grid.Column="0" Orientation="Vertical" Spacing="2">
-                    <TextBlock Text="{Binding ConnectionStatus}" Classes="h2" />
-                    <TextBlock Text="{Binding StatusMessage}"
-                               Classes="warning"
-                               TextWrapping="Wrap"
-                               IsVisible="{Binding StatusMessage, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                </StackPanel>
+        <!-- Opaque root: the one layer that always paints. -->
+        <Border Name="OpaqueRoot"
+                Background="{DynamicResource SystemControlBackgroundAltHighBrush}" />
 
-                <ToggleButton Grid.Column="1"
-                              Content="Diagnostics"
-                              IsChecked="{Binding Diagnostics.IsVisible, Mode=OneWay}"
-                              Command="{Binding ToggleDiagnosticsCommand}" />
+        <!-- Layer 0: blurred artwork. Phase 3 supplies the bitmap and flips HasArtBackdrop. -->
+        <Panel Name="ArtBackdrop" IsVisible="{Binding HasArtBackdrop}">
+            <Image Name="ArtBackdropImage" Stretch="UniformToFill" />
+        </Panel>
 
-                <ToggleButton Grid.Column="2"
-                              Content="Settings"
-                              IsChecked="{Binding IsSettingsOpen, Mode=OneWay}"
-                              Command="{Binding ToggleSettingsCommand}" />
-            </Grid>
-        </Border>
+        <!-- Layer 0b: the ambient backdrop. Phase 5 fills this and flips HasAmbientBackdrop. -->
+        <ContentControl Name="AmbientBackdrop" IsVisible="{Binding HasAmbientBackdrop}" />
 
-        <!-- Body -->
-        <Grid Grid.Row="1" ColumnDefinitions="*,Auto">
+        <!-- Layer 1: the veil, so theme-foreground text keeps its contrast over either backdrop. -->
+        <Border Name="Veil"
+                Background="{DynamicResource VeilBrush}"
+                IsVisible="{Binding HasBackdrop}" />
 
-            <ScrollViewer Grid.Column="0">
-                <StackPanel Classes="body" Spacing="16">
+        <!-- Layer 2: the content. -->
+        <Grid Name="ContentLayer" RowDefinitions="Auto,*,Auto">
 
-                    <!-- Now playing -->
-                    <Grid ColumnDefinitions="Auto,*" IsVisible="{Binding IsConnected}">
-                        <Border Grid.Column="0" Classes="artwork">
-                            <Panel>
-                                <PathIcon Data="{StaticResource MusicIcon}" Classes="artworkPlaceholder"
-                                          IsVisible="{Binding Artwork, Converter={x:Static ObjectConverters.IsNull}}" />
-                                <Image Source="{Binding Artwork}" Stretch="UniformToFill" />
-                            </Panel>
-                        </Border>
+            <!-- Toolbar: the connection line, and the panel toggles. -->
+            <Border Grid.Row="0" Name="Toolbar" Classes="toolbar">
+                <!-- ToolbarContent's margin is the code-behind's: the macOS title strip inset. -->
+                <Grid Name="ToolbarContent" ColumnDefinitions="*,Auto,Auto">
+                    <TextBlock Grid.Column="0"
+                               Name="ConnectionLine"
+                               Text="{Binding ConnectionStatus}"
+                               Classes="caption"
+                               VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis" />
 
-                        <StackPanel Grid.Column="1" Classes="trackInfo" Spacing="4">
-                            <TextBlock Text="{Binding State.Title, FallbackValue='Nothing playing'}"
-                                       Classes="h1" TextWrapping="Wrap" />
-                            <TextBlock Text="{Binding State.Artist}" Classes="h3" TextWrapping="Wrap" />
-                            <TextBlock Text="{Binding State.Album}" Classes="subtle" TextWrapping="Wrap" />
+                    <!-- Temporary: Phase 4 moves diagnostics into Settings and this button goes. -->
+                    <ToggleButton Grid.Column="1"
+                                  Name="StatsButton"
+                                  Classes="iconButton"
+                                  IsChecked="{Binding Diagnostics.IsVisible, Mode=OneWay}"
+                                  Command="{Binding ToggleDiagnosticsCommand}"
+                                  ToolTip.Tip="Stats">
+                        <PathIcon Data="{StaticResource StatsIcon}" />
+                    </ToggleButton>
 
-                            <!--
-                              The progress bar is hidden for a live stream rather than shown
-                              empty: an absent duration is how the protocol expresses "unbounded",
-                              and a bar that can never fill is worse than no bar.
-                            -->
-                            <ProgressBar Value="{Binding ProgressFraction, Mode=OneWay}"
-                                         Maximum="1"
-                                         IsVisible="{Binding !State.IsLive}"
-                                         Margin="0,8,0,0" />
-                            <TextBlock Text="{Binding PositionText}" Classes="subtle" />
-                        </StackPanel>
-                    </Grid>
-
-                    <!-- Server list, shown while not connected -->
-                    <StackPanel Spacing="8" IsVisible="{Binding !IsConnected}">
-                        <TextBlock Text="Servers on this network" Classes="h2" />
-
-                        <ListBox ItemsSource="{Binding DiscoveredServers}"
-                                 SelectedItem="{Binding SelectedServer}"
-                                 MaxHeight="220">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <StackPanel Spacing="2">
-                                        <TextBlock Text="{Binding Name}" />
-                                        <TextBlock Classes="subtle">
-                                            <TextBlock.Text>
-                                                <MultiBinding StringFormat="{}{0}:{1}">
-                                                    <Binding Path="Host" />
-                                                    <Binding Path="Port" />
-                                                </MultiBinding>
-                                            </TextBlock.Text>
-                                        </TextBlock>
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
-
-                        <TextBlock Text="No servers found yet — Sendspin is still looking."
-                                   Classes="subtle"
-                                   IsVisible="{Binding !DiscoveredServers.Count}" />
-
-                        <Button Content="Connect"
-                                Classes="primary"
-                                Command="{Binding ConnectCommand}"
-                                HorizontalAlignment="Left" />
-
-                        <Separator Margin="0,8" />
-
-                        <TextBlock Text="Or connect by address" Classes="h3" />
-                        <Grid ColumnDefinitions="*,Auto">
-                            <TextBox Grid.Column="0"
-                                     Text="{Binding ManualServerUrl}"
-                                     PlaceholderText="192.168.1.10:8927" />
-                            <Button Grid.Column="1"
-                                    Content="Connect"
-                                    Command="{Binding ConnectManuallyCommand}"
-                                    Margin="8,0,0,0" />
-                        </Grid>
-                    </StackPanel>
-
-                    <views:DiagnosticsView DataContext="{Binding Diagnostics}"
-                                           IsVisible="{Binding IsVisible}" />
-                </StackPanel>
-            </ScrollViewer>
-
-            <!-- Settings pane -->
-            <Border Grid.Column="1"
-                    Classes="settingsPane"
-                    IsVisible="{Binding IsSettingsOpen}"
-                    Width="340">
-                <ScrollViewer>
-                    <views:SettingsView DataContext="{Binding Settings}" />
-                </ScrollViewer>
+                    <ToggleButton Grid.Column="2"
+                                  Name="SettingsButton"
+                                  Classes="iconButton"
+                                  IsChecked="{Binding IsSettingsOpen, Mode=OneWay}"
+                                  Command="{Binding ToggleSettingsCommand}"
+                                  ToolTip.Tip="Settings">
+                        <PathIcon Data="{StaticResource GearIcon}" />
+                    </ToggleButton>
+                </Grid>
             </Border>
-        </Grid>
 
-        <!-- Transport -->
-        <Border Grid.Row="2" Classes="transport" IsEnabled="{Binding IsConnected}">
-            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto,Auto">
-                <Button Grid.Column="0" Classes="iconButton"
-                        Command="{Binding PreviousCommand}" ToolTip.Tip="Previous">
-                    <PathIcon Data="{StaticResource PreviousIcon}" />
-                </Button>
+            <!-- Body, with the settings overlay over it. -->
+            <Panel Grid.Row="1" Name="Body">
+                <Grid RowDefinitions="*,Auto">
+                    <ScrollViewer Grid.Row="0">
+                        <StackPanel Classes="body" Spacing="16">
 
-                <!-- Play or pause is an icon choice, not a label: the two glyphs swap on IsPlaying. -->
-                <Button Grid.Column="1" Classes="playButton"
-                        Command="{Binding PlayPauseCommand}" ToolTip.Tip="{Binding PlayPauseLabel}">
-                    <Panel>
-                        <PathIcon Classes="filled" Data="{StaticResource PlayIcon}" IsVisible="{Binding !IsPlaying}" />
-                        <PathIcon Classes="filled" Data="{StaticResource PauseIcon}" IsVisible="{Binding IsPlaying}" />
-                    </Panel>
-                </Button>
+                            <!-- Now playing -->
+                            <Grid ColumnDefinitions="Auto,*" IsVisible="{Binding IsConnected}">
+                                <Border Grid.Column="0" Classes="artwork">
+                                    <Panel>
+                                        <PathIcon Data="{StaticResource MusicIcon}" Classes="artworkPlaceholder"
+                                                  IsVisible="{Binding Artwork, Converter={x:Static ObjectConverters.IsNull}}" />
+                                        <Image Source="{Binding Artwork}" Stretch="UniformToFill" />
+                                    </Panel>
+                                </Border>
 
-                <Button Grid.Column="2" Classes="iconButton"
-                        Command="{Binding NextCommand}" ToolTip.Tip="Next">
-                    <PathIcon Data="{StaticResource NextIcon}" />
-                </Button>
+                                <StackPanel Grid.Column="1" Classes="trackInfo" Spacing="4">
+                                    <TextBlock Text="{Binding State.Title, FallbackValue='Nothing playing'}"
+                                               Classes="h1" TextWrapping="Wrap" />
+                                    <TextBlock Text="{Binding State.Artist}" Classes="h3" TextWrapping="Wrap" />
+                                    <TextBlock Text="{Binding State.Album}" Classes="subtle" TextWrapping="Wrap" />
+
+                                    <!--
+                                      The progress bar is hidden for a live stream rather than shown
+                                      empty: an absent duration is how the protocol expresses "unbounded",
+                                      and a bar that can never fill is worse than no bar.
+                                    -->
+                                    <ProgressBar Value="{Binding ProgressFraction, Mode=OneWay}"
+                                                 Maximum="1"
+                                                 IsVisible="{Binding !State.IsLive}"
+                                                 Margin="0,8,0,0" />
+                                    <TextBlock Text="{Binding PositionText}" Classes="subtle" />
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- Server list, shown while not connected -->
+                            <StackPanel Spacing="8" IsVisible="{Binding !IsConnected}">
+                                <TextBlock Text="Servers on this network" Classes="h2" />
+
+                                <ListBox ItemsSource="{Binding DiscoveredServers}"
+                                         SelectedItem="{Binding SelectedServer}"
+                                         MaxHeight="220">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Spacing="2">
+                                                <TextBlock Text="{Binding Name}" />
+                                                <TextBlock Classes="subtle">
+                                                    <TextBlock.Text>
+                                                        <MultiBinding StringFormat="{}{0}:{1}">
+                                                            <Binding Path="Host" />
+                                                            <Binding Path="Port" />
+                                                        </MultiBinding>
+                                                    </TextBlock.Text>
+                                                </TextBlock>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+
+                                <TextBlock Text="No servers found yet — Sendspin is still looking."
+                                           Classes="subtle"
+                                           IsVisible="{Binding !DiscoveredServers.Count}" />
+
+                                <Button Content="Connect"
+                                        Classes="primary"
+                                        Command="{Binding ConnectCommand}"
+                                        HorizontalAlignment="Left" />
+
+                                <Separator Margin="0,8" />
+
+                                <TextBlock Text="Or connect by address" Classes="h3" />
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBox Grid.Column="0"
+                                             Text="{Binding ManualServerUrl}"
+                                             PlaceholderText="192.168.1.10:8927" />
+                                    <Button Grid.Column="1"
+                                            Content="Connect"
+                                            Command="{Binding ConnectManuallyCommand}"
+                                            Margin="8,0,0,0" />
+                                </Grid>
+                            </StackPanel>
+
+                            <views:DiagnosticsView DataContext="{Binding Diagnostics}"
+                                                   IsVisible="{Binding IsVisible}" />
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!--
+                      Transport. Phase 3 composes this into Now Playing; until then it sits centred
+                      at the bottom of the body, unchanged.
+                    -->
+                    <StackPanel Grid.Row="1"
+                                Name="Transport"
+                                Classes="transport"
+                                Orientation="Horizontal"
+                                HorizontalAlignment="Center"
+                                Spacing="4"
+                                IsEnabled="{Binding IsConnected}">
+                        <Button Classes="iconButton"
+                                Command="{Binding PreviousCommand}" ToolTip.Tip="Previous">
+                            <PathIcon Data="{StaticResource PreviousIcon}" />
+                        </Button>
+
+                        <!-- Play or pause is an icon choice, not a label: the two glyphs swap on IsPlaying. -->
+                        <Button Classes="playButton"
+                                Command="{Binding PlayPauseCommand}" ToolTip.Tip="{Binding PlayPauseLabel}">
+                            <Panel>
+                                <PathIcon Classes="filled" Data="{StaticResource PlayIcon}" IsVisible="{Binding !IsPlaying}" />
+                                <PathIcon Classes="filled" Data="{StaticResource PauseIcon}" IsVisible="{Binding IsPlaying}" />
+                            </Panel>
+                        </Button>
+
+                        <Button Classes="iconButton"
+                                Command="{Binding NextCommand}" ToolTip.Tip="Next">
+                            <PathIcon Data="{StaticResource NextIcon}" />
+                        </Button>
+
+                        <!--
+                          Shuffle and repeat show the server's state in their tooltips rather than as
+                          checkmarks: NativeMenuItem.IsChecked does not work on Windows (Avalonia#8751),
+                          so a checkmark would be right on two platforms and silently absent on the third.
+                        -->
+                        <ToggleButton Classes="iconButton"
+                                      IsChecked="{Binding State.Shuffle, Mode=OneWay}"
+                                      Command="{Binding ToggleShuffleCommand}" ToolTip.Tip="Shuffle">
+                            <PathIcon Data="{StaticResource ShuffleIcon}" />
+                        </ToggleButton>
+                        <Button Classes="iconButton"
+                                Command="{Binding CycleRepeatCommand}"
+                                ToolTip.Tip="{Binding State.Repeat}">
+                            <Panel>
+                                <PathIcon Data="{StaticResource RepeatIcon}"
+                                          IsVisible="{Binding State.Repeat, Converter={x:Static ObjectConverters.NotEqual}, ConverterParameter={x:Static media:MediaRepeatMode.One}}" />
+                                <PathIcon Data="{StaticResource RepeatOneIcon}"
+                                          IsVisible="{Binding State.Repeat, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static media:MediaRepeatMode.One}}" />
+                            </Panel>
+                        </Button>
+                    </StackPanel>
+                </Grid>
 
                 <!--
-                  Shuffle and repeat show the server's state in their tooltips rather than as
-                  checkmarks: NativeMenuItem.IsChecked does not work on Windows (Avalonia#8751),
-                  so a checkmark would be right on two platforms and silently absent on the third.
+                  Settings, as a card over the whole body rather than a side column: at 440 px a
+                  340 px pane would swallow the window. Its contents are Phase 4's.
                 -->
-                <ToggleButton Grid.Column="3" Classes="iconButton"
-                              IsChecked="{Binding State.Shuffle, Mode=OneWay}"
-                              Command="{Binding ToggleShuffleCommand}" ToolTip.Tip="Shuffle">
-                    <PathIcon Data="{StaticResource ShuffleIcon}" />
-                </ToggleButton>
-                <Button Grid.Column="4" Classes="iconButton"
-                        Command="{Binding CycleRepeatCommand}"
-                        ToolTip.Tip="{Binding State.Repeat}">
-                    <Panel>
-                        <PathIcon Data="{StaticResource RepeatIcon}"
-                                  IsVisible="{Binding State.Repeat, Converter={x:Static ObjectConverters.NotEqual}, ConverterParameter={x:Static media:MediaRepeatMode.One}}" />
-                        <PathIcon Data="{StaticResource RepeatOneIcon}"
-                                  IsVisible="{Binding State.Repeat, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static media:MediaRepeatMode.One}}" />
-                    </Panel>
-                </Button>
+                <Border Name="SettingsOverlay"
+                        Classes="settingsOverlay"
+                        IsVisible="{Binding IsSettingsOpen}">
+                    <ScrollViewer>
+                        <views:SettingsView DataContext="{Binding Settings}" />
+                    </ScrollViewer>
+                </Border>
+            </Panel>
 
-                <StackPanel Grid.Column="6" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                    <ToggleButton Classes="iconButton" IsChecked="{Binding IsMuted}" ToolTip.Tip="Mute">
-                        <Panel>
-                            <PathIcon Data="{StaticResource SpeakerIcon}" IsVisible="{Binding !IsMuted}" />
-                            <PathIcon Data="{StaticResource MutedIcon}" IsVisible="{Binding IsMuted}" />
-                        </Panel>
-                    </ToggleButton>
-                    <Slider Value="{Binding Volume}" Minimum="0" Maximum="100" Width="140"
-                            ToolTip.Tip="{Binding Volume}" />
-                </StackPanel>
+            <!-- Footer: volume, or the status message while disconnected with one to show. -->
+            <Border Grid.Row="2" Name="Footer" Classes="footer">
+                <Panel>
+                    <Grid Name="VolumeRow"
+                          ColumnDefinitions="Auto,*,Auto,Auto,Auto"
+                          IsVisible="{Binding !HasFooterStatus}"
+                          IsEnabled="{Binding IsConnected}">
+                        <ToggleButton Grid.Column="0"
+                                      Name="MuteButton"
+                                      Classes="iconButton"
+                                      IsChecked="{Binding IsMuted}"
+                                      ToolTip.Tip="Mute">
+                            <Panel>
+                                <PathIcon Data="{StaticResource SpeakerIcon}" IsVisible="{Binding !IsMuted}" />
+                                <PathIcon Data="{StaticResource MutedIcon}" IsVisible="{Binding IsMuted}" />
+                            </Panel>
+                        </ToggleButton>
 
-                <Button Grid.Column="7" Content="Disconnect" Command="{Binding DisconnectCommand}" />
-            </Grid>
-        </Border>
-    </Grid>
+                        <!-- Avalonia's Slider already jumps to the pressed point; there is no switch for it. -->
+                        <Slider Grid.Column="1"
+                                Name="VolumeSlider"
+                                Value="{Binding Volume}"
+                                Minimum="0" Maximum="100"
+                                VerticalAlignment="Center"
+                                Margin="8,0" />
+
+                        <TextBlock Grid.Column="2"
+                                   Name="VolumeText"
+                                   Text="{Binding Volume, StringFormat='{}{0}%'}"
+                                   Classes="caption"
+                                   MinWidth="36"
+                                   TextAlignment="Right"
+                                   VerticalAlignment="Center" />
+
+                        <Button Grid.Column="3"
+                                Name="SwitchGroupButton"
+                                Classes="iconButton"
+                                Command="{Binding SwitchGroupCommand}"
+                                ToolTip.Tip="Switch group">
+                            <PathIcon Data="{StaticResource SwitchGroupIcon}" />
+                        </Button>
+
+                        <!-- Phase 4 moves this into Settings' Connection section. -->
+                        <Button Grid.Column="4"
+                                Name="DisconnectButton"
+                                Content="Disconnect"
+                                Command="{Binding DisconnectCommand}"
+                                VerticalAlignment="Center"
+                                Margin="8,0,0,0" />
+                    </Grid>
+
+                    <TextBlock Name="FooterStatus"
+                               Text="{Binding StatusMessage}"
+                               Classes="warning"
+                               TextWrapping="Wrap"
+                               VerticalAlignment="Center"
+                               IsVisible="{Binding HasFooterStatus}" />
+                </Panel>
+            </Border>
+        </Grid>
+    </Panel>
 </Window>

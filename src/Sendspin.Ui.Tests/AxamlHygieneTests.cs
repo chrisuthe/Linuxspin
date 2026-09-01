@@ -9,8 +9,7 @@ namespace Sendspin.Ui.Tests;
 /// </summary>
 /// <remarks>
 /// Both are grep-shaped rules, and both are here rather than in a script because a script is
-/// not run by CI and a test is. The source tree is found from the test binary's location, which
-/// is inside the repository for every way the suite is run.
+/// not run by CI and a test is (see <see cref="PlayerSource"/>).
 /// </remarks>
 public sealed partial class AxamlHygieneTests
 {
@@ -22,7 +21,7 @@ public sealed partial class AxamlHygieneTests
     {
         var offenders = new List<string>();
 
-        foreach (var file in PlayerAxamlFiles())
+        foreach (var file in PlayerSource.AxamlFiles())
         {
             var text = StripComments(File.ReadAllText(file));
             var name = Path.GetFileName(file);
@@ -62,7 +61,7 @@ public sealed partial class AxamlHygieneTests
     {
         var offenders = new List<string>();
 
-        foreach (var file in PlayerSourceFiles())
+        foreach (var file in PlayerSource.SourceFiles())
         {
             foreach (Match match in GlyphCharacter().Matches(File.ReadAllText(file)))
             {
@@ -71,30 +70,6 @@ public sealed partial class AxamlHygieneTests
         }
 
         Assert.True(offenders.Count == 0, "Glyph characters in the app:\n" + string.Join('\n', offenders));
-    }
-
-    private static IEnumerable<string> PlayerAxamlFiles() =>
-        Directory.EnumerateFiles(PlayerDirectory(), "*.axaml", SearchOption.AllDirectories)
-            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}"));
-
-    private static IEnumerable<string> PlayerSourceFiles() =>
-        Directory.EnumerateFiles(PlayerDirectory(), "*.*", SearchOption.AllDirectories)
-            .Where(f => (f.EndsWith(".axaml", StringComparison.Ordinal) || f.EndsWith(".cs", StringComparison.Ordinal))
-                && !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}"));
-
-    /// <summary>The app project directory, found by walking up from the test binary to the solution.</summary>
-    private static string PlayerDirectory()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-
-        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Sendspin.Player.slnx")))
-        {
-            directory = directory.Parent;
-        }
-
-        Assert.True(directory is not null, "Source tree not found: the test binary is running outside the repository.");
-
-        return Path.Combine(directory!.FullName, "src", "Sendspin.Player");
     }
 
     private static string StripComments(string xaml) => XmlComment().Replace(xaml, string.Empty);

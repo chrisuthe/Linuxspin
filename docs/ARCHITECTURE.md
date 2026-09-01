@@ -983,7 +983,7 @@ every configuration, so "per frame" below is per presented frame.
 | `RequestAnimationFrame` re-armed in the callback | **25 124 Hz** (0.04 ms/tick) | 59.6 Hz | 60.0 Hz (16.67 ms/tick) |
 | `DispatcherTimer` 16 ms, any priority | **5–7 Hz** (140–200 ms/tick across runs) | 62.3 Hz | 60.0 Hz (16.67 ms/tick) |
 | `DispatcherTimer` 100 ms | **4.3 Hz** (231 ms/tick — real, but ±1 tick wide, see below) | 10.0 Hz | 9.9 Hz (101.03 ms/tick) |
-| `DispatcherTimer` 500 ms | 1.7 Hz (600 ms/tick) — **an artifact, see below** | 2.0 Hz | 2.0 Hz (501.09 ms/tick) |
+| `DispatcherTimer` 500 ms | 1.7 Hz (600 ms/tick) count-derived — **on time or one quantum late, see the re-measure below** | 2.0 Hz | 2.0 Hz (501.09 ms/tick) |
 | `System.Threading.Timer` 16 ms → `Dispatcher.UIThread.Post` | 62.3 Hz | 62.3 Hz | 62.3 Hz (16.05 ms/tick) |
 | `Task.Delay(16)` loop on the UI thread | 61.3 Hz | 61.3 Hz | 55.3 Hz (18.08 ms/tick) |
 | Avalonia `Animation`, 1 s loop — property change rate | **24 268 Hz** | 60.3 Hz | 60.0 Hz (16.67 ms/tick) |
@@ -1020,27 +1020,37 @@ the one clock that behaves on every head measured — 62.3 Hz on Wayland, X11 an
 decision holds on all three platforms. That is the driver every number below uses
 (`SPIKE_DRIVER=threadtimer`).
 
-**Withdrawn: the claim that the player's 500 ms `DispatcherTimer`s already tick at 600 ms on
-Wayland.** That rested on the Wayland 500 ms row, and that row is a counting artifact, not a
-measurement. A 500 ms timer fires at 500…3000 ms inside a fixed 3000 ms window, so it scores 6 ticks
-if the last one lands before the cutoff and 5 if it does not; 600 ms/tick is exactly the 5-tick case.
-This was demonstrated rather than argued: run against the same macOS host, the counting `Measure`
-scores `5 ticks in 3002 ms = 1.7 Hz (600.46 ms/tick)` — the Wayland figure almost exactly — while the
-median `Measure` on the same machine reads **501.09 ms**. macOS is correct on every other row in both
-runs, so the 600 ms is the window, not the timer. That the Wayland figure "reproduced exactly" across
-runs is not evidence against this either: a deterministic off-by-one reproduces exactly, which is
-precisely how it went unnoticed. Re-run `ShellSpike clock` on Wayland with the fixed `Measure` and
-either substantiate the claim from the median or leave it withdrawn. `Measure` runs each row for at
-least 3 s and then until it has 30 inter-tick gaps, capping at 30 s; the line reports `over N gaps`,
-so check that the 500 ms row got its 30 rather than hitting the cap before trusting its median.
+**Corrected: on the Wayland head a `DispatcherTimer` is quantised to about 100–140 ms, and the
+player's 500 ms timers fired on time or one quantum late — not at a steady 600 ms, and not
+reliably on time either.** An earlier revision withdrew the "600 ms" claim as a counting artifact of
+the fixed-window `Measure` and called the Wayland 500 ms row an artifact. The 600 ms *figure* was
+indeed the count-derived off-by-one (the same `Measure` scored a correct macOS 500 ms timer as
+`5 ticks in 3002 ms = 600.46 ms/tick` against a median of 501.09), but the row was not: per-gap
+logging over 12 s on this head gave gaps of `618, 618, 618, 501, 618, 501, 619, 500, …` (mean 565) in
+one run and min 500.09 / max 599.37 in another; the 100 ms row min 99.72 / max 200.11; the 16 ms row a
+flat 100.5. That is a bimodal distribution, which a median hides — so every row here quotes min–max
+alongside it, and the quantum, which varied 100–140 ms across those runs. Re-measured for reskin phase
+2 with the current `Measure` (median over ≥30 gaps), three consecutive runs on the Wayland head on
+2026-09-01, 17:28–17:42, ms/tick:
 
-The 16 ms row is untouched by this. Applied to the observed figure, ±1 tick out of the ~20 the Wayland
-head manages in 3 s moves 140 ms by about 7 ms — nowhere near enough to explain a timer asked for 16 ms
-returning 140–200, so that pathology is real. The 100 ms row survives too,
-though less comfortably: ±1 tick spans 214–250 ms around the reported 231 ms, so the overshoot is
-genuine even if the exact figure is soft. (The same counting run put macOS's 100 ms row at
-`29 ticks in 3001 ms = 103.50 ms/tick` against a median of 101.03 — the ±1 tick, and nothing more.)
-Both want re-measuring on the next Wayland run anyway.
+| Row | Run 1 | Run 2 | Run 3 |
+|---|---|---|---|
+| `DispatcherTimer` 500 ms @Normal | median 500.86, min 500.14, max 501.71 | 501.14, 500.16–502.43 | 501.29, 500.20–503.32 |
+| `DispatcherTimer` 100 ms @Normal | median 100.52, min 99.69, max 199.92 | 100.47, 99.46–200.13 | 100.53, 99.39–199.68 |
+| `DispatcherTimer` 16 ms @Render | median 20.06, min 15.21, max 100.82 (49.9 Hz) | 99.51, 15.28–101.01 | 100.53, 99.51–100.86 |
+| `DispatcherTimer` 16 ms @Normal / @Background | 100.44 / 100.49, min 99.40, max 101.16 | 100.45 / 100.49, 99.40–100.77 | 100.49 / 100.49, 99.45–100.74 |
+| `System.Threading.Timer` 16 ms → `Post(Render)` | median 16.12, min 15.09, max 16.53 (62.0 Hz) | 16.15, 14.94–16.59 | 16.14, 15.08–16.73 |
+| `Task.Delay(16)` loop | 16.19, 15.17–18.08 | 16.21, 15.40–17.11 | 16.20, 15.19–17.31 |
+
+Read together with the per-gap runs: the quantum was 100 ms on this day, the 16 ms timer ticks at the
+quantum at Normal and Background priority every time and at Render priority sometimes escapes to ~20 ms
+(run 1) and sometimes does not (runs 2–3), the 100 ms timer lands on time with one 200 ms gap per run,
+and the 500 ms timer was on time in all three of these runs where the earlier per-gap runs had it one
+quantum late on alternate ticks. Which of those a given run gets is not something the app can predict,
+which is why the player no longer trusts the interval at all — see "As shipped" below. The
+thread-pool timer posting to the dispatcher is 62 Hz within ±1.5 ms in every run, on every head. The
+16 ms (140–200) and 100 ms (231) figures in the table above were count-derived on a 140 ms-quantum
+day; this table supersedes them.
 
 **Then the cost**, CPU ms per frame at 60 Hz. "Software" on X11 is
 `X11PlatformOptions.RenderingMode = [Software]`; on Wayland the backend has no such option, so EGL
@@ -1109,3 +1119,36 @@ renders the client area only, which is exactly the half of the traffic-light com
 in question. The macOS decoration row therefore stands on its property values, which are unambiguous
 about the inset (`WindowDecorationMargin=0,28,0,0` with `FrameSize == ClientSize`) even though no
 committed image shows it.
+
+### As shipped (reskin phase 2) — the window shell
+
+`Views/MainWindow.axaml` is 440×700 by default, 400×560 minimum, native decorations everywhere, and
+its own `Background` is null so that only the layer stack paints. The per-platform hints live in the
+code-behind on `OperatingSystem.IsX()`: **Linux** sets nothing (the client-area hint is inert under
+KWin, above); **Windows** sets `TransparencyLevelHint = [Mica, None]`; **macOS** sets
+`ExtendClientAreaToDecorationsHint = true` and `ExtendClientAreaTitleBarHeightHint = -1` with no custom
+caption buttons, and the client area is deliberately *not* extended on Windows until the system caption
+buttons are known to survive it. Two rules are then read back from the window's own properties as they
+change (`OnPropertyChanged`, never `Opened`, where the Wayland head still reports the fallback variant
+and scaling): the **opaque root** — the bottom `Border` of the stack, painted with Fluent's
+`SystemControlBackgroundAltHighBrush`, the colour the veil token derives from — is at 100 % opacity
+unless `ActualTransparencyLevel` settles on `Mica`, when it drops to 35 % so the material shows through;
+and the **toolbar inset** follows `WindowDecorationMargin` and `IsExtendedIntoWindowDecorations`, taking
+the strip's height on top plus a fixed 78 px on the left for the traffic lights, which no property
+reports. Both are null-guarded because the Wayland backend raises
+`IsExtendedIntoWindowDecorations` from the base `Window` constructor, before the XAML has loaded. Above
+the root, bottom to top: the blurred-art `Image` (Phase 3), the ambient `ContentControl` (Phase 5),
+the `VeilBrush` `Border` visible only when either backdrop is, and the content grid of toolbar, body
+and footer. `Sendspin.Ui.Tests/MainWindowShellTests` finds each layer by name and pins the opacity rule
+for both cases. Screenshots: `docs/screenshots/reskin/phase2-{wayland,x11}-{light,dark}.png`.
+
+**The one timer.** `Player/Threading/UiClock.cs` is a `System.Threading.Timer` posting one tick to
+`Dispatcher.UIThread` at `Render` priority, dropping a tick while the previous one is still queued
+(`Core/Threading/TickGate.cs`), with a `Stopwatch` `Elapsed` for handlers that want real time. It
+replaces both `DispatcherTimer`s the player shipped (the 500 ms progress timer and the 500 ms
+diagnostics refresh), and a hygiene test in `Sendspin.Ui.Tests` keeps `DispatcherTimer` out of every
+other file under `src/Sendspin.Player`. The progress bar no longer steps by the nominal interval:
+`MainViewModel` anchors the server's last reported position against `Elapsed`
+(`Core/MediaSession/AnchoredPosition.cs`) and projects from there on each tick, so it is right on a
+head whose timer is a quantum late as much as on one whose timer is exact. Phase 5 paces the backdrop
+with the same helper at 60 Hz.
