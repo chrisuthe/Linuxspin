@@ -220,21 +220,24 @@ internal sealed class InertAudioPipeline : IAudioPipeline
     {
     }
 
-    public void ReanchorTiming()
-    {
-    }
+    public void ReanchorTiming() => Reanchors++;
 
     public void ProcessAudioChunk(AudioChunk chunk)
     {
     }
 
-    public void SetVolume(int volume)
-    {
-    }
+    /// <summary>Volumes the SDK pushed into the pipeline, oldest first.</summary>
+    public List<int> Volumes { get; } = [];
 
-    public void SetMuted(bool muted)
-    {
-    }
+    /// <summary>Mute states the SDK pushed into the pipeline, oldest first.</summary>
+    public List<bool> Mutes { get; } = [];
+
+    /// <summary>How many times timing was re-anchored.</summary>
+    public int Reanchors { get; private set; }
+
+    public void SetVolume(int volume) => Volumes.Add(volume);
+
+    public void SetMuted(bool muted) => Mutes.Add(muted);
 
     public Task SwitchDeviceAsync(string? deviceId, CancellationToken cancellationToken = default) =>
         Task.CompletedTask;
@@ -306,4 +309,86 @@ internal sealed class InMemoryStaticDelayStore : IStaticDelayStore
     public double? Load() => _value;
 
     public void Save(double staticDelayMs) => _value = staticDelayMs;
+}
+
+/// <summary>
+/// An <see cref="ISendspinConnection"/> that keeps every message the SDK sends, serialized exactly
+/// as it would go on the wire, and lets a test deliver inbound frames.
+/// </summary>
+/// <remarks>
+/// <see cref="FakeConnection"/> discards what is sent, which is right for the arbitration tests.
+/// This one exists because the advertisement tests have to assert the <em>wire</em> form: the
+/// promise a server reads is the JSON, not the <c>ClientCapabilities</c> object it was built from,
+/// and the SDK's translation between the two is private.
+/// </remarks>
+internal sealed class RecordingConnection : ISendspinConnection
+{
+    public ConnectionState State { get; private set; } = ConnectionState.Disconnected;
+
+    public Uri? ServerUri => new("ws://test.invalid/sendspin");
+
+    /// <summary>Every message sent, as the JSON that would have gone out.</summary>
+    public List<string> Sent { get; } = [];
+
+    /// <summary>
+    /// Called with each message as it is sent. The handshake is a request/response — the SDK's
+    /// <c>ConnectAsync</c> does not return until a <c>server/hello</c> arrives — so a test that
+    /// wants a connected client has to answer from inside the send, not after it.
+    /// </summary>
+    public Action<RecordingConnection, string>? OnSent { get; set; }
+
+    public event EventHandler<ConnectionStateChangedEventArgs>? StateChanged;
+
+    public event EventHandler<string>? TextMessageReceived;
+
+    public event EventHandler<ReadOnlyMemory<byte>>? BinaryMessageReceived;
+
+    /// <summary>Delivers an inbound frame, as the transport's receive loop would.</summary>
+    public void Receive(string json) => TextMessageReceived?.Invoke(this, json);
+
+    /// <summary>The messages sent so far of one protocol type, newest last.</summary>
+    public List<string> SentOfType(string messageType) =>
+        [.. Sent.Where(json => MessageSerializer.GetMessageType(json) == messageType)];
+
+    public Task ConnectAsync(Uri serverUri, CancellationToken cancellationToken = default)
+    {
+        _ = BinaryMessageReceived;
+        var old = State;
+        State = ConnectionState.Connected;
+        StateChanged?.Invoke(
+            this,
+            new ConnectionStateChangedEventArgs
+            {
+                OldState = old,
+                NewState = State,
+                Reason = "test"
+            });
+
+        return Task.CompletedTask;
+    }
+
+    public Task DisconnectAsync(string? reason = null, CancellationToken cancellationToken = default)
+    {
+        State = ConnectionState.Disconnected;
+        return Task.CompletedTask;
+    }
+
+    public Task SendMessageAsync<T>(T message, CancellationToken cancellationToken = default)
+        where T : IMessage
+    {
+        var json = MessageSerializer.Serialize(message);
+
+        lock (Sent)
+        {
+            Sent.Add(json);
+        }
+
+        OnSent?.Invoke(this, json);
+        return Task.CompletedTask;
+    }
+
+    public Task SendBinaryAsync(ReadOnlyMemory<byte> data, CancellationToken cancellationToken = default) =>
+        Task.CompletedTask;
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

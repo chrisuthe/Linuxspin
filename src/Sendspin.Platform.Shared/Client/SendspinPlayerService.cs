@@ -755,6 +755,34 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
     }
 
     /// <summary>
+    /// Builds the decoded buffer a stream plays out of, configured with the buffering this
+    /// installation advertises.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// No capacity argument: the decoded buffer takes the SDK's 30 s default, which is the same
+    /// figure <c>ClientCapabilities</c> derives the advertised <c>buffer_capacity</c> from. Passing
+    /// a different one here is how the two sides come to disagree.
+    /// </para>
+    /// <para>
+    /// Lifted out of <see cref="CreatePipeline"/> and made reachable because
+    /// <see cref="PlayerCapabilities.DefaultMinBufferMs"/> is one promise with two uses — it is
+    /// advertised as <c>min_buffer_ms</c> and it is what the buffer is asked to hold — and drift
+    /// between them is invisible on both sides. A test can build the buffer the pipeline gets and
+    /// compare it against the figure that actually went out on the wire.
+    /// </para>
+    /// </remarks>
+    public static TimedAudioBuffer CreateDecodedBuffer(
+        AudioFormat format,
+        IClockSynchronizer clockSync,
+        SyncCorrectionOptions syncOptions,
+        ILogger<TimedAudioBuffer>? logger = null) =>
+        new(format, clockSync, syncOptions: syncOptions, logger: logger)
+        {
+            TargetBufferMilliseconds = PlayerCapabilities.DefaultMinBufferMs
+        };
+
+    /// <summary>
     /// Builds the audio pipeline, wiring our correction policy and latency figures into it.
     /// </summary>
     /// <remarks>
@@ -781,22 +809,11 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
             _loggerFactory.CreateLogger<AudioPipeline>(),
             new AudioDecoderFactory(_loggerFactory),
             clockSync,
-            bufferFactory: (format, sync) =>
-            {
-                // No capacity argument: the decoded buffer takes the SDK's 30 s default, which is
-                // the same figure ClientCapabilities derives the advertised buffer_capacity from.
-                // Passing a different one here is how the two sides come to disagree.
-                var buffer = new TimedAudioBuffer(
-                    format,
-                    sync,
-                    syncOptions: syncOptions,
-                    logger: _loggerFactory.CreateLogger<TimedAudioBuffer>())
-                {
-                    TargetBufferMilliseconds = PlayerCapabilities.DefaultMinBufferMs
-                };
-
-                return buffer;
-            },
+            bufferFactory: (format, sync) => CreateDecodedBuffer(
+                format,
+                sync,
+                syncOptions,
+                _loggerFactory.CreateLogger<TimedAudioBuffer>()),
             playerFactory: () =>
             {
                 var player = _playerFactory();
