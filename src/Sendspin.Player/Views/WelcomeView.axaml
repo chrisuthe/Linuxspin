@@ -1,0 +1,115 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Sendspin.Player.ViewModels"
+             xmlns:discovery="using:Sendspin.SDK.Discovery"
+             mc:Ignorable="d"
+             x:Class="Sendspin.Player.Views.WelcomeView"
+             x:DataType="vm:MainViewModel">
+
+    <!--
+      Welcome, while not connected. Which cards show follows the connection mode the player
+      service started with: discover mode gets the server picker, advertise mode gets a card that
+      says to pick this player from the server's side. The manual-address section is beneath
+      either, collapsed until it is wanted.
+    -->
+
+    <StackPanel Classes="body" Spacing="12">
+
+        <Border Name="ThisPlayerCard" Classes="card">
+            <StackPanel Spacing="10">
+                <TextBlock Text="THIS PLAYER" Classes="sectionCaption" />
+
+                <!-- Writes through to settings, as everything in Settings does. -->
+                <TextBox Name="PlayerNameBox" Text="{Binding Settings.PlayerName}" />
+
+                <StackPanel Name="BroadcastingRow"
+                            Orientation="Horizontal"
+                            Spacing="8"
+                            IsVisible="{Binding IsAdvertising}">
+                    <Ellipse Name="BroadcastDot" Classes="broadcastDot" />
+                    <TextBlock Text="Broadcasting, visible to servers" Classes="caption" VerticalAlignment="Center" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <Border Name="ServersCard" Classes="card" IsVisible="{Binding IsDiscovering}">
+            <StackPanel Spacing="10">
+                <TextBlock Text="SERVERS ON THIS NETWORK" Classes="sectionCaption" />
+
+                <ListBox Name="ServerList"
+                         ItemsSource="{Binding DiscoveredServers}"
+                         SelectedItem="{Binding SelectedServer}"
+                         MaxHeight="220">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="discovery:DiscoveredServer">
+                            <StackPanel Spacing="2">
+                                <TextBlock Text="{Binding Name}" Classes="body" />
+                                <TextBlock Classes="caption">
+                                    <TextBlock.Text>
+                                        <MultiBinding StringFormat="{}{0}:{1}">
+                                            <Binding Path="Host" />
+                                            <Binding Path="Port" />
+                                        </MultiBinding>
+                                    </TextBlock.Text>
+                                </TextBlock>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+
+                <TextBlock Name="SearchingLine"
+                           Text="Searching for servers…"
+                           Classes="caption"
+                           IsVisible="{Binding IsSearching}" />
+
+                <Panel>
+                    <Button Name="ConnectButton"
+                            Content="Connect"
+                            Classes="primary"
+                            Command="{Binding ConnectCommand}"
+                            HorizontalAlignment="Left"
+                            IsVisible="{Binding !IsConnecting}" />
+                    <TextBlock Name="ConnectingLine"
+                               Text="Connecting…"
+                               Classes="caption"
+                               VerticalAlignment="Center"
+                               IsVisible="{Binding IsConnecting}" />
+                </Panel>
+            </StackPanel>
+        </Border>
+
+        <Border Name="WaitingCard" Classes="card" IsVisible="{Binding IsAdvertising}">
+            <StackPanel Spacing="10">
+                <TextBlock Text="WAITING FOR A SERVER" Classes="sectionCaption" />
+                <TextBlock Text="Advertising on your network. Select this player in Music Assistant to connect."
+                           Classes="body"
+                           TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
+
+        <Expander Name="ManualSection"
+                  Header="Connect by address"
+                  IsExpanded="False"
+                  HorizontalAlignment="Stretch">
+            <Grid ColumnDefinitions="*,Auto" Margin="0,8,0,0">
+                <TextBox Grid.Column="0"
+                         Name="ManualUrlBox"
+                         Text="{Binding ManualServerUrl}"
+                         PlaceholderText="192.168.1.10:8927" />
+                <Panel Grid.Column="1" Margin="8,0,0,0">
+                    <Button Name="ConnectManuallyButton"
+                            Content="Connect"
+                            Command="{Binding ConnectManuallyCommand}"
+                            IsVisible="{Binding !IsConnecting}" />
+                    <TextBlock Name="ConnectingManuallyLine"
+                               Text="Connecting…"
+                               Classes="caption"
+                               VerticalAlignment="Center"
+                               IsVisible="{Binding IsConnecting}" />
+                </Panel>
+            </Grid>
+        </Expander>
+    </StackPanel>
+</UserControl>

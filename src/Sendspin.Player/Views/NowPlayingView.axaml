@@ -1,0 +1,215 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Sendspin.Player.ViewModels"
+             xmlns:media="using:Sendspin.Core.MediaSession"
+             mc:Ignorable="d"
+             x:Class="Sendspin.Player.Views.NowPlayingView"
+             x:DataType="vm:MainViewModel">
+
+    <!--
+      Two compositions, one tree. Narrow is the reference's stacked column: art, then centred
+      title / artist / album, then the progress row, then the transport row. Wide puts the art on
+      the left and the rest in a left-aligned column beside it. The switch is the "wide" class on
+      the composition grid, set by the code-behind from the view's width; everything that differs
+      between the two is a style below, and the art's size is the one computed value.
+    -->
+
+    <UserControl.Styles>
+        <!-- Narrow. -->
+        <Style Selector="Grid#Composition > Border#ArtBreath">
+            <Setter Property="Grid.Row" Value="0" />
+            <Setter Property="Grid.Column" Value="0" />
+            <Setter Property="Grid.RowSpan" Value="1" />
+            <Setter Property="Grid.ColumnSpan" Value="2" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+        </Style>
+
+        <Style Selector="Grid#Composition > StackPanel#Details">
+            <Setter Property="Grid.Row" Value="1" />
+            <Setter Property="Grid.Column" Value="0" />
+            <Setter Property="Grid.RowSpan" Value="1" />
+            <Setter Property="Grid.ColumnSpan" Value="2" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+            <Setter Property="Margin" Value="0,24,0,0" />
+        </Style>
+
+        <Style Selector="Grid#Composition StackPanel#TrackText">
+            <Setter Property="HorizontalAlignment" Value="Center" />
+        </Style>
+
+        <Style Selector="Grid#Composition TextBlock.track">
+            <Setter Property="TextAlignment" Value="Center" />
+        </Style>
+
+        <Style Selector="Grid#Composition StackPanel#Transport">
+            <Setter Property="HorizontalAlignment" Value="Center" />
+        </Style>
+
+        <!-- Wide. Later, so these setters win while the class is on. -->
+        <Style Selector="Grid#Composition.wide > Border#ArtBreath">
+            <Setter Property="Grid.RowSpan" Value="2" />
+            <Setter Property="Grid.ColumnSpan" Value="1" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style Selector="Grid#Composition.wide > StackPanel#Details">
+            <Setter Property="Grid.Row" Value="0" />
+            <Setter Property="Grid.Column" Value="1" />
+            <Setter Property="Grid.RowSpan" Value="2" />
+            <Setter Property="Grid.ColumnSpan" Value="1" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="24,0,0,0" />
+        </Style>
+
+        <Style Selector="Grid#Composition.wide StackPanel#TrackText">
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+        </Style>
+
+        <Style Selector="Grid#Composition.wide TextBlock.track">
+            <Setter Property="TextAlignment" Value="Left" />
+        </Style>
+
+        <Style Selector="Grid#Composition.wide StackPanel#Transport">
+            <Setter Property="HorizontalAlignment" Value="Left" />
+        </Style>
+    </UserControl.Styles>
+
+    <Grid Name="Composition" ColumnDefinitions="Auto,*" RowDefinitions="Auto,*" Margin="24">
+
+        <!--
+          ArtBreath carries no transform today: Phase 5's Breathing Art animates this wrapper, so
+          the tile's own shadow and clip are untouched by it.
+        -->
+        <Border Name="ArtBreath">
+            <Border Name="ArtTile" Classes="artTile">
+                <Border Name="ArtClip" Classes="artClip">
+                    <Panel>
+                        <PathIcon Name="ArtPlaceholder"
+                                  Classes="artworkPlaceholder"
+                                  Data="{StaticResource MusicIcon}"
+                                  IsVisible="{Binding Artwork, Converter={x:Static ObjectConverters.IsNull}}" />
+                        <Image Name="ArtImage" Source="{Binding Artwork}" Stretch="UniformToFill" />
+                    </Panel>
+                </Border>
+            </Border>
+        </Border>
+
+        <StackPanel Name="Details">
+
+            <!--
+              Single lines, trimmed; TrackText's width is the art's in the narrow composition.
+              The idle state's title is null, not a failed binding, so it is TargetNullValue that
+              puts "Nothing playing" on screen; FallbackValue stays for a binding that breaks.
+            -->
+            <StackPanel Name="TrackText" Spacing="4">
+                <TextBlock Name="TitleText"
+                           Classes="title track"
+                           Text="{Binding State.Title, TargetNullValue='Nothing playing', FallbackValue='Nothing playing'}"
+                           TextTrimming="CharacterEllipsis" />
+                <TextBlock Name="ArtistText"
+                           Classes="subtitle track"
+                           Text="{Binding State.Artist}"
+                           TextTrimming="CharacterEllipsis" />
+                <TextBlock Name="AlbumText"
+                           Classes="album track"
+                           Text="{Binding State.Album}"
+                           TextTrimming="CharacterEllipsis"
+                           IsVisible="{Binding State.Album, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+                <!--
+                  The bar is hidden for a live stream rather than shown empty, and its slot on the
+                  right reads LIVE: an absent duration is how the protocol expresses "unbounded",
+                  and a bar that can never fill is worse than no bar.
+                -->
+                <Grid Name="ProgressRow" ColumnDefinitions="Auto,*,Auto" Margin="0,16,0,0">
+                    <TextBlock Grid.Column="0"
+                               Name="ElapsedText"
+                               Classes="caption"
+                               Text="{Binding ElapsedText}"
+                               VerticalAlignment="Center" />
+                    <ProgressBar Grid.Column="1"
+                                 Name="TrackProgress"
+                                 Classes="track"
+                                 Value="{Binding ProgressFraction, Mode=OneWay}"
+                                 Maximum="1"
+                                 Margin="12,0"
+                                 IsVisible="{Binding HasKnownDuration}" />
+                    <TextBlock Grid.Column="2"
+                               Name="DurationText"
+                               Classes="caption"
+                               Text="{Binding DurationText}"
+                               VerticalAlignment="Center" />
+                </Grid>
+            </StackPanel>
+
+            <!-- Transport: shuffle 40, previous 48, play 72 in the accent, next 48, repeat 40. -->
+            <StackPanel Name="Transport"
+                        Classes="transport"
+                        Orientation="Horizontal"
+                        Spacing="4"
+                        IsEnabled="{Binding IsConnected}">
+
+                <!--
+                  Shuffle and repeat show the server's state in their tooltips rather than as
+                  checkmarks: NativeMenuItem.IsChecked does not work on Windows (Avalonia#8751),
+                  so a checkmark would be right on two platforms and silently absent on the third.
+                  In the window they draw in the accent while on, which is what iconButton does
+                  for a checked toggle.
+                -->
+                <ToggleButton Name="ShuffleButton"
+                              Classes="iconButton small"
+                              IsChecked="{Binding State.Shuffle, Mode=OneWay}"
+                              Command="{Binding ToggleShuffleCommand}" ToolTip.Tip="Shuffle"
+                              VerticalAlignment="Center">
+                    <PathIcon Data="{StaticResource ShuffleIcon}" />
+                </ToggleButton>
+
+                <Button Name="PreviousButton"
+                        Classes="iconButton"
+                        Command="{Binding PreviousCommand}" ToolTip.Tip="Previous"
+                        VerticalAlignment="Center">
+                    <PathIcon Data="{StaticResource PreviousIcon}" />
+                </Button>
+
+                <!-- Play or pause is an icon choice, not a label: the two glyphs swap on IsPlaying. -->
+                <Button Name="PlayButton"
+                        Classes="playButton"
+                        Command="{Binding PlayPauseCommand}" ToolTip.Tip="{Binding PlayPauseLabel}"
+                        VerticalAlignment="Center">
+                    <Panel>
+                        <PathIcon Classes="filled" Data="{StaticResource PlayIcon}" IsVisible="{Binding !IsPlaying}" />
+                        <PathIcon Classes="filled" Data="{StaticResource PauseIcon}" IsVisible="{Binding IsPlaying}" />
+                    </Panel>
+                </Button>
+
+                <Button Name="NextButton"
+                        Classes="iconButton"
+                        Command="{Binding NextCommand}" ToolTip.Tip="Next"
+                        VerticalAlignment="Center">
+                    <PathIcon Data="{StaticResource NextIcon}" />
+                </Button>
+
+                <!-- Repeat-one keeps its own geometry; the toggle is on for either repeat mode. -->
+                <ToggleButton Name="RepeatButton"
+                              Classes="iconButton small"
+                              IsChecked="{Binding State.Repeat, Mode=OneWay, Converter={x:Static ObjectConverters.NotEqual}, ConverterParameter={x:Static media:MediaRepeatMode.Off}}"
+                              Command="{Binding CycleRepeatCommand}"
+                              ToolTip.Tip="{Binding RepeatTooltip}"
+                              VerticalAlignment="Center">
+                    <Panel>
+                        <PathIcon Data="{StaticResource RepeatIcon}"
+                                  IsVisible="{Binding State.Repeat, Converter={x:Static ObjectConverters.NotEqual}, ConverterParameter={x:Static media:MediaRepeatMode.One}}" />
+                        <PathIcon Data="{StaticResource RepeatOneIcon}"
+                                  IsVisible="{Binding State.Repeat, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static media:MediaRepeatMode.One}}" />
+                    </Panel>
+                </ToggleButton>
+            </StackPanel>
+        </StackPanel>
+    </Grid>
+</UserControl>

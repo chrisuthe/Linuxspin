@@ -33,9 +33,21 @@
         <Border Name="OpaqueRoot"
                 Background="{DynamicResource SystemControlBackgroundAltHighBrush}" />
 
-        <!-- Layer 0: blurred artwork. Phase 3 supplies the bitmap and flips HasArtBackdrop. -->
+        <!--
+          Layer 0: blurred artwork. The source is the artwork scaled to 64 px by the view model,
+          so the blur runs over a tiny bitmap and, as the spike's blur-once case measured, is paid
+          once and cached rather than re-run per frame. The negative margin lets the blur's soft
+          edge fall outside the window instead of fading to the opaque root along the border.
+        -->
         <Panel Name="ArtBackdrop" IsVisible="{Binding HasArtBackdrop}">
-            <Image Name="ArtBackdropImage" Stretch="UniformToFill" />
+            <Image Name="ArtBackdropImage"
+                   Source="{Binding ArtBackdrop}"
+                   Stretch="UniformToFill"
+                   Margin="-48">
+                <Image.Effect>
+                    <BlurEffect Radius="32" />
+                </Image.Effect>
+            </Image>
         </Panel>
 
         <!-- Layer 0b: the ambient backdrop. Phase 5 fills this and flips HasAmbientBackdrop. -->
@@ -81,144 +93,29 @@
                 </Grid>
             </Border>
 
-            <!-- Body, with the settings overlay over it. -->
+            <!-- Body: Now Playing or Welcome, with the settings card and the prompt over it. -->
             <Panel Grid.Row="1" Name="Body">
                 <Grid RowDefinitions="*,Auto">
-                    <ScrollViewer Grid.Row="0">
-                        <StackPanel Classes="body" Spacing="16">
-
-                            <!-- Now playing -->
-                            <Grid ColumnDefinitions="Auto,*" IsVisible="{Binding IsConnected}">
-                                <Border Grid.Column="0" Classes="artwork">
-                                    <Panel>
-                                        <PathIcon Data="{StaticResource MusicIcon}" Classes="artworkPlaceholder"
-                                                  IsVisible="{Binding Artwork, Converter={x:Static ObjectConverters.IsNull}}" />
-                                        <Image Source="{Binding Artwork}" Stretch="UniformToFill" />
-                                    </Panel>
-                                </Border>
-
-                                <StackPanel Grid.Column="1" Classes="trackInfo" Spacing="4">
-                                    <TextBlock Text="{Binding State.Title, FallbackValue='Nothing playing'}"
-                                               Classes="h1" TextWrapping="Wrap" />
-                                    <TextBlock Text="{Binding State.Artist}" Classes="h3" TextWrapping="Wrap" />
-                                    <TextBlock Text="{Binding State.Album}" Classes="subtle" TextWrapping="Wrap" />
-
-                                    <!--
-                                      The progress bar is hidden for a live stream rather than shown
-                                      empty: an absent duration is how the protocol expresses "unbounded",
-                                      and a bar that can never fill is worse than no bar.
-                                    -->
-                                    <ProgressBar Value="{Binding ProgressFraction, Mode=OneWay}"
-                                                 Maximum="1"
-                                                 IsVisible="{Binding !State.IsLive}"
-                                                 Margin="0,8,0,0" />
-                                    <TextBlock Text="{Binding PositionText}" Classes="subtle" />
-                                </StackPanel>
-                            </Grid>
-
-                            <!-- Server list, shown while not connected -->
-                            <StackPanel Spacing="8" IsVisible="{Binding !IsConnected}">
-                                <TextBlock Text="Servers on this network" Classes="h2" />
-
-                                <ListBox ItemsSource="{Binding DiscoveredServers}"
-                                         SelectedItem="{Binding SelectedServer}"
-                                         MaxHeight="220">
-                                    <ListBox.ItemTemplate>
-                                        <DataTemplate>
-                                            <StackPanel Spacing="2">
-                                                <TextBlock Text="{Binding Name}" />
-                                                <TextBlock Classes="subtle">
-                                                    <TextBlock.Text>
-                                                        <MultiBinding StringFormat="{}{0}:{1}">
-                                                            <Binding Path="Host" />
-                                                            <Binding Path="Port" />
-                                                        </MultiBinding>
-                                                    </TextBlock.Text>
-                                                </TextBlock>
-                                            </StackPanel>
-                                        </DataTemplate>
-                                    </ListBox.ItemTemplate>
-                                </ListBox>
-
-                                <TextBlock Text="No servers found yet — Sendspin is still looking."
-                                           Classes="subtle"
-                                           IsVisible="{Binding !DiscoveredServers.Count}" />
-
-                                <Button Content="Connect"
-                                        Classes="primary"
-                                        Command="{Binding ConnectCommand}"
-                                        HorizontalAlignment="Left" />
-
-                                <Separator Margin="0,8" />
-
-                                <TextBlock Text="Or connect by address" Classes="h3" />
-                                <Grid ColumnDefinitions="*,Auto">
-                                    <TextBox Grid.Column="0"
-                                             Text="{Binding ManualServerUrl}"
-                                             PlaceholderText="192.168.1.10:8927" />
-                                    <Button Grid.Column="1"
-                                            Content="Connect"
-                                            Command="{Binding ConnectManuallyCommand}"
-                                            Margin="8,0,0,0" />
-                                </Grid>
-                            </StackPanel>
-
-                            <views:DiagnosticsView DataContext="{Binding Diagnostics}"
-                                                   IsVisible="{Binding IsVisible}" />
-                        </StackPanel>
-                    </ScrollViewer>
 
                     <!--
-                      Transport. Phase 3 composes this into Now Playing; until then it sits centred
-                      at the bottom of the body, unchanged.
+                      Now Playing fills the body rather than scrolling in it: it sizes its art to
+                      the room it has, which needs a real height to size against.
                     -->
-                    <StackPanel Grid.Row="1"
-                                Name="Transport"
-                                Classes="transport"
-                                Orientation="Horizontal"
-                                HorizontalAlignment="Center"
-                                Spacing="4"
-                                IsEnabled="{Binding IsConnected}">
-                        <Button Classes="iconButton"
-                                Command="{Binding PreviousCommand}" ToolTip.Tip="Previous">
-                            <PathIcon Data="{StaticResource PreviousIcon}" />
-                        </Button>
+                    <views:NowPlayingView Grid.Row="0"
+                                          Name="NowPlaying"
+                                          IsVisible="{Binding IsConnected}" />
 
-                        <!-- Play or pause is an icon choice, not a label: the two glyphs swap on IsPlaying. -->
-                        <Button Classes="playButton"
-                                Command="{Binding PlayPauseCommand}" ToolTip.Tip="{Binding PlayPauseLabel}">
-                            <Panel>
-                                <PathIcon Classes="filled" Data="{StaticResource PlayIcon}" IsVisible="{Binding !IsPlaying}" />
-                                <PathIcon Classes="filled" Data="{StaticResource PauseIcon}" IsVisible="{Binding IsPlaying}" />
-                            </Panel>
-                        </Button>
+                    <ScrollViewer Grid.Row="0" IsVisible="{Binding !IsConnected}">
+                        <views:WelcomeView Name="Welcome" />
+                    </ScrollViewer>
 
-                        <Button Classes="iconButton"
-                                Command="{Binding NextCommand}" ToolTip.Tip="Next">
-                            <PathIcon Data="{StaticResource NextIcon}" />
-                        </Button>
-
-                        <!--
-                          Shuffle and repeat show the server's state in their tooltips rather than as
-                          checkmarks: NativeMenuItem.IsChecked does not work on Windows (Avalonia#8751),
-                          so a checkmark would be right on two platforms and silently absent on the third.
-                        -->
-                        <ToggleButton Classes="iconButton"
-                                      IsChecked="{Binding State.Shuffle, Mode=OneWay}"
-                                      Command="{Binding ToggleShuffleCommand}" ToolTip.Tip="Shuffle">
-                            <PathIcon Data="{StaticResource ShuffleIcon}" />
-                        </ToggleButton>
-                        <Button Classes="iconButton"
-                                Command="{Binding CycleRepeatCommand}"
-                                ToolTip.Tip="{Binding State.Repeat}">
-                            <Panel>
-                                <PathIcon Data="{StaticResource RepeatIcon}"
-                                          IsVisible="{Binding State.Repeat, Converter={x:Static ObjectConverters.NotEqual}, ConverterParameter={x:Static media:MediaRepeatMode.One}}" />
-                                <PathIcon Data="{StaticResource RepeatOneIcon}"
-                                          IsVisible="{Binding State.Repeat, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static media:MediaRepeatMode.One}}" />
-                            </Panel>
-                        </Button>
-                    </StackPanel>
+                    <!-- Temporary: Phase 4 moves diagnostics into Settings and this row goes. -->
+                    <ScrollViewer Grid.Row="1"
+                                  MaxHeight="240"
+                                  IsVisible="{Binding Diagnostics.IsVisible}">
+                        <views:DiagnosticsView DataContext="{Binding Diagnostics}"
+                                               Margin="16,0,16,8" />
+                    </ScrollViewer>
                 </Grid>
 
                 <!--
@@ -231,6 +128,39 @@
                     <ScrollViewer>
                         <views:SettingsView DataContext="{Binding Settings}" />
                     </ScrollViewer>
+                </Border>
+
+                <!--
+                  The auto-connect question, once per server, after a connection the user made in
+                  discover mode. A card at the foot of the body, over Now Playing, rather than a
+                  dialog: it is a question about this connection, and it should not take the
+                  window away from what just started playing.
+                -->
+                <Border Name="AutoConnectPrompt"
+                        Classes="promptCard"
+                        VerticalAlignment="Bottom"
+                        IsVisible="{Binding IsAutoConnectPromptOpen}">
+                    <StackPanel Spacing="12">
+                        <TextBlock Name="PromptServerLine"
+                                   Classes="subtitle"
+                                   Text="{Binding ServerName, StringFormat='Connected to {0}'}"
+                                   TextTrimming="CharacterEllipsis" />
+                        <TextBlock Classes="body"
+                                   Text="Always connect to this server when it's available?"
+                                   TextWrapping="Wrap" />
+                        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                            <Button Name="NotNowButton"
+                                    Content="Not now"
+                                    Command="{Binding AutoConnectNotNowCommand}" />
+                            <Button Name="JustOnceButton"
+                                    Content="Just once"
+                                    Command="{Binding AutoConnectJustOnceCommand}" />
+                            <Button Name="AlwaysButton"
+                                    Content="Always"
+                                    Classes="primary"
+                                    Command="{Binding AutoConnectAlwaysCommand}" />
+                        </StackPanel>
+                    </StackPanel>
                 </Border>
             </Panel>
 

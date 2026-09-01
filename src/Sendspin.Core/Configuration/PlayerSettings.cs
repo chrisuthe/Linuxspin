@@ -106,6 +106,15 @@ public sealed class PlayerSettings
     public string? LastServerId { get; set; }
 
     /// <summary>
+    /// Gets or sets the server the auto-connect question has already been asked for.
+    /// </summary>
+    /// <remarks>
+    /// The question is asked once per server, whatever the answer, so "not now" has to leave a
+    /// record too: without one the prompt would come back on every reconnect to the same server.
+    /// </remarks>
+    public string? AutoConnectPromptedServerId { get; set; }
+
+    /// <summary>
     /// Gets or sets a manually entered server URL, remembered so it can be offered again.
     /// </summary>
     public string? ManualServerUrl { get; set; }

@@ -15,6 +15,9 @@ using Sendspin.SDK.Client;
 
 namespace Sendspin.Ui.Tests;
 
+/// <summary>The main view model and the settings it was built over.</summary>
+internal sealed record ShellGraph(MainViewModel ViewModel, SettingsService Settings);
+
 /// <summary>
 /// A real <see cref="MainViewModel"/> over in-memory fakes, so the main window's compiled
 /// bindings have the type they were compiled against.
@@ -27,9 +30,16 @@ namespace Sendspin.Ui.Tests;
 /// </remarks>
 internal static class ShellViewModels
 {
-    public static MainViewModel CreateMain()
+    /// <param name="configure">
+    /// Edits the settings the graph starts from. The view model reads the connection mode once,
+    /// at construction, so a test that wants discover mode has to say so before it exists.
+    /// </param>
+    public static ShellGraph CreateMain(Action<PlayerSettings>? configure = null)
     {
-        var settings = new SettingsService(new InMemorySettingsStore(), NullLogger<SettingsService>.Instance);
+        var initial = new PlayerSettings();
+        configure?.Invoke(initial);
+
+        var settings = new SettingsService(new InMemorySettingsStore(initial), NullLogger<SettingsService>.Instance);
         var devices = new NoAudioDevices();
         var presence = new NullPresenceService();
 
@@ -43,7 +53,7 @@ internal static class ShellViewModels
             new SyncCorrectionPolicy(),
             "test");
 
-        return new MainViewModel(
+        var viewModel = new MainViewModel(
             player,
             new PlayerCommandRouter(player, NullLogger<PlayerCommandRouter>.Instance),
             settings,
@@ -53,14 +63,16 @@ internal static class ShellViewModels
             new SettingsViewModel(settings, player, devices, presence, NullLogger<SettingsViewModel>.Instance),
             new DiagnosticsViewModel(player, new SyncCorrectionPolicy()),
             NullLogger<MainViewModel>.Instance);
+
+        return new ShellGraph(viewModel, settings);
     }
 
     private static IAudioPlayer NoAudioPlayer() =>
         throw new InvalidOperationException("A shell test never opens an audio device.");
 
-    private sealed class InMemorySettingsStore : ISettingsStore
+    private sealed class InMemorySettingsStore(PlayerSettings initial) : ISettingsStore
     {
-        private PlayerSettings _settings = new();
+        private PlayerSettings _settings = initial;
 
         public PlayerSettings Load() => _settings;
 

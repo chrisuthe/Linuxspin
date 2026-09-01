@@ -27,6 +27,11 @@
             <SolidColorBrush x:Key="ArtPlaceholderBrush" Color="{DynamicResource SystemListLowColor}" />
             <!-- The art glow until a palette has been extracted from the artwork. -->
             <SolidColorBrush x:Key="GlowDefaultBrush" Color="{DynamicResource SystemAccentColorDark1}" />
+            <!--
+              The art tile's resting shadow. A Fluent colour that already carries its alpha, because
+              a BoxShadow takes a Color, not a brush, and reads this one's .Color.
+            -->
+            <SolidColorBrush x:Key="ArtShadowBrush" Color="{DynamicResource SystemChromeBlackMediumLowColor}" />
         </ResourceDictionary>
 
         <ResourceDictionary x:Key="Dark">
@@ -34,6 +39,7 @@
             <SolidColorBrush x:Key="TranslucentSurfaceBrush" Color="{DynamicResource SystemAltHighColor}" Opacity="0.6" />
             <SolidColorBrush x:Key="ArtPlaceholderBrush" Color="{DynamicResource SystemListLowColor}" />
             <SolidColorBrush x:Key="GlowDefaultBrush" Color="{DynamicResource SystemAccentColorLight1}" />
+            <SolidColorBrush x:Key="ArtShadowBrush" Color="{DynamicResource SystemChromeBlackMediumLowColor}" />
         </ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
 

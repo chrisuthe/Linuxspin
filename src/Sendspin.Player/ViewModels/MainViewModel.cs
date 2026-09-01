@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using Avalonia;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -12,6 +14,7 @@ using Sendspin.Core.Presence;
 using Sendspin.Platform.Shared.Client;
 using Sendspin.Platform.Shared.Notifications;
 using Sendspin.Player.Threading;
+using Sendspin.SDK.Client;
 using Sendspin.SDK.Discovery;
 
 namespace Sendspin.Player.ViewModels;
@@ -74,13 +77,22 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     /// </remarks>
     private readonly BackgroundTaskSet _work;
 
+    /// <summary>
+    /// The blurred backdrop's source size. Small on purpose: the blur is applied once to this
+    /// bitmap and cached, and at 64 px the whole layer costs a few tenths of a millisecond per
+    /// frame (the "Effect loop cost" table in <c>docs/ARCHITECTURE.md</c>, <c>blur-once</c>).
+    /// </summary>
+    internal static readonly PixelSize BackdropSize = new(64, 64);
+
     private string? _artworkPath;
+    private string? _promptServerId;
     private bool _isDisposed;
     private bool _suppressVolumePush;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ConnectionStatus))]
     [NotifyPropertyChangedFor(nameof(HasFooterStatus))]
+    [NotifyPropertyChangedFor(nameof(IsSearching))]
     [NotifyCanExecuteChangedFor(nameof(DisconnectCommand))]
     [NotifyCanExecuteChangedFor(nameof(PlayPauseCommand))]
     [NotifyCanExecuteChangedFor(nameof(NextCommand))]
@@ -106,10 +118,26 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(PlayPauseLabel))]
     [NotifyPropertyChangedFor(nameof(IsPlaying))]
+    [NotifyPropertyChangedFor(nameof(HasKnownDuration))]
+    [NotifyPropertyChangedFor(nameof(DurationText))]
+    [NotifyPropertyChangedFor(nameof(RepeatTooltip))]
+    [NotifyPropertyChangedFor(nameof(ProgressFraction))]
     private MediaSessionState _state = MediaSessionState.Idle;
 
     [ObservableProperty]
     private Bitmap? _artwork;
+
+    /// <summary>
+    /// The artwork scaled to <see cref="BackdropSize"/>, for the blurred layer behind the content.
+    /// </summary>
+    [ObservableProperty]
+    private Bitmap? _artBackdrop;
+
+    /// <summary>
+    /// Whether the once-per-server auto-connect question is showing.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isAutoConnectPromptOpen;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ConnectCommand))]
@@ -126,14 +154,15 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ProgressFraction))]
-    [NotifyPropertyChangedFor(nameof(PositionText))]
+    [NotifyPropertyChangedFor(nameof(ElapsedText))]
     private TimeSpan _position;
 
     [ObservableProperty]
     private bool _isSettingsOpen;
 
     /// <summary>
-    /// Whether the blurred-artwork layer has a bitmap to show. Phase 3 sets it.
+    /// Whether the blurred-artwork layer has a bitmap to show: connected, and
+    /// <see cref="ArtBackdrop"/> is set. Phase 5 also clears it while the ambient backdrop runs.
     /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasBackdrop))]
@@ -182,6 +211,13 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         Volume = settings.Current.Volume;
         IsMuted = settings.Current.Muted;
         ManualServerUrl = settings.Current.ManualServerUrl ?? string.Empty;
+
+        // Read once, like the player service reads it: the mode a user changes in Settings takes
+        // effect after a restart, and the Welcome card describes what the service is doing now.
+        IsAdvertising = settings.Current.ConnectionMode == ConnectionMode.AdvertiseOnly;
+        IsDiscovering = settings.Current.ConnectionMode == ConnectionMode.DiscoverOnly;
+
+        DiscoveredServers.CollectionChanged += OnDiscoveredServersCollectionChanged;
 
         _player.ConnectionChanged += OnConnectionChanged;
         _player.StateChanged += OnStateChanged;
@@ -239,28 +275,39 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
-    /// <summary>
-    /// Gets the position text.
-    /// </summary>
+    /// <summary>Gets whether the track has a duration, which is when a progress bar can fill.</summary>
     /// <remarks>
-    /// A live stream shows elapsed time only. Showing "3:41 / 0:00", or a progress bar that can
-    /// never fill, is worse than showing no total at all — and the protocol's absent duration is
-    /// how a live stream is expressed, not missing data.
+    /// The protocol's absent duration is how a live stream is expressed, not missing data, and
+    /// <see cref="MediaSessionState.IsLive"/> is the one rule for it.
     /// </remarks>
-    public string PositionText
+    public bool HasKnownDuration => !State.IsLive;
+
+    /// <summary>Gets the elapsed time, for the left of the progress row.</summary>
+    public string ElapsedText => Format(Position);
+
+    /// <summary>
+    /// Gets the duration, for the right of the progress row: the track's length, or
+    /// <c>LIVE</c> for a stream that has none.
+    /// </summary>
+    public string DurationText =>
+        State.Duration is { } duration && HasKnownDuration ? Format(duration) : "LIVE";
+
+    /// <summary>Gets the repeat button's tooltip, naming the mode it currently shows.</summary>
+    public string RepeatTooltip => State.Repeat switch
     {
-        get
-        {
-            var elapsed = Format(Position);
+        MediaRepeatMode.One => "Repeat one",
+        MediaRepeatMode.All => "Repeat all",
+        _ => "Repeat off",
+    };
 
-            if (State.Duration is not { } duration || duration <= TimeSpan.Zero)
-            {
-                return $"{elapsed} · live";
-            }
+    /// <summary>Gets whether the player is advertising itself for a server to connect to.</summary>
+    public bool IsAdvertising { get; }
 
-            return $"{elapsed} / {Format(duration)}";
-        }
-    }
+    /// <summary>Gets whether the player is discovering servers to connect to.</summary>
+    public bool IsDiscovering { get; }
+
+    /// <summary>Gets whether discovery is running and has nothing to show yet.</summary>
+    public bool IsSearching => IsDiscovering && !IsConnected && DiscoveredServers.Count == 0;
 
     /// <summary>
     /// Starts the session. Called once, after the window exists.
@@ -423,6 +470,69 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         _settings.Update(s => s.ShowDiagnostics = Diagnostics.IsVisible);
     }
 
+    /// <summary>Answers the auto-connect question with "just once".</summary>
+    [RelayCommand]
+    private void AutoConnectJustOnce() => AnswerAutoConnectPrompt(AutoConnectPolicy.JustOnce);
+
+    /// <summary>Answers the auto-connect question with "always".</summary>
+    [RelayCommand]
+    private void AutoConnectAlways() => AnswerAutoConnectPrompt(AutoConnectPolicy.Always);
+
+    /// <summary>Answers the auto-connect question with "not now", which leaves the policy alone.</summary>
+    [RelayCommand]
+    private void AutoConnectNotNow() => AnswerAutoConnectPrompt(AutoConnectPolicy.Never);
+
+    /// <summary>
+    /// Shows the auto-connect question if this connection is one to ask it for.
+    /// </summary>
+    /// <remarks>
+    /// Asked once per server, after a connection the user made in discover mode while the
+    /// policy is <see cref="AutoConnectPolicy.Never"/>. The server's id is read from
+    /// <see cref="PlayerSettings.LastServerId"/>, which the player service writes before it
+    /// raises the connection event; an auto-connect the service made itself never gets here with
+    /// <c>Never</c> unless it was "just once", and that server has already been asked about.
+    /// </remarks>
+    private void OfferAutoConnectPrompt()
+    {
+        var settings = _settings.Current;
+
+        if (!IsDiscovering
+            || settings.AutoConnect != AutoConnectPolicy.Never
+            || settings.LastServerId is not { } serverId
+            || serverId == settings.AutoConnectPromptedServerId)
+        {
+            return;
+        }
+
+        _promptServerId = serverId;
+        IsAutoConnectPromptOpen = true;
+    }
+
+    /// <remarks>
+    /// The policy goes through <see cref="SettingsViewModel"/> rather than straight to the
+    /// service so the Settings combo shows the answer; it writes through to the same
+    /// <see cref="SettingsService.Update"/>. The record of having asked is written here.
+    /// </remarks>
+    private void AnswerAutoConnectPrompt(AutoConnectPolicy policy)
+    {
+        var serverId = _promptServerId;
+
+        _promptServerId = null;
+        IsAutoConnectPromptOpen = false;
+
+        if (serverId is null)
+        {
+            return;
+        }
+
+        if (policy != AutoConnectPolicy.Never)
+        {
+            Settings.AutoConnect = policy;
+        }
+
+        _settings.Update(s => s.AutoConnectPromptedServerId = serverId);
+    }
+
     /// <inheritdoc/>
     public async ValueTask DisposeAsync()
     {
@@ -441,6 +551,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         _player.DiscoveredServersChanged -= OnDiscoveredServersChanged;
         _mediaSession.IntentReceived -= OnMediaSessionIntent;
         _router.LocalActionRequested -= OnLocalActionRequested;
+        DiscoveredServers.CollectionChanged -= OnDiscoveredServersCollectionChanged;
 
         // Cancel and drain outstanding work before releasing what it touches.
         //
@@ -453,11 +564,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
         Diagnostics.Dispose();
 
-        // Same ordering as above: ShutdownRequested fires before windows close, so the image is
+        // Same ordering as above: ShutdownRequested fires before windows close, so the images are
         // still bound at this point.
-        var artwork = Artwork;
-        Artwork = null;
-        artwork?.Dispose();
+        ClearArtwork();
     }
 
     private static string Format(TimeSpan value) =>
@@ -541,70 +650,93 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     private void OnConnectionChanged(object? sender, ConnectionChangedEventArgs e)
     {
-        Dispatcher.UIThread.Post(() =>
-        {
-            if (_isDisposed)
-            {
-                // Posted before disposal, run after it: the clock is gone, and so is the reason.
-                return;
-            }
-
-            IsConnected = e.IsConnected;
-            IsConnecting = false;
-            ServerName = e.ServerName;
-
-            if (e.IsConnected)
-            {
-                _progressClock.Start();
-            }
-            else
-            {
-                _progressClock.Stop();
-                Position = TimeSpan.Zero;
-                _anchoredPosition.Anchor(TimeSpan.Zero, _progressClock.Elapsed);
-                State = MediaSessionState.Idle;
-
-                // Unbind before disposing. The compositor renders from Image.Source on its own
-                // thread, so releasing the bitmap while it is still the bound source is a native
-                // fault on the render thread rather than a managed exception here.
-                var previousArtwork = Artwork;
-                Artwork = null;
-                _artworkPath = null;
-                previousArtwork?.Dispose();
-            }
-        });
+        Dispatcher.UIThread.Post(() => ApplyConnection(e));
 
         _work.Run(
             "connection notification",
             token => _notifications.OnConnectionAsync(e.ServerName ?? "Sendspin server", e.IsConnected, token));
     }
 
+    /// <summary>
+    /// Applies a connection change on the UI thread: what <see cref="OnConnectionChanged"/>
+    /// posts, and what the UI tests call directly.
+    /// </summary>
+    internal void ApplyConnection(ConnectionChangedEventArgs e)
+    {
+        ArgumentNullException.ThrowIfNull(e);
+
+        if (_isDisposed)
+        {
+            // Posted before disposal, run after it: the clock is gone, and so is the reason.
+            return;
+        }
+
+        IsConnected = e.IsConnected;
+        IsConnecting = false;
+        ServerName = e.ServerName;
+
+        if (e.IsConnected)
+        {
+            _progressClock.Start();
+            OfferAutoConnectPrompt();
+        }
+        else
+        {
+            _progressClock.Stop();
+            Position = TimeSpan.Zero;
+            _anchoredPosition.Anchor(TimeSpan.Zero, _progressClock.Elapsed);
+            State = MediaSessionState.Idle;
+            IsAutoConnectPromptOpen = false;
+            _promptServerId = null;
+            _artworkPath = null;
+            ClearArtwork();
+        }
+
+        HasArtBackdrop = IsConnected && ArtBackdrop is not null;
+    }
+
     private void OnStateChanged(object? sender, MediaSessionState state)
     {
-        Dispatcher.UIThread.Post(() =>
-        {
-            State = state;
-            Position = state.Position;
-            _anchoredPosition.Anchor(state.Position, _progressClock.Elapsed);
-
-            _suppressVolumePush = true;
-            try
-            {
-                Volume = state.Volume;
-                IsMuted = state.Muted;
-            }
-            finally
-            {
-                _suppressVolumePush = false;
-            }
-
-            LoadArtwork(state.ArtworkFilePath);
-        });
+        Dispatcher.UIThread.Post(() => ApplyState(state));
 
         _mediaSession.Publish(state);
         _presence.Publish(state, _player.ServerName);
         _work.Run("state notification", token => _notifications.OnStateAsync(state, token));
     }
+
+    /// <summary>
+    /// Applies a state report on the UI thread: what <see cref="OnStateChanged"/> posts, and
+    /// what the UI tests call directly.
+    /// </summary>
+    internal void ApplyState(MediaSessionState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+
+        if (_isDisposed)
+        {
+            return;
+        }
+
+        State = state;
+        Position = state.Position;
+        _anchoredPosition.Anchor(state.Position, _progressClock.Elapsed);
+
+        _suppressVolumePush = true;
+        try
+        {
+            Volume = state.Volume;
+            IsMuted = state.Muted;
+        }
+        finally
+        {
+            _suppressVolumePush = false;
+        }
+
+        LoadArtwork(state.ArtworkFilePath);
+    }
+
+    private void OnDiscoveredServersCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e) =>
+        OnPropertyChanged(nameof(IsSearching));
 
     private void OnDiscoveredServersChanged(object? sender, EventArgs e)
     {
@@ -642,7 +774,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     }
 
     /// <summary>
-    /// Loads artwork from the cache file the player service wrote.
+    /// Loads artwork from the cache file the player service wrote, and scales it down for the
+    /// blurred backdrop. Both are produced once per artwork change, not per state report.
     /// </summary>
     private void LoadArtwork(string? path)
     {
@@ -653,33 +786,64 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
         _artworkPath = path;
 
-        var previous = Artwork;
-
         if (path is null || !File.Exists(path))
         {
-            Artwork = null;
-            previous?.Dispose();
+            ClearArtwork();
             return;
         }
 
+        Bitmap? artwork = null;
+        Bitmap? backdrop = null;
+
         try
         {
-            Artwork = new Bitmap(path);
+            artwork = new Bitmap(path);
+
+            // A decoded Bitmap, which is what CreateScaledBitmap accepts; it throws for a
+            // WriteableBitmap, and the spike measured why the source has to be this small.
+            backdrop = artwork.CreateScaledBitmap(BackdropSize);
         }
         catch (ArgumentException ex)
         {
             // Bitmap throws this for data it cannot decode. Artwork is decoration; a picture the
             // renderer refuses must not stop playback.
             _logger.LogWarning(ex, "Artwork at {Path} could not be decoded", path);
-            Artwork = null;
         }
         catch (IOException ex)
         {
             _logger.LogWarning(ex, "Artwork at {Path} could not be read", path);
-            Artwork = null;
         }
 
+        var previous = Artwork;
+        var previousBackdrop = ArtBackdrop;
+
+        Artwork = artwork;
+        ArtBackdrop = backdrop;
+        HasArtBackdrop = IsConnected && backdrop is not null;
+
         previous?.Dispose();
+        previousBackdrop?.Dispose();
+    }
+
+    /// <summary>
+    /// Unbinds both images, then disposes them.
+    /// </summary>
+    /// <remarks>
+    /// In that order. The compositor renders from <c>Image.Source</c> on its own thread, so
+    /// releasing a bitmap while it is still the bound source is a native fault on the render
+    /// thread rather than a managed exception here.
+    /// </remarks>
+    private void ClearArtwork()
+    {
+        var artwork = Artwork;
+        var backdrop = ArtBackdrop;
+
+        Artwork = null;
+        ArtBackdrop = null;
+        HasArtBackdrop = false;
+
+        artwork?.Dispose();
+        backdrop?.Dispose();
     }
 
     partial void OnVolumeChanged(int value)

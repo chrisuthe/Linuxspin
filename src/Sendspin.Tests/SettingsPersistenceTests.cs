@@ -50,6 +50,7 @@ public sealed class SettingsPersistenceTests
             ConnectionMode = ConnectionMode.DiscoverOnly,
             AutoConnect = AutoConnectPolicy.Always,
             LastServerId = "server-7",
+            AutoConnectPromptedServerId = "server-3",
             ManualServerUrl = "ws://10.0.0.5:8927/sendspin",
             Volume = 42,
             Muted = true,
@@ -74,6 +75,7 @@ public sealed class SettingsPersistenceTests
         Assert.Equal(original.ConnectionMode, loaded.ConnectionMode);
         Assert.Equal(original.AutoConnect, loaded.AutoConnect);
         Assert.Equal(original.LastServerId, loaded.LastServerId);
+        Assert.Equal(original.AutoConnectPromptedServerId, loaded.AutoConnectPromptedServerId);
         Assert.Equal(original.ManualServerUrl, loaded.ManualServerUrl);
         Assert.Equal(original.Volume, loaded.Volume);
         Assert.Equal(original.Muted, loaded.Muted);

@@ -288,21 +288,25 @@ public sealed class MainWindowShellTests(HeadlessSession headless)
     });
 
     [Fact]
-    public void TheTransport_SitsInTheBodyNotTheFooter() => headless.Run(() =>
+    public void TheTransport_SitsInNowPlayingNotTheFooter() => headless.Run(() =>
     {
         using var shell = Shell.Show();
 
-        var transport = shell.Find<StackPanel>("Transport");
+        shell.ViewModel.IsConnected = true;
+        Dispatcher.UIThread.RunJobs();
+
+        var nowPlaying = shell.Find<NowPlayingView>("NowPlaying");
+        var transport = shell.FindIn<StackPanel>(nowPlaying, "Transport");
         var body = shell.Find<Panel>("Body");
 
         Assert.Contains(transport, body.GetVisualDescendants());
         Assert.DoesNotContain(transport, shell.Find<Border>("Footer").GetVisualDescendants());
-        Assert.Equal(HorizontalAlignment.Center, transport.HorizontalAlignment);
         Assert.Contains(transport.Children, c => c.Classes.Contains("playButton"));
 
-        // At the bottom of the body: below the scrolling content, above the footer.
+        // Below the art and the text, above the footer.
+        var art = shell.FindIn<Border>(nowPlaying, "ArtBreath");
         var footer = shell.Find<Border>("Footer");
-        Assert.True(transport.Bounds.Top > body.Bounds.Height / 2);
+        Assert.True(TopIn(transport, shell.Window) > TopIn(art, shell.Window) + art.Bounds.Height);
         Assert.True(TopIn(transport, shell.Window) < TopIn(footer, shell.Window));
     });
 
@@ -354,51 +358,4 @@ public sealed class MainWindowShellTests(HeadlessSession headless)
 
     private static double TopIn(Visual control, Visual root) =>
         control.TranslatePoint(new Point(0, 0), root)?.Y ?? double.NaN;
-
-    /// <summary>A shown main window over a real view model, closed and disposed with the test.</summary>
-    private sealed class Shell : IDisposable
-    {
-        private Shell(MainWindow window, MainViewModel viewModel)
-        {
-            Window = window;
-            ViewModel = viewModel;
-        }
-
-        public MainWindow Window { get; }
-
-        public MainViewModel ViewModel { get; }
-
-        public static Shell Show()
-        {
-            PlayerResources.Merge();
-
-            var viewModel = ShellViewModels.CreateMain();
-            var window = new MainWindow { DataContext = viewModel };
-            window.Show();
-            Dispatcher.UIThread.RunJobs();
-
-            return new Shell(window, viewModel);
-        }
-
-        public T Find<T>(string name)
-            where T : Control
-        {
-            var control = Window.FindControl<T>(name);
-            Assert.True(control is not null, $"no {typeof(T).Name} named {name}");
-            return control!;
-        }
-
-        public T Resolve<T>(string key)
-        {
-            Assert.True(Application.Current!.TryGetResource(key, Window.ActualThemeVariant, out var value), key);
-            return Assert.IsType<T>(value);
-        }
-
-        public void Dispose()
-        {
-            Window.Close();
-            Dispatcher.UIThread.RunJobs();
-            ViewModel.DisposeAsync().AsTask().GetAwaiter().GetResult();
-        }
-    }
 }
