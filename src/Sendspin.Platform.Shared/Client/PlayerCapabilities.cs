@@ -42,6 +42,44 @@ public static class PlayerCapabilities
     public const int DefaultMinBufferMs = 150;
 
     /// <summary>
+    /// The lowest rate belonging to the high-resolution tier.
+    /// </summary>
+    /// <remarks>
+    /// The tier is defined by rate rather than by depth alone, so that a device pinned to 48 kHz
+    /// advertises exactly what it always did. 48 kHz at 24 bits is deliberately <em>not</em>
+    /// offered: it would be a real gain in depth on hardware that accepts it, but it changes the
+    /// advertisement of every device that reports 24-bit support, including ones with no hi-res
+    /// rate at all, and that is a wider change than a hi-res tier.
+    /// </remarks>
+    private const int HighResolutionThresholdHz = 88_200;
+
+    /// <summary>
+    /// The depth the high-resolution tier is offered at.
+    /// </summary>
+    /// <remarks>
+    /// 24 rather than 32 because no consumer converter resolves more, and because both the SDK's
+    /// PCM and FLAC decoders were verified to handle 24-bit at 96 and 192 kHz.
+    /// </remarks>
+    private const int HighResolutionBitDepth = 24;
+
+    /// <summary>The depth the regular tier is offered at.</summary>
+    private const int RegularBitDepth = 16;
+
+    /// <summary>
+    /// Rates Opus can be asked for. Anything else makes the SDK's Opus decoder throw on
+    /// construction, so offering one is offering a stream that cannot be played.
+    /// </summary>
+    /// <remarks>
+    /// <c>OpusDecoder</c> rejects a rate outside 8/12/16/24/48 kHz with
+    /// <c>"Sample rate is invalid (must be 8/12/16/24/48 Khz)"</c>. This player used to advertise
+    /// Opus at 44 100 alongside 48 000 on every platform — a server that picked it got a decoder
+    /// that threw before the first sample. 48 kHz is the only member of this set the device
+    /// enumeration can produce, but the set is written out rather than reduced to one value so
+    /// the constraint is legible.
+    /// </remarks>
+    private static readonly int[] OpusSampleRates = [8_000, 12_000, 16_000, 24_000, 48_000];
+
+    /// <summary>
     /// The roles advertised in <c>client/hello</c>, as <c>&lt;role&gt;@v&lt;version&gt;</c>.
     /// </summary>
     /// <remarks>
@@ -199,44 +237,6 @@ public static class PlayerCapabilities
 
         return rates;
     }
-
-    /// <summary>
-    /// The lowest rate belonging to the high-resolution tier.
-    /// </summary>
-    /// <remarks>
-    /// The tier is defined by rate rather than by depth alone, so that a device pinned to 48 kHz
-    /// advertises exactly what it always did. 48 kHz at 24 bits is deliberately <em>not</em>
-    /// offered: it would be a real gain in depth on hardware that accepts it, but it changes the
-    /// advertisement of every device that reports 24-bit support, including ones with no hi-res
-    /// rate at all, and that is a wider change than a hi-res tier.
-    /// </remarks>
-    private const int HighResolutionThresholdHz = 88_200;
-
-    /// <summary>
-    /// The depth the high-resolution tier is offered at.
-    /// </summary>
-    /// <remarks>
-    /// 24 rather than 32 because no consumer converter resolves more, and because both the SDK's
-    /// PCM and FLAC decoders were verified to handle 24-bit at 96 and 192 kHz.
-    /// </remarks>
-    private const int HighResolutionBitDepth = 24;
-
-    /// <summary>The depth the regular tier is offered at.</summary>
-    private const int RegularBitDepth = 16;
-
-    /// <summary>
-    /// Rates Opus can be asked for. Anything else makes the SDK's Opus decoder throw on
-    /// construction, so offering one is offering a stream that cannot be played.
-    /// </summary>
-    /// <remarks>
-    /// <c>OpusDecoder</c> rejects a rate outside 8/12/16/24/48 kHz with
-    /// <c>"Sample rate is invalid (must be 8/12/16/24/48 Khz)"</c>. This player used to advertise
-    /// Opus at 44 100 alongside 48 000 on every platform — a server that picked it got a decoder
-    /// that threw before the first sample. 48 kHz is the only member of this set the device
-    /// enumeration can produce, but the set is written out rather than reduced to one value so
-    /// the constraint is legible.
-    /// </remarks>
-    private static readonly int[] OpusSampleRates = [8_000, 12_000, 16_000, 24_000, 48_000];
 
     /// <summary>
     /// Builds the advertised format list.

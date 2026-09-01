@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using Microsoft.Extensions.Logging;
 using Sendspin.Core.Audio;
 
@@ -102,14 +103,29 @@ public sealed class PipeWireCapabilityReader
             }
         };
 
+        // Both pipes are drained concurrently, and neither with a blocking read. pw-dump's
+        // document is far larger than a pipe buffer, so a child blocked writing either stream
+        // while this thread blocks reading the other is a deadlock that no timeout can break —
+        // WaitForExit is never reached to enforce one. Draining stderr matters as much as stdout:
+        // it is redirected so a warning does not land in the app's own output, and a redirected
+        // pipe nobody reads is exactly the pipe that fills up.
+        var stdout = new StringBuilder();
+        process.OutputDataReceived += (_, e) =>
+        {
+            if (e.Data is not null)
+            {
+                stdout.AppendLine(e.Data);
+            }
+        };
+        process.ErrorDataReceived += (_, _) => { };
+
         if (!process.Start())
         {
             return null;
         }
 
-        // Read before waiting: pw-dump's document is far larger than a pipe buffer, so waiting
-        // first would deadlock against a child blocked writing it.
-        var stdout = process.StandardOutput.ReadToEnd();
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
 
         if (!process.WaitForExit(TimeoutMilliseconds))
         {
@@ -125,6 +141,10 @@ public sealed class PipeWireCapabilityReader
             return null;
         }
 
-        return process.ExitCode == 0 ? stdout : null;
+        // The parameterless overload after a timed one: it is what flushes the async readers, so
+        // without it the last of the document can still be in flight when it is parsed.
+        process.WaitForExit();
+
+        return process.ExitCode == 0 ? stdout.ToString() : null;
     }
 }
