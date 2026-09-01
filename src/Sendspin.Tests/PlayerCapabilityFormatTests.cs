@@ -185,6 +185,82 @@ public sealed class PlayerCapabilityFormatTests
     }
 
     /// <summary>
+    /// A device listing rates it will not natively run gets no hi-res tier from them.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Driven from the macOS semantics, which is where this went wrong in the shipped version.
+    /// <c>CoreAudioDeviceEnumerator</c> filled <see cref="AudioDeviceInfo.SupportedSampleRates"/>
+    /// from <c>DeviceAvailableNominalSampleRates</c> — rates the device could be <em>switched</em>
+    /// to — while <c>AuhalRenderPlayer</c> never sets the nominal rate. So a Mac running at 48 kHz
+    /// whose output also lists 96 kHz advertised <c>flac/96000/16</c> <em>ahead</em> of
+    /// <c>flac/48000/16</c>, and CoreAudio resampled it straight back down: more bandwidth to
+    /// reach a resampler, at no gain in depth.
+    /// </para>
+    /// <para>
+    /// The enumerator is fixed to report only the nominal rate, and this pins the shared side of
+    /// it: given a device shaped the way the old macOS one was, the hi-res tier must not appear.
+    /// The two halves are independent, which is why both exist — this test still passes if a
+    /// future enumerator reintroduces a wide list, because the tier gate no longer trusts the
+    /// rate threshold alone.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void RatesTheDeviceWillNotRunNatively_EarnNoHiResTier()
+    {
+        // A Mac running at 48 kHz whose output can be switched up to 192 kHz. This is the exact
+        // input that used to produce a wide SupportedSampleRates; CoreAudioSampleRates now reduces
+        // it to the one rate that needs no conversion.
+        var native = CoreAudioSampleRates.ResolveNative(
+            nominalRate: 48_000,
+            [new SampleRateRange(44_100, 44_100), new SampleRateRange(48_000, 192_000)]);
+
+        Assert.Equal([48_000], native);
+
+        var device = new AudioDeviceInfo
+        {
+            Id = "mac",
+            Name = "Mac running at 48 kHz, switchable to 96 kHz",
+            MixSampleRate = 48_000,
+            MixChannels = 2,
+            SupportedSampleRates = native
+        };
+
+        // No hi-res tier, and the advertisement leads with the rate the device actually runs.
+        Assert.Equal(
+            ["flac/48000/16", "flac/44100/16"],
+            Formats(device).Where(f => f.Codec == AudioCodecs.Flac).Select(Describe));
+    }
+
+    /// <summary>
+    /// The device's current mix rate counts as native on its own.
+    /// </summary>
+    /// <remarks>
+    /// The complement of the test above, and the reason the gate is not simply "member of
+    /// SupportedSampleRates". A device running at 96 kHz is running there whether or not its
+    /// enumerator also listed that rate, so the tier must not be withheld from it. Every current
+    /// enumerator does include its mix rate in that list; this pins the behaviour for one that
+    /// does not, rather than resting on the coincidence.
+    /// </remarks>
+    [Fact]
+    public void TheMixRateCountsAsNativeEvenIfTheListOmitsIt()
+    {
+        var device = new AudioDeviceInfo
+        {
+            Id = "96k",
+            Name = "Running at 96 kHz, reports no list",
+            MixSampleRate = 96_000,
+            MixChannels = 2,
+            SupportedSampleRates = [],
+            MaxBitDepth = 24
+        };
+
+        Assert.Equal(
+            ["flac/96000/24", "flac/48000/16", "flac/44100/16"],
+            Formats(device).Where(f => f.Codec == AudioCodecs.Flac).Select(Describe));
+    }
+
+    /// <summary>
     /// Opus is never offered at a rate its decoder rejects.
     /// </summary>
     /// <remarks>

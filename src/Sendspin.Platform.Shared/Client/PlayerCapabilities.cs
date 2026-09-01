@@ -253,11 +253,12 @@ public static class PlayerCapabilities
     /// rather than nothing.
     /// </description></item>
     /// <item><description>
-    /// <strong>Tier next, high-resolution before regular.</strong> The hi-res tier is populated
-    /// only from rates the device itself reported — the two hardcoded fallbacks are both below the
-    /// threshold, so nothing can reach this tier unless the device said it runs there. When it is
-    /// present it is the best the hardware can do, so it is offered first; the regular tier always
-    /// follows as the floor.
+    /// <strong>Tier next, high-resolution before regular.</strong> A rate reaches the hi-res tier
+    /// only by being above the threshold <em>and</em> passing <see cref="IsNative"/> — a rate the
+    /// device runs with no resampler in the path. That second condition is what makes leading with
+    /// this tier safe: offering it first is only right if the device really renders it, and a
+    /// platform whose native list is wider than that would otherwise be led with a rate its own
+    /// stack resamples straight back down. The regular tier always follows as the floor.
     /// </description></item>
     /// <item><description>
     /// <strong>Rate last: the device's current mix rate first, then descending.</strong> The mix
@@ -280,7 +281,8 @@ public static class PlayerCapabilities
         var mixRate = device?.MixSampleRate ?? 0;
 
         var regularRates = OrderTier(rates.Where(rate => rate < HighResolutionThresholdHz), mixRate);
-        var highResolutionRates = OrderTier(rates.Where(rate => rate >= HighResolutionThresholdHz), mixRate);
+        var highResolutionRates = OrderTier(
+            rates.Where(rate => rate >= HighResolutionThresholdHz && IsNative(device, rate)), mixRate);
 
         // Depth is gated separately from rate, because they are separately reported and a device
         // can have one without the other. A sink that runs 96 kHz but accepts only S16LE still
@@ -323,6 +325,31 @@ public static class PlayerCapabilities
 
         return formats;
     }
+
+    /// <summary>
+    /// Whether the device will run this rate without a resampler in the path.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Two signals, and both are needed. <see cref="AudioDeviceInfo.SupportedSampleRates"/> is the
+    /// enumerator's list of native rates, per the contract written on that field. The device's
+    /// current <see cref="AudioDeviceInfo.MixSampleRate"/> counts too, and independently: it is the
+    /// rate the device is running at <em>right now</em>, which is native by definition whether or
+    /// not the enumerator also happened to list it.
+    /// </para>
+    /// <para>
+    /// This is the gate that keeps the hi-res tier honest across platforms, and it is checked here
+    /// rather than left to the rate threshold. The threshold alone is not a gate:
+    /// <see cref="ResolveSampleRates"/> promotes the mix rate and copies the device's list before
+    /// appending two hardcoded fallbacks, so "above 88.2 kHz" only excludes the fallbacks. Relying
+    /// on that meant relying on every enumerator happening to include its own mix rate in its
+    /// native list — true today, unenforced, and exactly the kind of coincidence that broke macOS
+    /// when its list turned out to mean something wider.
+    /// </para>
+    /// </remarks>
+    private static bool IsNative(AudioDeviceInfo? device, int rate) =>
+        device is not null &&
+        (device.SupportedSampleRates.Contains(rate) || (device.MixSampleRate > 0 && device.MixSampleRate == rate));
 
     /// <summary>
     /// Orders one tier's rates: the device's mix rate first when it falls in this tier, then the

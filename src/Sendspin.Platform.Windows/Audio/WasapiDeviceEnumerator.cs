@@ -23,6 +23,13 @@ namespace Sendspin.Platform.Windows.Audio;
 /// still play, with the engine's resampler in the path and its latency visible in the audio
 /// clock.
 /// </para>
+/// <para>
+/// That satisfies the field's contract — <em>rates that reach the converter unresampled</em> —
+/// because the probe below asks <c>IsFormatSupported</c> in <see cref="AudioClientShareMode.Shared"/>,
+/// the same mode this player renders in. It would stop satisfying it if the probe were ever
+/// widened to exclusive mode, which admits rates the engine cannot take as-is; the share mode is
+/// the load-bearing part of the query, not an incidental argument.
+/// </para>
 /// </remarks>
 public sealed class WasapiDeviceEnumerator : IAudioDeviceEnumerator
 {
