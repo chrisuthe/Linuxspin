@@ -17,6 +17,12 @@
 //   SPIKE_NO_INTER=1          skip WithInterFont()
 //   SPIKE_FONT_SHAPE=a|b      a: FontManagerOptions.FontFallbacks=[Inter] + resource "$Default"
 //                             b: resource "$Default, fonts:Inter#Inter"
+//   SPIKE_DEFAULT_FAMILY=<name>  FontManagerOptions.DefaultFamilyName, i.e. what "$Default" becomes.
+//                             On its own it moves only the "$Default ->" line, because Fluent's
+//                             composite resource still puts Inter first; pair it with
+//                             SPIKE_FONT_SHAPE=a to see it reach a default TextBlock. A name the
+//                             platform cannot resolve throws out of the first layout pass inside
+//                             Window.Show() rather than falling back to anything.
 //   SPIKE_FORCE_CSD=1         Wayland: ForceDrawnDecorations; X11: EnableDrawnDecorations
 //   SPIKE_TITLEBAR=<double>   ExtendClientAreaTitleBarHeightHint (default -1)
 //   SPIKE_TRANSPARENCY=a,b    TransparencyLevelHint list: mica|acrylic|blur|transparent|none
@@ -117,14 +123,25 @@ internal static class Program
 
         if (!Env.Flag("SPIKE_NO_INTER")) builder = builder.WithInterFont();
 
-        if (Env.Get("SPIKE_FONT_SHAPE") == "a")
+        var shapeA = Env.Get("SPIKE_FONT_SHAPE") == "a";
+        var defaultFamily = Env.Get("SPIKE_DEFAULT_FAMILY");
+        if (shapeA || !string.IsNullOrEmpty(defaultFamily))
         {
-            // Candidate shape: leave DefaultFamilyName unset so "$Default" stays the platform's
-            // answer, and list Inter as a glyph fallback only.
-            builder = builder.With(new FontManagerOptions
+            var opts = new FontManagerOptions();
+            // Candidate shape: list Inter as a glyph fallback only. DefaultFamilyName stays unset
+            // unless SPIKE_DEFAULT_FAMILY names one, so "$Default" is the platform's own answer —
+            // which is the thing the shape is meant to measure.
+            if (shapeA) opts.FontFallbacks = new[] { new FontFallback { FontFamily = new FontFamily("fonts:Inter#Inter") } };
+            if (!string.IsNullOrEmpty(defaultFamily))
             {
-                FontFallbacks = new[] { new FontFallback { FontFamily = new FontFamily("fonts:Inter#Inter") } },
-            });
+                opts.DefaultFamilyName = defaultFamily;
+                // An unresolvable name throws out of the first layout pass inside Window.Show(),
+                // and the exception names only "$Default" — so say what it was asked to resolve
+                // while there is still a line of output to say it on.
+                Log.Line($"FontManagerOptions.DefaultFamilyName={defaultFamily}");
+            }
+
+            builder = builder.With(opts);
         }
 
         return builder.LogToTrace();
@@ -166,6 +183,8 @@ internal sealed class App : Application
 
 internal static class Probe
 {
+    private static bool _formatLogged;
+
     public static string Colour(Color c) => $"#{c.R:X2}{c.G:X2}{c.B:X2}";
 
     public static string Values(PlatformColorValues v) =>
@@ -241,8 +260,27 @@ internal static class Probe
                 rtb.CopyPixels(new PixelRect(x ?? size.Width / 2, size.Height / 2, 1, 1), (nint)p, 4, 4);
             }
         }
-        // Bgra8888 on every Skia platform this runs on.
-        return Color.FromArgb(buf[3], buf[2], buf[1], buf[0]);
+
+        // CopyPixels hands back the bitmap's own byte order, and it is not the same everywhere:
+        // the Skia render target reports Bgra8888 on Linux and Rgba8888 on macOS, so decoding
+        // either as the other swaps R and B and yields a plausible-looking wrong colour. Report the
+        // format once, so the byte order every sampled colour was read with is on the record. A
+        // format this does not know is refused rather than guessed at: a wrong colour here looks
+        // entirely plausible and would be believed.
+        var fmt = rtb.Format;
+        if (!_formatLogged)
+        {
+            _formatLogged = true;
+            Log.Line($"RenderTargetBitmap.Format={fmt?.ToString() ?? "(null)"} sampled-byte-order={(fmt == PixelFormat.Rgba8888 ? "R,G,B,A" : fmt == PixelFormat.Bgra8888 ? "B,G,R,A" : "UNKNOWN")}");
+        }
+
+        return fmt switch
+        {
+            { } f when f == PixelFormat.Rgba8888 => Color.FromArgb(buf[3], buf[0], buf[1], buf[2]),
+            { } f when f == PixelFormat.Bgra8888 => Color.FromArgb(buf[3], buf[2], buf[1], buf[0]),
+            _ => throw new InvalidOperationException(
+                $"RenderTargetBitmap.Format is {fmt?.ToString() ?? "null"}; the byte order of a sampled pixel is unknown, so no colour can be reported for it."),
+        };
     }
 }
 
@@ -328,7 +366,7 @@ internal sealed class FontWindow : Window
         base.OnOpened(e);
         Probe.Common(this);
         var fm = FontManager.Current;
-        Log.Line($"SPIKE_NO_INTER={Env.Flag("SPIKE_NO_INTER")} SPIKE_FONT_SHAPE={Env.Get("SPIKE_FONT_SHAPE") ?? "(none)"}");
+        Log.Line($"SPIKE_NO_INTER={Env.Flag("SPIKE_NO_INTER")} SPIKE_FONT_SHAPE={Env.Get("SPIKE_FONT_SHAPE") ?? "(none)"} SPIKE_DEFAULT_FAMILY={Env.Get("SPIKE_DEFAULT_FAMILY") ?? "(none)"}");
         Log.Line($"FontManager.DefaultFontFamily (the platform's answer for $Default) = {fm.DefaultFontFamily}");
         Log.Line($"$Default -> {Resolve(new FontFamily("$Default"))}");
         Log.Line($"fonts:Inter#Inter -> {Resolve(new FontFamily("fonts:Inter#Inter"))}");
@@ -691,7 +729,19 @@ internal sealed class EffectsWindow : Window
 internal sealed class ClockWindow : Window
 {
     private readonly TextBlock _counter = new() { Margin = new Thickness(12) };
-    private int _ticks;
+    private readonly Stopwatch _clock = Stopwatch.StartNew();
+    private readonly List<double> _tickAt = new();
+
+    // A tick rate read as "ticks counted in a fixed window" is hostage to whether the last tick
+    // lands before the cutoff: a 500 ms timer scores 5 or 6 ticks in 3000 ms, a 20% swing in the
+    // derived ms/tick, which is the same order as the pathologies this mode exists to find. So each
+    // tick is timestamped and the figure is the median gap, and the window runs on until there are
+    // enough gaps that no single one can move it. The cap is generous because the slowest row is a
+    // 500 ms timer on a head where it may be running late: 31 ticks at 600 ms is already 18.6 s, and
+    // the poll below returns through the dispatcher, which is the very thing under suspicion.
+    private static readonly TimeSpan MinWindow = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan MaxWindow = TimeSpan.FromSeconds(30);
+    private const int MinGaps = 30;
 
     public ClockWindow()
     {
@@ -764,18 +814,35 @@ internal sealed class ClockWindow : Window
         public void OnNext(double value) => onNext();
     }
 
-    private void Tick() { _ticks++; _counter.Text = $"ticks {_ticks}"; }
+    private void Tick() { _tickAt.Add(_clock.Elapsed.TotalMilliseconds); _counter.Text = $"ticks {_tickAt.Count}"; }
 
     private async Task Measure(string name, Action<CancellationToken> start)
     {
         using var cts = new CancellationTokenSource();
-        _ticks = 0;
+        _tickAt.Clear();
         var sw = Stopwatch.StartNew();
         start(cts.Token);
-        await Task.Delay(3000);
+        while (sw.Elapsed < MinWindow || (_tickAt.Count - 1 < MinGaps && sw.Elapsed < MaxWindow))
+            await Task.Delay(100);
         cts.Cancel();
+
         var elapsed = sw.Elapsed.TotalMilliseconds;
-        Log.Line($"CLOCK {name}: {_ticks} ticks in {elapsed:F0} ms = {_ticks * 1000.0 / elapsed:F1} Hz ({elapsed / Math.Max(1, _ticks):F2} ms/tick)");
+        var ticks = _tickAt.Count;
+        var gaps = _tickAt.Zip(_tickAt.Skip(1), (a, b) => b - a).OrderBy(g => g).ToList();
+        // The count-derived rate rides along beside the median: the two agree whenever a clock is
+        // regular and plenty of its ticks fit the window, and where they disagree that is itself
+        // worth reading rather than something to resolve silently.
+        var raw = $"raw {ticks} ticks in {elapsed:F0} ms = {ticks * 1000.0 / elapsed:F1} Hz";
+        if (gaps.Count == 0)
+        {
+            Log.Line($"CLOCK {name}: no gap to measure ({raw})");
+        }
+        else
+        {
+            var median = gaps.Count % 2 == 1 ? gaps[gaps.Count / 2] : (gaps[gaps.Count / 2 - 1] + gaps[gaps.Count / 2]) / 2;
+            Log.Line($"CLOCK {name}: median {median:F2} ms/tick = {1000.0 / median:F1} Hz over {gaps.Count} gaps (min {gaps[0]:F2} max {gaps[^1]:F2}; {raw})");
+        }
+
         await Task.Delay(300);
     }
 }

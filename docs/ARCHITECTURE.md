@@ -583,26 +583,47 @@ the host's and the shell cannot follow a path into it.
 ## UI shell
 
 What the windowing layer actually does when asked to follow the desktop, and what the living-backdrop
-effect loop costs. Measured on the dev machine — Fedora 44, KDE Plasma 6.7.4 on Wayland,
-`xdg-desktop-portal` 1.22.1 with the KDE 6.7.4 and GTK 1.15.3 backends, Avalonia 12.1.1, an NVIDIA
-RTX 4060 plus an AMD Phoenix iGPU, windows opened on a 2560×2160@60 Hz output at scale 1.25 — with a
-throwaway probe kept under `scripts/spike/ShellSpike/` so any of it can be re-run:
+effect loop costs. Measured on two dev machines with a throwaway probe kept under
+`scripts/spike/ShellSpike/` so any of it can be re-run:
+
+- **Linux** — Fedora 44, KDE Plasma 6.7.4 on Wayland, `xdg-desktop-portal` 1.22.1 with the KDE 6.7.4
+  and GTK 1.15.3 backends, Avalonia 12.1.1, an NVIDIA RTX 4060 plus an AMD Phoenix iGPU, windows
+  opened on a 2560×2160@60 Hz output at scale 1.25.
+- **macOS** — macOS 26.6.2 (build 25G83), Apple M5 Pro (arm64), .NET 10.0.302, Avalonia 12.1.1, an
+  880×600 window on a 2560×2160@60 Hz output, `RenderScaling` 1.
 
 ```
 dotnet run --project scripts/spike/ShellSpike -- theme | font | chrome | clock | effects <case>
 ```
 
 Every mode prints `[spike]` lines; the numbers below are those lines. `SENDSPIN_X11=1` selects the X11
-head exactly as it does for the player. **GNOME, Windows 11 and macOS were not available and are marked
+head exactly as it does for the player. **GNOME and Windows 11 were not available and are marked
 unmeasured**, each with the procedure — which is the same probe, run there.
+
+The macOS figures were taken after two defects in the probe were fixed, and no macOS number here
+predates those fixes:
+
+- `Probe.SamplePixel` assumed the render target was `Bgra8888`. It is `Rgba8888` on macOS, so every
+  sampled pixel came back with R and B swapped — `#007AFF` was reported as `#FF7A00`. The probe now
+  reads `RenderTargetBitmap.Format`, logs it once a run, and refuses to report a colour for a format
+  it does not know rather than guessing at the byte order again. **No Linux number changed**, and the
+  existing Linux rows are how we know: portal, resource and rendered pixel agreed byte for byte on
+  `#3DAEE9` and `#8FBCBB` under the old decode, which cannot happen for a non-grey colour if R and B
+  are swapped. The format is `Bgra8888` there, which is the branch the old code already took.
+- `ClockWindow.Measure` derived a rate from ticks counted in a fixed 3000 ms window, so a 500 ms
+  timer scored 5 or 6 ticks depending only on whether its last tick landed before the cutoff — a 20 %
+  swing in the derived ms/tick, the same order as the pathologies the mode exists to find. It now
+  timestamps each tick and reports the **median gap** over at least 30 gaps, extending the window
+  when a slow clock needs it. See the clock table for what that changed.
 
 One fact that frames all the rendering numbers: on this box **both Linux heads render on the AMD
 iGPU**. The probe lists the process's open DRM nodes after a frame, and it is `/dev/dri/renderD128`
 (vendor `0x1002`) on Wayland, on X11 and inside the Flatpak; the NVIDIA EGL vendor library is mapped
 but no NVIDIA render node is ever opened. "GPU" below means the iGPU.
 
-### Theme and accent on Linux — the portal is read, live, on both heads
+### Theme and accent — live on Linux and macOS, but macOS reads the accent only once
 
+**Linux — the portal is read, live, on both heads.**
 `Avalonia.FreeDesktop`'s `DBusPlatformSettings` reads `org.freedesktop.portal.Settings` once at
 start-up (`ReadOne org.freedesktop.appearance color-scheme` / `accent-color`) and subscribes to
 `SettingChanged`. With `RequestedThemeVariant="Default"` that is the whole mechanism; there is nothing
@@ -641,8 +662,10 @@ the user picked**, and it only refreshes on a scheme change. Three experiments:
   itself.
 
 So on Plasma the app's accent is Plasma's *highlight* colour, a light or dark derivative of the user's
-choice that changes with the variant. The reskin should treat `SystemAccentColor` as "the desktop's
-highlight", not as a saturated brand colour. Whether System Settings' accent picker triggers the
+choice that changes with the variant. On Plasma, then, `SystemAccentColor` is "the desktop's
+highlight" and not a saturated brand colour — but that is a Plasma statement, not a general one; see
+the macOS subsection below for what the same property means there, and the guidance that covers both.
+Whether System Settings' accent picker triggers the
 scheme re-apply that makes the portal notice is **unmeasured** (it needs a click): pick an accent
 there while `ShellSpike theme --seconds 30` runs and read the `ColorValuesChanged` lines.
 
@@ -674,11 +697,61 @@ backend is expected to serve the accent the user picked rather than a derived hi
 case `AccentColor1` is a saturated colour there — the opposite of Plasma, and the reskin has to be
 happy with both.
 
-**Windows 11 and macOS — unmeasured.** Same property set (`RequestedThemeVariant="Default"`, and
+**macOS — the variant is live, the accent is read once and then goes stale.** No portal is involved;
+`RequestedThemeVariant="Default"` is the whole mechanism, as on Linux, and
+`Window.ActualThemeVariantChanged`, `Application.ActualThemeVariantChanged` and
+`PlatformSettings.ColorValuesChanged` all fire. Variant flips were driven from a second terminal with
+`osascript … set dark mode to`, whose own latency is inside these numbers:
+
+| Change (wall clock) | `ActualThemeVariant` observed | Delta |
+|---|---|---|
+| dark mode → false at 16:19:52.807 | `Light` at 16:19:53.053 | **+246 ms** (first flip of the session) |
+| dark mode → true at 16:20:01.090 | `Dark` at 16:20:01.183 | +93 ms |
+| dark mode → false at 16:20:09.229 | `Light` at 16:20:09.320 | +91 ms |
+| dark mode → true at 16:20:17.363 | `Dark` at 16:20:17.454 | +91 ms |
+| dark mode → false at 16:20:39.840 | `Light` at 16:20:39.951 | +111 ms |
+| dark mode → true at 16:20:47.975 | `Dark` at 16:20:48.063 | +88 ms |
+
+So ~90–110 ms steady state, with the first flip of a session costing about 250 ms of warm-up.
+
+**The accent is read at start-up and never updated again.** Ground truth was taken from AppKit itself
+in a separate process (`NSColor.controlAccentColor`, re-read fresh at each step) alongside the probe.
+Each accent change wrote the global `AppleAccentColor` pref *and* posted
+`AppleColorPreferencesChangedNotification`, which is what System Settings does:
+
+| Wall clock | System accent set to | macOS `controlAccentColor` | Avalonia `AccentColor1` |
+|---|---|---|---|
+| 16:20:23.714 | Red | `#FF5257` | `#007AFF` — **no event fired at all** |
+| 16:20:31.767 | Green | `#62BA46` | `#007AFF` — **no event fired at all** |
+| 16:20:39.840 | (variant Dark → Light) | `#62BA46` | `#007AFF` — `ColorValuesChanged` fired **with the stale accent** |
+| 16:20:47.975 | (variant Light → Dark) | `#62BA46` | `#007AFF` — same |
+
+AppKit picked every change up; Avalonia never did. An accent change produces no notification
+whatsoever, and the `ColorValuesChanged` that a *variant* change does produce carries the accent read
+at start-up. Note this is the **opposite** of Plasma, where a variant change is the one thing that
+*did* flush the accent.
+
+It is genuinely read at start-up, not hardcoded: relaunched with the system accent already Green, the
+probe reported `AccentColor1=#62BA46`, matching `controlAccentColor` exactly, and
+`SystemAccentColor` resource and rendered pixel with it. `AccentColor1`, `AccentColor2` and
+`AccentColor3` are always identical — no derived shades on this backend. With the byte-order fix in
+place, `PlatformSettings`, the `SystemAccentColor` resource and the rendered pixel agree byte for
+byte, as portal/resource/rendered do on Linux (`#007AFF` at the default accent, `#62BA46` at Green).
+
+**So `SystemAccentColor` means a different thing on each desktop, and is live on neither.** On Plasma
+it is the colour scheme's *highlight* — a light or dark derivative of the user's pick that changes
+with the variant, and never the saturated colour itself. On macOS it is the user's actual accent, but
+frozen at the moment the process started. The reskin therefore cannot treat `SystemAccentColor` as a
+live brand colour on either: on macOS it is right at launch and wrong forever after the user changes
+it, and on Plasma it is a variant-dependent derivative from the start. Anything that must track the
+desktop accent needs a platform-specific source, and anything that merely wants to be tasteful should
+carry its own colour.
+
+**Windows 11 — unmeasured.** Same property set (`RequestedThemeVariant="Default"`, and
 `SystemAccentColor` for the accent). Procedure: `dotnet run --project scripts/spike/ShellSpike --
-theme --seconds 60`, flip Settings › Personalization › Colors (Windows) or System Settings ›
-Appearance (macOS) and read the `ColorValuesChanged` lines. Neither backend goes through a portal,
-so the no-portal fallback above is Linux-only.
+theme --seconds 60`, flip Settings › Personalization › Colors and read the `ColorValuesChanged`
+lines. That backend does not go through a portal either, so the no-portal fallback above is
+Linux-only.
 
 ### System font — Inter wins only because Fluent asks for it first
 
@@ -692,20 +765,23 @@ empty pattern — the same as `fc-match sans-serif` — and **not** the desktop'
 agree). Measured with `ShellSpike font`, which resolves the glyph typeface a `TextBlock` with no
 `FontFamily` actually ends up with:
 
-| Where | `$Default` resolves to | Default `TextBlock`, with `WithInterFont()` | … with `SPIKE_NO_INTER=1` | `fc-match sans-serif` there |
-|---|---|---|---|---|
-| Host | Noto Sans | Inter | Noto Sans | `NotoSans-Regular.ttf` |
-| Flatpak (`org.freedesktop.Platform//25.08`) | **DejaVu Sans** | Inter | **DejaVu Sans** | `DejaVuSans.ttf` |
-| AppImage — built with `appimagetool` from the probe's publish in the `scripts/build-appimage.sh` AppDir layout with its `AppRun`, and run as the `.AppImage` | Noto Sans | Inter | Noto Sans | host's |
+| Where | `$Default` resolves to | Default `TextBlock`, with `WithInterFont()` | … with `SPIKE_NO_INTER=1` | `'Inter'` by plain name | `fc-match sans-serif` there |
+|---|---|---|---|---|---|
+| Host | Noto Sans | Inter | Noto Sans | Inter | `NotoSans-Regular.ttf` |
+| Flatpak (`org.freedesktop.Platform//25.08`) | **DejaVu Sans** | Inter | **DejaVu Sans** | Inter | `DejaVuSans.ttf` |
+| AppImage — built with `appimagetool` from the probe's publish in the `scripts/build-appimage.sh` AppDir layout with its `AppRun`, and run as the `.AppImage` | Noto Sans | Inter | Noto Sans | Inter | host's |
+| macOS | **Helvetica** | Inter | **Helvetica** | **Helvetica — does not resolve** | n/a (no fontconfig) |
 
 The Flatpak row is the reason to measure: the sandbox brings its own fontconfig, and its
 `sans-serif` is DejaVu Sans, so "the platform default" inside the Flatpak is a different face from
 the desktop around it. Host fonts *are* visible from the sandbox (873 `fc-list` entries, mounted under
-`/run/host/fonts`), which is also why `Inter` resolves *by plain name* in all three columns — this
-host has Inter installed as a system font. Do not read that as a guarantee; on a host without it,
-only the embedded `fonts:Inter#Inter` resolves. The AppImage sees the host's fontconfig unchanged.
-Character fallback is unaffected in every configuration: U+65E5 (日) resolves to `Noto Sans CJK JP`
-from the system collection whichever face is primary.
+`/run/host/fonts`), which is also why `Inter` resolves *by plain name* in all three Linux columns —
+this host has Inter installed as a system font. Do not read that as a guarantee, and **macOS is the
+counter-example that proves it**: `'Inter'` by plain name resolves to Helvetica there, because Inter
+is not installed as a system font on that machine, so only the embedded `fonts:Inter#Inter` resolves.
+The AppImage sees the host's fontconfig unchanged. Character fallback is unaffected in every
+configuration: U+65E5 (日) resolves to `Noto Sans CJK JP` from the system collection on Linux and to
+`PingFang SC` on macOS, whichever face is primary.
 
 **The shape for "platform default, Inter as fallback".** `FontManagerOptions` alone cannot do it,
 because the Fluent resource puts Inter first. Both halves are needed, and this is the pair that was
@@ -718,7 +794,8 @@ AppBuilder.Configure<App>()
     .WithInterFont()
     .With(new FontManagerOptions
     {
-        // DefaultFamilyName deliberately unset: null means "ask the platform", which is the point.
+        // Unset means "ask the platform". That is the right answer on Linux and the wrong one on
+        // macOS, where the platform says Helvetica — see the macOS paragraph below.
         FontFallbacks = new[] { new FontFallback { FontFamily = new FontFamily("fonts:Inter#Inter") } },
     })
 ```
@@ -737,11 +814,56 @@ The composite alternative (`$Default, fonts:Inter#Inter` as the resource, no `Fo
 `SPIKE_FONT_SHAPE=b`) also renders the platform face and is one line instead of two, but leaves
 Inter behind the whole system collection in the fallback order.
 
-**Windows and macOS — unmeasured.** The intent is Segoe UI Variable on Windows and the system font on
-macOS. What `$Default` resolves to there is whatever `SKTypeface.Default.FamilyName` says — on
-Windows that may well be plain `Segoe UI` rather than the Variable face, in which case
-`DefaultFamilyName` has to be named per platform. Procedure: `dotnet run --project
-scripts/spike/ShellSpike -- font` and read the `FontManager.DefaultFontFamily` line.
+**macOS — `$Default` is Helvetica, so the recommended shape does not give the system font there.**
+`FontManager.DefaultFontFamily` is **`Helvetica`** — not `.AppleSystemUIFont`, not SF. Both candidate
+shapes therefore land on Helvetica rather than the macOS system face:
+
+| Configuration | `$Default` resolves to | Default `TextBlock` resolves to |
+|---|---|---|
+| default (`WithInterFont()`, Fluent's composite) | Helvetica | **Inter** |
+| `SPIKE_NO_INTER=1` | Helvetica | Helvetica |
+| `SPIKE_FONT_SHAPE=a` (the shape recommended above) | Helvetica | **Helvetica** |
+| `SPIKE_FONT_SHAPE=b` | Helvetica | **Helvetica** |
+
+So "platform default, Inter as fallback" is a Linux answer. On macOS `DefaultFamilyName` has to be
+named explicitly — the same conclusion the Windows paragraph below only suspects. Candidates, run
+with `SPIKE_DEFAULT_FAMILY=<name> SPIKE_FONT_SHAPE=a` so a default `TextBlock` resolves through
+`$Default`:
+
+| `DefaultFamilyName` | Default `TextBlock` resolves to |
+|---|---|
+| `.AppleSystemUIFont` | glyph typeface **`System Font`** — correct |
+| `Helvetica Neue` | glyph typeface `Helvetica Neue` |
+| `SF Pro` | **crash** |
+| `SF Pro Text` | **crash** |
+
+**An unresolvable `DefaultFamilyName` does not degrade to anything — it kills the process before a
+window appears.** This is not in tension with `'Inter'` falling back to Helvetica in the table above:
+an unresolvable family named *on a control* falls back to `$Default`, whereas an unresolvable
+`$Default` is the bottom of that chain and has nothing beneath it. `SF Pro` throws out of the first
+layout pass, inside `Window.Show()`:
+
+```
+Unhandled exception. System.InvalidOperationException: Could not create glyphTypeface.
+Font family: $Default (key: ). Style: Normal. Weight: Normal. Stretch: Normal
+   at Avalonia.Media.Typeface.get_GlyphTypeface()
+   …
+   at Avalonia.Controls.TextBlock.MeasureOverride(Size availableSize)
+   at Avalonia.Layout.Layoutable.Measure(Size availableSize)
+```
+
+and the process exits 134. Note the exception names only `$Default`, never the family that failed to
+resolve, so a crash report from another machine is unattributable unless the name is logged
+separately. The host ships `SFNS.ttf` (exposed as `.AppleSystemUIFont`); there is no `SF Pro` family
+installed, and nothing in `~/Library/Fonts` or `/Library/Fonts` supplies one. A per-platform
+`DefaultFamilyName` therefore needs a resolve-check at start-up rather than a hardcoded name trusted
+to exist. **Acting on this in the player is a separate task; this section measures and records.**
+
+**Windows — unmeasured.** The intent is Segoe UI Variable. What `$Default` resolves to there is
+whatever `SKTypeface.Default.FamilyName` says — that may well be plain `Segoe UI` rather than the
+Variable face, in which case `DefaultFamilyName` has to be named per platform as it does on macOS.
+Procedure: `dotnet run --project scripts/spike/ShellSpike -- font` and read the
+`FontManager.DefaultFontFamily` line.
 
 ### Decorations and client-area extension — the hint does nothing under KWin
 
@@ -759,6 +881,7 @@ and KWin answers server-side. X11: `SetExtendClientAreaToDecorationsHint` is gua
 | Wayland | `ForceDrawnDecorations` | `True` | `8.8,39.2,8.8,8.8` | not reported | Avalonia's own caption and buttons; the content's top 48 px sit under that caption |
 | X11 | default | `False` | `0,0,0,0` | `880×628` | KWin's title bar (28 logical px), content below it |
 | X11 | `EnableDrawnDecorations` | `True` | `8.8,39.2,8.8,8.8` | `880×600` | Avalonia's own caption, as on Wayland |
+| macOS | default | `True` | `0,28,0,0` | `880×600` | the content's top 48 px run to the top of the window with the traffic lights drawn on top of them |
 
 So the top inset the hint "comes out as" on Linux is **zero** unless native decorations are given up
 altogether, and then it is 39.2 px of Avalonia chrome, not a compositor title bar with art behind it.
@@ -769,10 +892,12 @@ was not exercised (it needs a drag); Avalonia's managed decorations call `BeginM
 
 Two things read off the same run, both worth keeping:
 
-- `ActualTransparencyLevel` is **`Transparent`** on both heads with an empty `TransparencyLevelHint`:
-  the window has an alpha channel by default, so a partially transparent `Background` shows the
-  desktop through, not the window's own backdrop. Anything translucent inside the window needs an
-  opaque root behind it.
+- `ActualTransparencyLevel` is **`Transparent`** on both Linux heads with an empty
+  `TransparencyLevelHint`: the window has an alpha channel by default, so a partially transparent
+  `Background` shows the desktop through, not the window's own backdrop. Anything translucent inside
+  the window needs an opaque root behind it. **This is a Linux statement, not a general one** —
+  macOS reports `None` in the same configuration, so the alpha channel is not something to count on
+  either way; a design that needs it must ask for it.
 - On the Wayland head `RenderScaling` reads `1` in `OnOpened` and only becomes the output's 1.25
   after the first configure (the screenshots are the same pixel size on both heads). Do not size
   bitmaps from it that early.
@@ -784,11 +909,25 @@ whether or not the hint is set; with the hint set it additionally extends the cl
 under GNOME, read `IsExtendedIntoWindowDecorations` and `WindowDecorationMargin`, and look at whether
 the title text is drawn by Avalonia.
 
-**macOS — unmeasured.** Intended: `ExtendClientAreaToDecorationsHint="True"`,
-`ExtendClientAreaTitleBarHeightHint="-1"`, no custom caption buttons, art allowed under the title
-region. Check: `ShellSpike chrome`, expect `IsExtendedIntoWindowDecorations=True`, a non-zero top in
-`WindowDecorationMargin` (that is the traffic-light strip), and the red band in the screenshot sitting
-behind the traffic lights with the window still moving by that strip.
+**macOS — measured, and it is the composition Linux cannot do.** `ExtendClientAreaToDecorationsHint`
+works exactly as intended, with no options to set beyond the hint itself:
+
+| Property | Value |
+|---|---|
+| `IsExtendedIntoWindowDecorations` | `True` |
+| `WindowDecorationMargin` | `0,28,0,0` — the traffic-light strip |
+| `OffScreenMargin` | `0,0,0,0` |
+| `WindowDecorations` | `Full` |
+| `ClientSize` / `FrameSize` | `880, 600` / `880, 600` — identical, so the frame adds nothing |
+| `ActualTransparencyLevel` (empty hint) | `None` |
+
+Reproduced identically across runs. The red 48 px content band runs to the top of the window and the
+traffic lights are drawn on top of it, with the window still moving by that strip — the "art bleeds up
+behind the traffic lights, system buttons stay" arrangement the Linux paragraph above says does not
+exist there. That last sentence is an on-screen observation, not a property read, and no image is
+committed for it (see the screenshot note at the end of this section); the numbers in the table are
+what the row actually rests on. So the intent stands unchanged on macOS and has to be given up on Linux, which makes the
+top strip a per-platform layout decision rather than a shared one.
 
 **Windows 11 Mica — unmeasured.** Intended: `TransparencyLevelHint="Mica, None"`
 (`WindowTransparencyLevel.Mica` first, `None` as the pre-22H2 fallback — the property is an ordered
@@ -808,30 +947,71 @@ the frames, after a 3 s warm-up, `DOTNET_TieredCompilation=0` so the JIT thread 
 number). The renderer's own `RendererDebugOverlays.Fps` was screenshotted alongside and read 58–60 in
 every configuration, so "per frame" below is per presented frame.
 
-**First, the clock.** `ShellSpike clock` drives a counter with each candidate for three seconds:
+**First, the clock.** `ShellSpike clock` drives a counter with each candidate:
 
-| Clock | Wayland head | X11 head |
-|---|---|---|
-| `RequestAnimationFrame` re-armed in the callback | **25 124 Hz** (0.04 ms/tick) | 59.6 Hz |
-| `DispatcherTimer` 16 ms, any priority | **5–7 Hz** (140–200 ms/tick across runs) | 62.3 Hz |
-| `DispatcherTimer` 100 ms | **4.3 Hz** (231 ms/tick) | 10.0 Hz |
-| `DispatcherTimer` 500 ms | **1.7 Hz** (600 ms/tick) | 2.0 Hz |
-| `System.Threading.Timer` 16 ms → `Dispatcher.UIThread.Post` | 62.3 Hz | 62.3 Hz |
-| `Task.Delay(16)` loop on the UI thread | 61.3 Hz | 61.3 Hz |
-| Avalonia `Animation`, 1 s loop — property change rate | **24 268 Hz** | 60.3 Hz |
+| Clock | Wayland head † | X11 head † | macOS ‡ |
+|---|---|---|---|
+| `RequestAnimationFrame` re-armed in the callback | **25 124 Hz** (0.04 ms/tick) | 59.6 Hz | 60.0 Hz (16.67 ms/tick) |
+| `DispatcherTimer` 16 ms, any priority | **5–7 Hz** (140–200 ms/tick across runs) | 62.3 Hz | 60.0 Hz (16.67 ms/tick) |
+| `DispatcherTimer` 100 ms | **4.3 Hz** (231 ms/tick — real, but ±1 tick wide, see below) | 10.0 Hz | 9.9 Hz (101.03 ms/tick) |
+| `DispatcherTimer` 500 ms | 1.7 Hz (600 ms/tick) — **an artifact, see below** | 2.0 Hz | 2.0 Hz (501.09 ms/tick) |
+| `System.Threading.Timer` 16 ms → `Dispatcher.UIThread.Post` | 62.3 Hz | 62.3 Hz | 62.3 Hz (16.05 ms/tick) |
+| `Task.Delay(16)` loop on the UI thread | 61.3 Hz | 61.3 Hz | 55.3 Hz (18.08 ms/tick) |
+| Avalonia `Animation`, 1 s loop — property change rate | **24 268 Hz** | 60.3 Hz | 60.0 Hz (16.67 ms/tick) |
+
+† Count-derived: ticks counted in a fixed 3000 ms window, which is what `Measure` did when these were
+taken. ‡ Median inter-tick gap over at least 30 gaps, which is what `Measure` does now. The two agree
+wherever a clock is regular and enough ticks fit in the window; they diverge for slow timers, which is
+the point of the change. The Linux columns have not been re-run — the numbers that matter for the
+decision below are the 16 ms rows, and those are far too large to be a counting artifact.
+
+macOS behaves like X11 and nothing like Wayland: `RequestAnimationFrame` is frame-tied at 60.0 Hz
+rather than free-running, and the 100 ms and 500 ms `DispatcherTimer`s land within 1 % of what they
+asked for. The column is one run's medians; across three consecutive runs the 500 ms row spanned
+500.22–501.09 ms and the 100 ms row 100.97–101.11 ms, and the sub-frame figures below were identical
+every time.
+
+One macOS-only detail, and it is the reason the 16 ms row reads 16.67 rather than ~16.0: **everything
+on the dispatcher's own path quantises to the display refresh there.** `DispatcherTimer` 16 ms at all
+three priorities, `RequestAnimationFrame` and Avalonia `Animation` all report exactly 16.67 ms — one
+60 Hz frame — while `System.Threading.Timer` posting to the same dispatcher reports 16.05 ms and is
+plainly not clamped. Both figures came back to the centisecond in all three runs. X11 is *not* like this: its 16 ms `DispatcherTimer` reads 62.3 Hz, the same as
+its thread timer. So a sub-frame `DispatcherTimer` on macOS cannot tick faster than the display, which
+is harmless for the backdrop but would quietly cap anything asking for more.
 
 On the Wayland head in 12.1.1, **`RequestAnimationFrame` is not tied to a frame**: the callback runs
 again as soon as it is re-armed, 25 000 times a second, and the renderer still presents 60 of them
 (the FPS overlay read `Frame #74` while the callback counter read 25 259). The plan's loop as written
 costs 0.04 ms × 25 000 = **a full core** on Wayland to animate nothing faster. Avalonia's own
 `Animation`/`Transitions` clock has the same problem there, and `DispatcherTimer` has the opposite
-one — every due time lands on a coarse boundary about 100–200 ms late (16 → 140–200 ms depending
-on the run, 100 → 231 ms, 500 → 600 ms; the last two reproduce exactly, the first varies), which
-means the player's two 500 ms `DispatcherTimer`s — the progress bar and the
-diagnostics refresh — already tick every 600 ms on the Wayland head today. X11 is correct on every
-row. Until `Avalonia.Wayland` is fixed (re-check each bump with `ShellSpike clock`), **the backdrop has to be
-paced by a thread-pool timer posting to the dispatcher**, which is the one clock that behaves on both
-heads; that is the driver every number below uses (`SPIKE_DRIVER=threadtimer`).
+one — 16 ms comes back as 140–200 ms depending on the run, and 100 ms as 231 ms. X11 is correct on
+every row, and so is macOS. Until `Avalonia.Wayland` is fixed (re-check each bump with `ShellSpike
+clock`), **the backdrop has to be paced by a thread-pool timer posting to the dispatcher**, which is
+the one clock that behaves on every head measured — 62.3 Hz on Wayland, X11 and macOS alike, so that
+decision holds on all three platforms. That is the driver every number below uses
+(`SPIKE_DRIVER=threadtimer`).
+
+**Withdrawn: the claim that the player's 500 ms `DispatcherTimer`s already tick at 600 ms on
+Wayland.** That rested on the Wayland 500 ms row, and that row is a counting artifact, not a
+measurement. A 500 ms timer fires at 500…3000 ms inside a fixed 3000 ms window, so it scores 6 ticks
+if the last one lands before the cutoff and 5 if it does not; 600 ms/tick is exactly the 5-tick case.
+This was demonstrated rather than argued: run against the same macOS host, the counting `Measure`
+scores `5 ticks in 3002 ms = 1.7 Hz (600.46 ms/tick)` — the Wayland figure almost exactly — while the
+median `Measure` on the same machine reads **501.09 ms**. macOS is correct on every other row in both
+runs, so the 600 ms is the window, not the timer. That the Wayland figure "reproduced exactly" across
+runs is not evidence against this either: a deterministic off-by-one reproduces exactly, which is
+precisely how it went unnoticed. Re-run `ShellSpike clock` on Wayland with the fixed `Measure` and
+either substantiate the claim from the median or leave it withdrawn. `Measure` runs each row for at
+least 3 s and then until it has 30 inter-tick gaps, capping at 30 s; the line reports `over N gaps`,
+so check that the 500 ms row got its 30 rather than hitting the cap before trusting its median.
+
+The 16 ms row is untouched by this. Applied to the observed figure, ±1 tick out of the ~20 the Wayland
+head manages in 3 s moves 140 ms by about 7 ms — nowhere near enough to explain a timer asked for 16 ms
+returning 140–200, so that pathology is real. The 100 ms row survives too,
+though less comfortably: ±1 tick spans 214–250 ms around the reported 231 ms, so the overshoot is
+genuine even if the exact figure is soft. (The same counting run put macOS's 100 ms row at
+`29 ticks in 3001 ms = 103.50 ms/tick` against a median of 101.03 — the ±1 tick, and nothing more.)
+Both want re-measuring on the next Wayland run anyway.
 
 **Then the cost**, CPU ms per frame at 60 Hz. "Software" on X11 is
 `X11PlatformOptions.RenderingMode = [Software]`; on Wayland the backend has no such option, so EGL
@@ -839,14 +1019,24 @@ was made to fail (`__EGL_VENDOR_LIBRARY_FILENAMES=/nonexistent`) and the backend
 `wl_shm` framebuffer surface — the probe confirms only `libEGL.so.1` and `libSkiaSharp.so` mapped and
 no DRM node open, which is what an AppImage on a box without working GL gets.
 
-| Case | Wayland, GPU | X11, GPU | X11, software | Wayland, shm |
-|---|---|---|---|---|
-| `baseline` — a counter `TextBlock` and nothing else | 1.72 | 1.89 | 4.86 | 4.17 |
-| `gradient-mutate` — three ellipses, `GradientStop.Color` mutated | 1.81 | 1.91 | 12.50 | 11.12 |
-| `gradient-swap` — same, `Fill` replaced with a new `ImmutableRadialGradientBrush` | 1.82 | 2.05 | 12.50 | 11.38 |
-| `glow-boxshadow` — 320 px tile, `BoxShadow.Blur` animated 10–60 | 1.95 | 1.95 | 6.32 | 5.36 |
-| `glow-dropshadow` — same tile, `DropShadowEffect.BlurRadius` animated | 1.96 | 2.05 | 12.26 | 10.44 |
-| `blur-once` — 64 px scaled artwork, `Image` with `BlurEffect(32)` behind the counter | 1.87 | 1.94 | 4.93 | 4.32 |
+| Case | Wayland, GPU | X11, GPU | X11, software | Wayland, shm | macOS, GPU § |
+|---|---|---|---|---|---|
+| `baseline` — a counter `TextBlock` and nothing else | 1.72 | 1.89 | 4.86 | 4.17 | 1.42 (1.39–1.66) |
+| `gradient-mutate` — three ellipses, `GradientStop.Color` mutated | 1.81 | 1.91 | 12.50 | 11.12 | 1.57 (1.56–1.85) |
+| `gradient-swap` — same, `Fill` replaced with a new `ImmutableRadialGradientBrush` | 1.82 | 2.05 | 12.50 | 11.38 | 1.53 (1.52–1.57) |
+| `glow-boxshadow` — 320 px tile, `BoxShadow.Blur` animated 10–60 | 1.95 | 1.95 | 6.32 | 5.36 | 1.87 (1.80–2.17) |
+| `glow-dropshadow` — same tile, `DropShadowEffect.BlurRadius` animated | 1.96 | 2.05 | 12.26 | 10.44 | 1.93 (1.92–2.08) |
+| `blur-once` — 64 px scaled artwork, `Image` with `BlurEffect(32)` behind the counter | 1.87 | 1.94 | 4.93 | 4.32 | 1.83 (1.80–2.01) |
+
+§ Median of three runs, with the range across them. The macOS column is quoted as a range because the
+run-to-run spread there (up to 0.37 ms) is comparable to the gaps between cases, so the cases **cannot
+be ranked against each other** — 1.53 to 1.93 ms is inside the noise. What the ranges *do* separate is
+the effects from an empty window: the two gradient cases overlap baseline, but `blur-once` and both
+glows have a minimum above baseline's maximum across all three runs, so they genuinely cost something.
+It is 0.11 to 0.51 ms, on a 16.7 ms frame.
+**There is no macOS software-raster column.** `SPIKE_SOFTWARE` is wired only for X11, and the Wayland
+`shm` column was obtained by breaking EGL, which has no macOS analogue; measuring one would mean
+adding a code path that does not otherwise exist, so the column is absent rather than blank.
 
 (Driven by a `DispatcherTimer` instead, every X11 figure reads higher — 3.4–4.1 on GPU, 6.6–16.1 on
 software — and the difference is the dispatcher timer's own dispatch, not the effect; so the table
@@ -855,17 +1045,38 @@ uses the thread-pool timer in every column.)
 What the table answers:
 
 - **Mutating gradient stops versus swapping the brush: no difference.** 1.81 vs 1.82 ms on the
-  Wayland GPU column, 1.91 vs 2.05 on X11, 12.50 vs 12.50 on software, 11.12 vs 11.38 on shm. Pick
-  whichever reads better; there is no performance argument.
+  Wayland GPU column, 1.91 vs 2.05 on X11, 12.50 vs 12.50 on software, 11.12 vs 11.38 on shm, 1.57 vs
+  1.53 on macOS. Pick whichever reads better; there is no performance argument on any platform.
 - **`BoxShadow` is the cheap glow, and only on software does it matter.** On GPU the two are
-  identical (1.95 vs 1.96 ms, both within 0.25 ms of the empty window). On software raster the
-  `DropShadowEffect` glow costs **7.4 ms** over baseline on X11 and 6.3 ms on shm; the `BoxShadow`
-  glow **1.5 ms** and 1.2 ms. The plan's assumption holds where it costs anything.
+  identical (1.95 vs 1.96 ms on Wayland, 1.87 vs 1.93 on macOS — a gap smaller than either case's own
+  run-to-run spread). On software raster the `DropShadowEffect` glow costs **7.4 ms** over baseline
+  on X11 and 6.3 ms on shm; the `BoxShadow` glow **1.5 ms** and 1.2 ms. The plan's assumption holds
+  where it costs anything, and nothing on a GPU tells the two apart.
 - **The scaled-and-blurred artwork is a one-off.** `blur-once` sits within 0.15 ms of baseline in
-  every column (+0.15, +0.05, +0.07, +0.15), so the `BlurEffect` on a 64 px bitmap is paid once and
-  cached, not re-run per frame. (`Bitmap.CreateScaledBitmap` throws *"Invalid source bitmap type"*
-  for a `WriteableBitmap`; it wants a decoded `Bitmap`, which real artwork already is.)
+  every Linux column (+0.15, +0.05, +0.07, +0.15) and 0.41 ms above it on macOS — the same order as
+  the two glow cases there (+0.45, +0.51), and orders of magnitude below what re-running a radius-32
+  blur over 880×600 every frame would cost. So the `BlurEffect` on a 64 px bitmap is paid once and cached, not
+  re-run per frame. (`Bitmap.CreateScaledBitmap` throws *"Invalid source bitmap type"* for a
+  `WriteableBitmap`; it wants a decoded `Bitmap`, which real artwork already is.)
 - **The three-ellipse backdrop is 7–7.6 ms of CPU per frame on software rendering** at 880×600 —
   close to half the 16.7 ms frame on one core, and it scales with window area. On GPU it is 0.1 ms.
   So the backdrop is free where GL works and needs a "reduced motion / no GL" switch where it does
   not; the probe's `mapped graphics libraries` line is how to tell the two apart at runtime.
+
+**Two of the probe's evidence lines are Linux-only, so the macOS rows have no renderer evidence.**
+`mapped graphics libraries` and `open DRM nodes` read `/proc/self/maps` and `/proc/self/fd`, and the
+`per-thread-cpu-ms/frame` breakdown reads `/proc/self/task`; all three return nothing on macOS, and
+`per-thread-cpu-ms/frame=[]` in the macOS `RESULT` lines is that, not an absence of threads. So the
+macOS column rests on `Process.TotalProcessorTime` and the frame count alone: there is no independent
+confirmation of *which* renderer produced those numbers, the way there is on Linux. Nothing here needs
+a substitute invented for it — it just means "macOS, GPU" is an assumption from the platform default
+rather than something read back from the process.
+
+**No screenshots for macOS.** The Linux rows are backed by `docs/screenshots/spike/`; the macOS rows
+are not. `screencapture` on the dev Mac fails with *"could not create image from display"* because
+Screen Recording is not granted to the terminal, so `SPIKE_SCREENSHOT` cannot capture unattended
+either, and an in-process `RenderTargetBitmap` is no substitute for the one shot that matters — it
+renders the client area only, which is exactly the half of the traffic-light composition that is not
+in question. The macOS decoration row therefore stands on its property values, which are unambiguous
+about the inset (`WindowDecorationMargin=0,28,0,0` with `FrameSize == ClientSize`) even though no
+committed image shows it.
