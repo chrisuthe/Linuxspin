@@ -3,9 +3,21 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:Sendspin.Player.ViewModels"
+             xmlns:behaviors="using:Sendspin.Player.Behaviors"
              mc:Ignorable="d"
              x:Class="Sendspin.Player.Views.SettingsView"
              x:DataType="vm:SettingsViewModel">
+
+    <UserControl.Styles>
+        <!--
+          Every control in this panel writes straight through to settings.json, so a wheel notch
+          that lands on a closed ComboBox must not edit it. Stated once, as a style over the whole
+          panel, so a ComboBox added below inherits the guard instead of having to remember it.
+        -->
+        <Style Selector="ComboBox">
+            <Setter Property="behaviors:ComboBoxWheelGuard.IsEnabled" Value="True" />
+        </Style>
+    </UserControl.Styles>
 
     <StackPanel Classes="settings" Spacing="14">
 

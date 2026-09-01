@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Sendspin.Ui.Tests</RootNamespace>
+    <AssemblyName>Sendspin.Ui.Tests</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Avalonia.Headless" />
+    <PackageReference Include="Avalonia.Themes.Fluent" />
+  </ItemGroup>
+
+  <!--
+    A second test project rather than more files in Sendspin.Tests, which references Core and
+    Platform.Shared only and states that as a forcing function: needing a platform reference to
+    test a decision means the decision is still in an adapter. A wheel guard is not a decision —
+    it is Avalonia input routing, and there is nowhere but the UI head to exercise it. Keeping it
+    here leaves that boundary, and the Avalonia headless dependency, out of the other project.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Sendspin.Player\Sendspin.Player.csproj" />
+  </ItemGroup>
+
+</Project>
