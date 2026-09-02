@@ -1166,7 +1166,12 @@ the test that pins which composition is active (`Sendspin.Ui.Tests/NowPlayingVie
 5's breathing-art work both read the switch off the one control, and because the art's size is a
 computed value a query could not express anyway: the body width minus the 24 px margins when
 stacked, the body height when split, less what the text and transport need, never more than 320 px
-and never less than 96 (`NowPlayingView.ArtSizeFor`, pinned by a theory). The tile is three borders:
+and never less than 96 (`NowPlayingView.ArtSizeFor`, pinned by a theory). The stacked text column
+follows the art's width down to 280 px and no further (`MinTextColumnWidth`, the floor the wide
+column already had, capped at the body's width), so a short body — the diagnostics panel open, or
+the 560 px minimum height — shrinks the picture rather than trimming the title to a word and pushing
+the progress row's times onto the bar; the bar itself drops the theme's 200 px `MinWidth`, which no
+row that narrow could hold. The tile is three borders:
 `ArtBreath`, the wrapper Phase 5 animates, carrying nothing today; `ArtTile`, which holds the resting
 `BoxShadow` (the cheap glow in the effect table above) and must not clip, since a shadow lies outside
 the bounds; and `ArtClip`, which clips the picture to the 12 px radius and paints `ArtPlaceholderBrush`

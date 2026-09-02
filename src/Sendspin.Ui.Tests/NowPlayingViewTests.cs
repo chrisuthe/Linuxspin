@@ -89,6 +89,68 @@ public sealed class NowPlayingViewTests(HeadlessSession headless)
     public void TheArt_TakesTheRoomItHas(bool isWide, double width, double height, double detailsHeight, double expected) =>
         Assert.Equal(expected, NowPlayingView.ArtSizeFor(isWide, new Size(width, height), detailsHeight));
 
+    /// <remarks>
+    /// The art's width until the art drops below the floor, then the floor, then the body — the
+    /// last only below the shell's 400 px minimum, pinned as the rule rather than as a reachable size.
+    /// </remarks>
+    [Theory]
+    [InlineData(320, 440, 320)]
+    [InlineData(280, 440, 280)]
+    [InlineData(120, 440, NowPlayingView.MinTextColumnWidth)]
+    [InlineData(NowPlayingView.ArtMinSize, 400, NowPlayingView.MinTextColumnWidth)]
+    [InlineData(NowPlayingView.ArtMinSize, 300, 252)]
+    public void TheTextColumn_FollowsTheArtDownToItsFloor(double art, double width, double expected) =>
+        Assert.Equal(expected, NowPlayingView.TextColumnWidthFor(art, width));
+
+    /// <remarks>
+    /// The smallest window the shell allows, with the diagnostics panel taking its share of the
+    /// body: the art is at its floor, the text column is not, and both times sit beside the bar.
+    /// The hour-long case leaves the bar less than the theme's 200 px minimum, which the track
+    /// style has to override for the bar to stay in its column.
+    /// </remarks>
+    [Theory]
+    [InlineData(238, 144)]
+    [InlineData(7198, 3744)]
+    public void TheTextColumn_StaysReadableWhenTheBodyIsShort(int durationSeconds, int positionSeconds) => headless.Run(() =>
+    {
+        using var shell = Shell.Show();
+        shell.ViewModel.Diagnostics.SetVisible(true);
+        shell.Window.Width = 400;
+        shell.Window.Height = 560;
+        var (view, art, _, _, _) = Connect(shell);
+
+        shell.ViewModel.ApplyState(new MediaSessionState
+        {
+            Status = MediaPlaybackStatus.Playing,
+            Title = "Everybody's Got a Hungry Heart, Every Now and Then",
+            Artist = "Garth Brooks and the Complete Studio Orchestra",
+            Album = "The Long Record",
+            Duration = TimeSpan.FromSeconds(durationSeconds),
+            Position = TimeSpan.FromSeconds(positionSeconds),
+        });
+        Dispatcher.UIThread.RunJobs();
+
+        var text = shell.FindIn<StackPanel>(view, "TrackText");
+        var bar = shell.FindIn<ProgressBar>(view, "TrackProgress");
+        var elapsed = shell.FindIn<TextBlock>(view, "ElapsedText");
+        var duration = shell.FindIn<TextBlock>(view, "DurationText");
+
+        Assert.False(view.IsWide);
+        Assert.True(shell.ViewModel.Diagnostics.IsVisible);
+        Assert.True(view.Bounds.Height < 400, $"body is {view.Bounds.Height} tall");
+        Assert.True(art.Bounds.Width < NowPlayingView.MinTextColumnWidth, $"art is {art.Bounds.Width} wide");
+        Assert.True(text.Bounds.Width >= NowPlayingView.MinTextColumnWidth, $"text column is {text.Bounds.Width} wide");
+        Assert.True(text.Bounds.Width <= view.Bounds.Width - 2 * NowPlayingView.EdgeMargin);
+
+        Assert.True(bar.IsVisible);
+        Assert.Equal(0, bar.MinWidth);
+        Assert.True(bar.Bounds.Width < 200, $"bar is {bar.Bounds.Width} wide");
+        Assert.False(elapsed.Bounds.Intersects(bar.Bounds), $"elapsed at {elapsed.Bounds}, bar at {bar.Bounds}");
+        Assert.False(duration.Bounds.Intersects(bar.Bounds), $"duration at {duration.Bounds}, bar at {bar.Bounds}");
+        Assert.True(elapsed.Bounds.Right <= bar.Bounds.Left);
+        Assert.True(bar.Bounds.Right <= duration.Bounds.Left);
+    });
+
     [Fact]
     public void TheArtTile_IsClippedShadowedAndWrapped() => headless.Run(() =>
     {

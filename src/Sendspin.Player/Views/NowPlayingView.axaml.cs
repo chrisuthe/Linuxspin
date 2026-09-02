@@ -40,7 +40,7 @@ public sealed partial class NowPlayingView : UserControl
     /// <summary>The gap between the art and the text: below it when narrow, beside it when wide.</summary>
     internal const double ArtGap = 24;
 
-    /// <summary>The least the wide composition's text column is given before the art shrinks.</summary>
+    /// <summary>The least the text column is given before the art shrinks, beside it or beneath it.</summary>
     internal const double MinTextColumnWidth = 280;
 
     /// <summary>
@@ -79,6 +79,21 @@ public sealed partial class NowPlayingView : UserControl
         return Math.Clamp(fit, ArtMinSize, ArtMaxSize);
     }
 
+    /// <summary>
+    /// The narrow composition's text column: the art's width, but never less than
+    /// <see cref="MinTextColumnWidth"/> while the body has that to give.
+    /// </summary>
+    /// <remarks>
+    /// A short body shrinks the art towards <see cref="ArtMinSize"/>, and a column that narrow
+    /// trims the title to a word and leaves the progress row's two times no room beside the bar.
+    /// The column is always a fixed width here, since a fixed width is what centres and trims it.
+    /// </remarks>
+    internal static double TextColumnWidthFor(double art, double availableWidth)
+    {
+        var body = Math.Max(availableWidth - 2 * EdgeMargin, 0);
+        return Math.Min(Math.Max(art, MinTextColumnWidth), body);
+    }
+
     protected override void OnSizeChanged(SizeChangedEventArgs e)
     {
         base.OnSizeChanged(e);
@@ -109,8 +124,9 @@ public sealed partial class NowPlayingView : UserControl
         ArtTile.Width = art;
         ArtTile.Height = art;
 
-        // The text trims at the art's edge when stacked beneath it, and at the column's when beside it.
-        TrackText.Width = isWide ? double.NaN : art;
+        // The text trims at the column's edge when beside the art, and at the art's edge when
+        // stacked beneath it, down to the column's floor.
+        TrackText.Width = isWide ? double.NaN : TextColumnWidthFor(art, size.Width);
     }
 
     private void ApplyShadow()
