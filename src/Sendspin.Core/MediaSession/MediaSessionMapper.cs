@@ -26,21 +26,53 @@ public static class MediaSessionMapper
     /// </remarks>
     public const string TrackIdRoot = "/io/sendspin/client/track/";
 
+    /// <summary>The protocol's <c>playback_speed</c> for normal speed: a ×1000 integer.</summary>
+    private const double NormalPlaybackSpeed = 1000;
+
     /// <summary>
-    /// Projects the server's authoritative group state into a media-session snapshot.
+    /// Projects the server's authoritative group state into a media-session snapshot, taking the
+    /// track metadata as it stands at its own timestamp.
     /// </summary>
+    /// <remarks>
+    /// The group's own <see cref="GroupState.Metadata"/> is whatever the server sent last, which
+    /// may be a scheduled update that is not in effect yet. The service therefore does not call
+    /// this; it schedules the metadata and calls
+    /// <see cref="FromGroupState(GroupState?, TrackMetadata?, string?, long)"/> with the current
+    /// one. This overload is the plain projection for callers with no clock in hand.
+    /// </remarks>
     /// <param name="group">The group state, or null when disconnected.</param>
     /// <param name="artworkFilePath">
     /// Path to the artwork file for the current track, or null when there is none.
     /// </param>
-    public static MediaSessionState FromGroupState(GroupState? group, string? artworkFilePath = null)
+    public static MediaSessionState FromGroupState(GroupState? group, string? artworkFilePath = null) =>
+        FromGroupState(group, group?.Metadata, artworkFilePath, elapsedMicrosSinceMetadata: 0);
+
+    /// <summary>
+    /// Projects the server's authoritative group state into a media-session snapshot.
+    /// </summary>
+    /// <param name="group">The group state, or null when disconnected.</param>
+    /// <param name="metadata">
+    /// The track metadata currently in effect — the scheduler's current value, not necessarily the
+    /// group's latest — or null when there is none.
+    /// </param>
+    /// <param name="artworkFilePath">
+    /// Path to the artwork file for the current track, or null when there is none.
+    /// </param>
+    /// <param name="elapsedMicrosSinceMetadata">
+    /// How long ago, on the local clock, <paramref name="metadata"/> took effect. The position is
+    /// projected forward by this, per <see cref="ProjectPosition"/>.
+    /// </param>
+    public static MediaSessionState FromGroupState(
+        GroupState? group,
+        TrackMetadata? metadata,
+        string? artworkFilePath,
+        long elapsedMicrosSinceMetadata)
     {
         if (group is null)
         {
             return MediaSessionState.Idle;
         }
 
-        var metadata = group.Metadata;
         var duration = ToTimeSpan(metadata?.Duration);
         var identity = BuildTrackIdentity(metadata);
         var commands = group.SupportedCommands ?? [];
@@ -54,7 +86,7 @@ public static class MediaSessionMapper
             AlbumArtist = NullIfBlank(metadata?.AlbumArtist),
             ArtworkFilePath = artworkFilePath,
             Duration = duration,
-            Position = ToTimeSpan(metadata?.Position) ?? TimeSpan.Zero,
+            Position = ProjectPosition(metadata?.Progress, elapsedMicrosSinceMetadata),
             CanGoNext = Supports(commands, Commands.Next),
             CanGoPrevious = Supports(commands, Commands.Previous),
             // Always false. The player role has no seek command — position belongs to the server,
@@ -69,6 +101,48 @@ public static class MediaSessionMapper
             Muted = group.Muted,
             TrackIdentity = identity
         };
+    }
+
+    /// <summary>
+    /// The spec's track-position formula (<c>roles/metadata/v1.md</c>, "Calculating current track
+    /// position"): where the track is <paramref name="elapsedMicros"/> after the metadata took
+    /// effect.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>progress = track_progress + elapsed × playback_speed / 1000</c>, in milliseconds, with
+    /// <c>playback_speed</c> the spec's ×1000 integer (1000 is normal, 0 is paused). Clamped to the
+    /// duration when one is known and never negative, exactly as the spec writes it.
+    /// </para>
+    /// <para>
+    /// <paramref name="elapsedMicros"/> is measured from the metadata's own timestamp, converted to
+    /// the local clock, never from when the message arrived: a server sends the next track's
+    /// metadata ahead of the audible change, so arrival time would credit the new track with the
+    /// seconds it had not yet played.
+    /// </para>
+    /// </remarks>
+    /// <param name="progress">The metadata's progress object, or null when it has none.</param>
+    /// <param name="elapsedMicros">
+    /// Local microseconds since the metadata's timestamp. A negative value, which only a caller
+    /// projecting a not-yet-current update could produce, counts as zero.
+    /// </param>
+    public static TimeSpan ProjectPosition(PlaybackProgress? progress, long elapsedMicros)
+    {
+        if (progress is null || progress.TrackProgress is not { } start || double.IsNaN(start))
+        {
+            return TimeSpan.Zero;
+        }
+
+        var speed = progress.PlaybackSpeed ?? NormalPlaybackSpeed;
+        var elapsedMilliseconds = Math.Max(elapsedMicros, 0) / 1000.0;
+        var projected = start + elapsedMilliseconds * speed / NormalPlaybackSpeed;
+
+        if (progress.TrackDuration is > 0 and var duration)
+        {
+            projected = Math.Min(projected, duration);
+        }
+
+        return TimeSpan.FromMilliseconds(Math.Max(projected, 0));
     }
 
     /// <summary>
