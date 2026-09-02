@@ -88,12 +88,14 @@
 
                 <!--
                   Now Playing fills the body rather than scrolling in it: it sizes its art to
-                  the room it has, which needs a real height to size against.
+                  the room it has, which needs a real height to size against. Both step aside
+                  while the settings card is open (the view model says why), leaving the card
+                  over the backdrop layers alone.
                 -->
                 <views:NowPlayingView Name="NowPlaying"
-                                      IsVisible="{Binding IsConnected}" />
+                                      IsVisible="{Binding ShowsNowPlaying}" />
 
-                <ScrollViewer IsVisible="{Binding !IsConnected}">
+                <ScrollViewer Name="WelcomeScroller" IsVisible="{Binding ShowsWelcome}">
                     <views:WelcomeView Name="Welcome" />
                 </ScrollViewer>
 

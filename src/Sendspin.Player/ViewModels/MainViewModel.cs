@@ -94,6 +94,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [NotifyPropertyChangedFor(nameof(HasFooterStatus))]
     [NotifyPropertyChangedFor(nameof(HasFooter))]
     [NotifyPropertyChangedFor(nameof(IsSearching))]
+    [NotifyPropertyChangedFor(nameof(ShowsNowPlaying))]
+    [NotifyPropertyChangedFor(nameof(ShowsWelcome))]
     [NotifyCanExecuteChangedFor(nameof(DisconnectCommand))]
     [NotifyCanExecuteChangedFor(nameof(PlayPauseCommand))]
     [NotifyCanExecuteChangedFor(nameof(NextCommand))]
@@ -160,6 +162,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private TimeSpan _position;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowsNowPlaying))]
+    [NotifyPropertyChangedFor(nameof(ShowsWelcome))]
     private bool _isSettingsOpen;
 
     /// <summary>
@@ -252,6 +256,20 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         : IsConnected
             ? $"Connected to {ServerName ?? "server"}"
             : "Not connected";
+
+    /// <summary>
+    /// Gets whether Now Playing is on screen: connected, and the settings card is not over it.
+    /// </summary>
+    /// <remarks>
+    /// The card's surface is translucent so the blurred backdrop tints it, and that only reads
+    /// while what is under it is the backdrop: over the art tile and the title the rows were
+    /// illegible. So the body content steps aside while the card is open and the backdrop layers
+    /// stay.
+    /// </remarks>
+    public bool ShowsNowPlaying => IsConnected && !IsSettingsOpen;
+
+    /// <summary>Gets whether Welcome is on screen: not connected, and the settings card is not over it.</summary>
+    public bool ShowsWelcome => !IsConnected && !IsSettingsOpen;
 
     /// <summary>Gets whether either backdrop layer is showing, which is when the veil is needed.</summary>
     public bool HasBackdrop => HasArtBackdrop || HasAmbientBackdrop;

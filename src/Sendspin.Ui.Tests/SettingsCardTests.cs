@@ -83,6 +83,34 @@ public sealed class SettingsCardTests(HeadlessSession headless)
     });
 
     [Fact]
+    public void TheCard_SitsOverTheBackdropNotOverTheContent() => headless.Run(() =>
+    {
+        using var shell = Shell.Show();
+        var nowPlaying = shell.Find<NowPlayingView>("NowPlaying");
+        var welcome = shell.Find<ScrollViewer>("WelcomeScroller");
+
+        Assert.True(welcome.IsVisible);
+        Open(shell);
+        Assert.False(welcome.IsVisible);
+        Assert.False(nowPlaying.IsVisible);
+
+        // The backdrop layers are untouched: they are what the translucent card is meant to tint.
+        shell.ViewModel.HasArtBackdrop = true;
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(shell.Find<Panel>("ArtBackdrop").IsVisible);
+        Assert.True(shell.Find<Border>("Veil").IsVisible);
+
+        shell.ViewModel.IsConnected = true;
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(nowPlaying.IsVisible);
+
+        shell.ViewModel.IsSettingsOpen = false;
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(nowPlaying.IsVisible);
+        Assert.False(welcome.IsVisible);
+    });
+
+    [Fact]
     public void EveryBooleanRow_IsASwitchWithNoLabelOfItsOwn() => headless.Run(() =>
     {
         using var shell = Shell.Show();

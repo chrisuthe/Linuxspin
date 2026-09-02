@@ -1225,7 +1225,11 @@ control writes through `SettingsService.Update` the moment it changes, as it did
 context is `MainViewModel`, exactly as Welcome's is: the Connection section binds `DisconnectCommand`
 and `ConnectionStatus` straight off it, and every setting binds through `Settings.` to
 `SettingsViewModel`, so Disconnect and the connection line sit inside the card's section order
-without any state being duplicated. The version is read from the assembly once, in `AppInfo`
+without any state being duplicated. Now Playing and Welcome step aside while the card is open
+(`MainViewModel.ShowsNowPlaying` / `ShowsWelcome`): the card's surface is the 60 % translucent
+token, which reads as a tint over the blurred backdrop and the veil, and read as nothing over the
+art tile and the title — the first screenshot had the rows over a Garth Brooks cover. The backdrop
+layers stay, so the card is still on the music. The version is read from the assembly once, in `AppInfo`
 (`Version` for the protocol's `device_info`, `DisplayVersion` — the same string without its
 `+commit` metadata — for the footer). Five sections, each a `sectionCaption` over rows: General
 (the four notification events, Discord Rich Presence, start hidden in the tray, closing keeps
