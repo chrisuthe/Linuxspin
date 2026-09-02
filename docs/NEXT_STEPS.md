@@ -248,6 +248,13 @@ nothing pending"). What remains is upstream: SDK 9.3.2 raises no event for `stre
 spec discards pending values, so a pending value outlives a stream end until its own timestamp; and
 the announce-and-parts artwork transfer the spec adopted on 2026-09-02 is not in 9.3.2 at all.
 
+Measured live on 2026-09-02 against Music Assistant (the Debug lines the service now writes per
+update): at a gapless queue boundary MA stamped the next picture 109 ms *in the past* and the next
+metadata 3 ms in the past, and sent the picture about 270 ms before the metadata. Past-stamped
+values apply at once by the spec's own rule, so with today's MA the cover still leads the title by
+that quarter second and both lead the audible change by the buffer. The fix for that is on the
+server: stamping both for the audible boundary, which this player now honours.
+
 **First action:** none until the SDK bump that adds both. When it lands, discard pending values on
 the stream-end event and take "transfer complete" from the SDK — the scheduler is built on the
 complete-image event, so nothing else moves. The cross-fade the spec permits around a picture's
