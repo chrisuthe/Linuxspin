@@ -884,6 +884,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     /// </summary>
     private void LoadArtwork(string? path)
     {
+        // The path is the whole test: the cache names each file by the image bytes, so a new
+        // picture is always a new path and the same path is always the picture already shown.
         if (path == _artworkPath)
         {
             return;

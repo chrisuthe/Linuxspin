@@ -209,23 +209,38 @@ public sealed class MediaSessionMapperTests
     }
 
     /// <summary>
-    /// Artwork filenames must be unique per track.
+    /// Artwork filenames must be unique per picture, and stable for one.
     /// </summary>
     /// <remarks>
-    /// GNOME's texture cache is keyed on the icon string for the lifetime of the shell, so reusing
-    /// one filename leaves the first track's picture on screen for the rest of the session.
+    /// Every consumer dedupes by path — the window's reload check, GNOME's texture cache, Plasma's
+    /// applet — so a new picture must be a new path. The name comes from the bytes rather than the
+    /// track, because with a queue the picture can arrive before the metadata that describes it,
+    /// and a metadata-derived name would overwrite the current track's file in place.
     /// </remarks>
     [Fact]
-    public void ArtworkFileName_DiffersPerTrackAndIsStableForOne()
+    public void ArtworkFileName_DiffersPerPictureAndIsStableForOne()
     {
-        var first = MediaSessionMapper.BuildTrackIdentity(
-            new TrackMetadata { Title = "One", Artist = "A", Album = "X" });
-        var second = MediaSessionMapper.BuildTrackIdentity(
-            new TrackMetadata { Title = "Two", Artist = "A", Album = "X" });
+        byte[] first = [0xFF, 0xD8, 0xFF, 0x01];
+        byte[] second = [0xFF, 0xD8, 0xFF, 0x02];
 
         Assert.NotEqual(MediaSessionMapper.ArtworkFileName(first), MediaSessionMapper.ArtworkFileName(second));
-        Assert.Equal(MediaSessionMapper.ArtworkFileName(first), MediaSessionMapper.ArtworkFileName(first));
+        Assert.Equal(MediaSessionMapper.ArtworkFileName(first), MediaSessionMapper.ArtworkFileName([.. first]));
         Assert.DoesNotContain(Path.DirectorySeparatorChar, MediaSessionMapper.ArtworkFileName(first));
+        Assert.DoesNotContain(Path.AltDirectorySeparatorChar, MediaSessionMapper.ArtworkFileName(first));
+    }
+
+    /// <summary>
+    /// The extension is the caller's, and the name does not depend on it being dotted.
+    /// </summary>
+    [Fact]
+    public void ArtworkFileName_TakesTheExtensionEitherWay()
+    {
+        byte[] bytes = [1, 2, 3];
+
+        Assert.EndsWith(".png", MediaSessionMapper.ArtworkFileName(bytes, "png"));
+        Assert.Equal(
+            MediaSessionMapper.ArtworkFileName(bytes, "png"),
+            MediaSessionMapper.ArtworkFileName(bytes, ".png"));
     }
 
     /// <summary>

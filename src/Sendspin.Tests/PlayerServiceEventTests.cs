@@ -13,7 +13,7 @@ namespace Sendspin.Tests;
 
 /// <summary>
 /// Tests that the player service forwards the palette and the visualizer frames a session
-/// delivers, as it does the artwork.
+/// delivers, and that the artwork it publishes survives the order a queue delivers it in.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -84,6 +84,57 @@ public sealed class PlayerServiceEventTests
         Assert.Equal(1_000, frames[0].Timestamp);
         Assert.True(frames[1].IsDownbeat);
         Assert.Null(frames[1].Loudness);
+    }
+
+    /// <summary>
+    /// A picture that arrives before its track's metadata must still be published as a change.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The order seen live with a queue in place: track 1's metadata, its artwork A, then artwork B
+    /// <em>before</em> track 2's metadata. Every consumer of the published path dedupes by it — the
+    /// window's reload check, the MPRIS applets' URL cache — so if B were written under the name the
+    /// current metadata implies it would overwrite A's file in place and nothing would notice. The
+    /// path has to change the moment B arrives, and the two paths have to differ.
+    /// </para>
+    /// <para>
+    /// The same picture re-sent must land at the same path: that is the dedupe working as intended,
+    /// not a regression.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task ArtworkArrivingBeforeItsMetadata_IsPublishedUnderANewPath()
+    {
+        using var paths = new TemporaryPaths();
+        var (service, connection) = await ConnectAsync(paths);
+        await using var _ = service;
+
+        var published = new List<string?>();
+        service.StateChanged += (_, state) => published.Add(state.ArtworkFilePath);
+
+        connection.Receive("""
+            {"type":"server/state","payload":{"metadata":{"title":"One","artist":"A","album":"X"}}}
+            """);
+        connection.ReceiveBinary(ArtworkFrame(timestamp: 1_000, Jpeg(marker: 0xA1)));
+        var pathA = published[^1];
+
+        connection.ReceiveBinary(ArtworkFrame(timestamp: 2_000, Jpeg(marker: 0xB2)));
+        var pathB = published[^1];
+
+        connection.Receive("""
+            {"type":"server/state","payload":{"metadata":{"title":"Two","artist":"A","album":"X"}}}
+            """);
+
+        Assert.NotNull(pathA);
+        Assert.NotNull(pathB);
+        Assert.NotEqual(pathA, pathB);
+        Assert.Equal(pathB, published[^1]);
+        Assert.True(File.Exists(pathA));
+        Assert.True(File.Exists(pathB));
+
+        connection.ReceiveBinary(ArtworkFrame(timestamp: 3_000, Jpeg(marker: 0xB2)));
+
+        Assert.Equal(pathB, published[^1]);
     }
 
     /// <remarks>
@@ -170,6 +221,12 @@ public sealed class PlayerServiceEventTests
 
     private static byte[] BeatFrame(long timestamp, bool downbeat) =>
         Frame(BinaryMessageTypes.VisualizerBeat, timestamp, [(byte)(downbeat ? 1 : 0)]);
+
+    private static byte[] ArtworkFrame(long timestamp, byte[] image) =>
+        Frame(BinaryMessageTypes.Artwork0, timestamp, image);
+
+    /// <summary>A JPEG signature followed by one byte that makes this picture distinct.</summary>
+    private static byte[] Jpeg(byte marker) => [0xFF, 0xD8, 0xFF, marker];
 
     private sealed class NoAudioDevices : IAudioDeviceEnumerator
     {

@@ -166,18 +166,25 @@ public static class MediaSessionMapper
     }
 
     /// <summary>
-    /// Builds a filename for this track's artwork.
+    /// Builds a filename for a piece of artwork from the image bytes themselves.
     /// </summary>
     /// <remarks>
-    /// Unique per track, and that is a requirement rather than tidiness: GNOME's texture cache
-    /// is keyed on the icon string for the lifetime of the shell, so reusing one filename
-    /// leaves the first track's art on screen forever.
+    /// <para>
+    /// Unique per picture, and that is a requirement rather than tidiness. Every consumer of
+    /// the path dedupes by it: the window reloads only when the path changes, and GNOME's
+    /// texture cache and Plasma's applet cache cover art by URL for the life of the shell. So a
+    /// new picture must always land at a new path, and the same picture re-sent may land at the
+    /// same one.
+    /// </para>
+    /// <para>
+    /// Hashing the bytes rather than the track's metadata is what makes that hold: with a queue
+    /// the server can deliver the next track's picture before the next track's metadata, and a
+    /// name taken from the metadata would then overwrite the current track's file in place,
+    /// under a path nobody rereads.
+    /// </para>
     /// </remarks>
-    public static string ArtworkFileName(string? trackIdentity, string extension = "jpg")
-    {
-        var token = string.IsNullOrEmpty(trackIdentity) ? "notrack" : ToHexToken(trackIdentity);
-        return $"artwork-{token}.{extension.TrimStart('.')}";
-    }
+    public static string ArtworkFileName(ReadOnlySpan<byte> imageData, string extension = "jpg") =>
+        $"artwork-{ToHexToken(imageData)}.{extension.TrimStart('.')}";
 
     /// <summary>
     /// Derives a stable identity for a track from its metadata.
@@ -185,8 +192,8 @@ public static class MediaSessionMapper
     /// <remarks>
     /// Hashed from artist, album and title rather than taken from a server-supplied id,
     /// because the protocol's metadata carries no track identifier. Position is deliberately
-    /// excluded so that the identity, and therefore the artwork filename and the MPRIS track
-    /// id, stay put as a track plays.
+    /// excluded so that the identity, and therefore the MPRIS track id, stays put as a track
+    /// plays.
     /// </remarks>
     public static string? BuildTrackIdentity(TrackMetadata? metadata)
     {
@@ -231,12 +238,17 @@ public static class MediaSessionMapper
     /// filename.
     /// </summary>
     /// <remarks>
-    /// SHA-256 truncated to 16 bytes. Not a security boundary — it exists so that a title
-    /// containing a slash, a colon or a non-ASCII character cannot produce an invalid path.
+    /// Not a security boundary — it exists so that a title containing a slash, a colon or a
+    /// non-ASCII character cannot produce an invalid path.
     /// </remarks>
-    private static string ToHexToken(string value)
+    private static string ToHexToken(string value) => ToHexToken(Encoding.UTF8.GetBytes(value));
+
+    /// <summary>
+    /// Reduces arbitrary bytes to a short hex token: SHA-256 truncated to 16 bytes.
+    /// </summary>
+    private static string ToHexToken(ReadOnlySpan<byte> value)
     {
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(value));
+        var hash = SHA256.HashData(value);
         return Convert.ToHexString(hash.AsSpan(0, 16)).ToLower(CultureInfo.InvariantCulture);
     }
 }
