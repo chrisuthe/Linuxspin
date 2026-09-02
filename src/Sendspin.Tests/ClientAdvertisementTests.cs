@@ -256,6 +256,33 @@ public sealed class ClientAdvertisementTests
     }
 
     /// <summary>
+    /// The living backdrop's two roles, and the support object the visualizer one needs.
+    /// </summary>
+    /// <remarks>
+    /// The same shape as the artwork pin above, in the other direction: the SDK emits
+    /// <c>visualizer@v1_support</c> whenever the support object is set, and a support object
+    /// for a role that is not listed is the non-compliant hello the role-versioning bug produced.
+    /// So the wire form is asserted to carry both halves, and to ask for exactly the features
+    /// the backdrop renders.
+    /// </remarks>
+    [Fact]
+    public async Task Visualizer_SupportIsAdvertisedAlongsideTheVisualizerAndColorRoles()
+    {
+        await using var session = await Session.OpenAsync();
+        var hello = session.Hello;
+
+        var roles = hello.GetProperty("supported_roles").EnumerateArray().Select(r => r.GetString()).ToList();
+        Assert.Contains("color@v1", roles);
+        Assert.Contains("visualizer@v1", roles);
+
+        Assert.True(hello.TryGetProperty("visualizer@v1_support", out var support));
+        Assert.Equal(["loudness", "beat"], support.GetProperty("types").EnumerateArray().Select(t => t.GetString()));
+        Assert.Equal(30, support.GetProperty("rate_max").GetInt32());
+        Assert.Equal(4096, support.GetProperty("buffer_capacity").GetInt32());
+        Assert.False(support.TryGetProperty("spectrum", out _));
+    }
+
+    /// <summary>
     /// The channel source advertised has to be one the protocol defines.
     /// </summary>
     /// <remarks>
@@ -395,8 +422,8 @@ public sealed class ClientAdvertisementTests
 
         private const string ServerHello = """
             {"type":"server/hello","payload":{"server_id":"srv","name":"Test","version":1,
-            "supported_roles":["player@v1","controller@v1","metadata@v1","artwork@v1"],
-            "active_roles":["player@v1","controller@v1","metadata@v1","artwork@v1"]}}
+            "supported_roles":["player@v1","controller@v1","metadata@v1","artwork@v1","color@v1","visualizer@v1"],
+            "active_roles":["player@v1","controller@v1","metadata@v1","artwork@v1","color@v1","visualizer@v1"]}}
             """;
 
         private readonly List<JsonDocument> _parsed = [];
