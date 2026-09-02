@@ -6,6 +6,7 @@ using Avalonia.Threading;
 using Sendspin.Core.Configuration;
 using Sendspin.Player;
 using Sendspin.Player.Controls;
+using Sendspin.Player.Converters;
 using Sendspin.Player.Views;
 using Sendspin.SDK.Client;
 using Xunit;
@@ -199,6 +200,82 @@ public sealed class SettingsCardTests(HeadlessSession headless)
         var refresh = shell.FindIn<Button>(body, "RefreshDevicesButton");
         Assert.Same(shell.ViewModel.Settings.RefreshDevicesCommand, refresh.Command);
         Assert.True(devices.Bounds.Right <= refresh.Bounds.Left);
+    });
+
+    /// <remarks>
+    /// After the Switch Group row and before the player name, as the brief places them. The
+    /// intensity row is a slider labelled as a percentage of the tuned default, and it goes away
+    /// while the style is Off, since there is nothing for it to scale.
+    /// </remarks>
+    [Fact]
+    public void TheBackdropRows_WriteThroughAndTheIntensityRowHidesWhileOff() => headless.Run(() =>
+    {
+        using var shell = Shell.Show();
+        var overlay = Open(shell);
+        var body = shell.Find<SettingsView>("SettingsBody");
+
+        var style = shell.FindIn<ComboBox>(body, "BackdropModeBox");
+        var row = shell.FindIn<StackPanel>(body, "BackdropIntensityRow");
+        var slider = shell.FindIn<Slider>(body, "BackdropIntensitySlider");
+        var percent = shell.FindIn<TextBlock>(body, "BackdropIntensityText");
+
+        Assert.Equal(BackdropMode.AmbientGlow, style.SelectedItem);
+        Assert.Equal([BackdropMode.Off, BackdropMode.AmbientGlow, BackdropMode.BreathingArt], style.Items.Cast<BackdropMode>());
+        Assert.True(row.IsVisible);
+        Assert.Equal(1.0, slider.Value);
+        Assert.Equal((0.0, 2.0), (slider.Minimum, slider.Maximum));
+        Assert.Equal("100%", percent.Text);
+
+        var switchGroup = shell.FindIn<ToggleSwitch>(body, "ShowSwitchGroupSwitch");
+        var name = shell.FindIn<TextBox>(body, "PlayerNameBox");
+        Assert.True(Shell.TopIn(switchGroup, overlay) < Shell.TopIn(style, overlay));
+        Assert.True(Shell.TopIn(style, overlay) < Shell.TopIn(slider, overlay));
+        Assert.True(Shell.TopIn(slider, overlay) < Shell.TopIn(name, overlay));
+
+        slider.Value = 1.5;
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(1.5, shell.Settings.Current.Backdrop.Intensity);
+        Assert.Equal("150%", percent.Text);
+        Assert.Equal(1.5, shell.ViewModel.Backdrop.Intensity);
+
+        style.SelectedItem = BackdropMode.Off;
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(BackdropMode.Off, shell.Settings.Current.Backdrop.Mode);
+        Assert.Equal(BackdropMode.Off, shell.ViewModel.Backdrop.Mode);
+        Assert.False(row.IsVisible);
+
+        style.SelectedItem = BackdropMode.BreathingArt;
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(BackdropMode.BreathingArt, shell.Settings.Current.Backdrop.Mode);
+        Assert.True(row.IsVisible);
+
+        // The picker shows the styles by name, not by enum member.
+        Assert.Equal("Off", BackdropModeLabel.For(BackdropMode.Off));
+        Assert.Equal("Ambient Glow", BackdropModeLabel.For(BackdropMode.AmbientGlow));
+        Assert.Equal("Breathing Art", BackdropModeLabel.For(BackdropMode.BreathingArt));
+    });
+
+    [Fact]
+    public void TheBackdropStyleRow_ExplainsWhenSoftwareRenderingForcedItOff() => headless.Run(() =>
+    {
+        using var gpu = Shell.Show();
+        gpu.ViewModel.Backdrop.ProbeRenderer();
+        Open(gpu);
+        Assert.False(gpu.FindIn<TextBlock>(gpu.Find<SettingsView>("SettingsBody"), "BackdropSoftwareNote").IsVisible);
+
+        using var software = Shell.Show(hasGpu: false);
+        software.ViewModel.Backdrop.ProbeRenderer();
+        Open(software);
+        Dispatcher.UIThread.RunJobs();
+
+        var note = software.FindIn<TextBlock>(software.Find<SettingsView>("SettingsBody"), "BackdropSoftwareNote");
+        Assert.True(note.IsVisible);
+        Assert.Contains("warning", note.Classes);
+        Assert.Contains("GPU", note.Text);
+
+        // The setting itself is untouched: the style comes back on a box with a GPU.
+        Assert.Equal(BackdropMode.AmbientGlow, software.Settings.Current.Backdrop.Mode);
+        Assert.Equal(BackdropMode.Off, software.ViewModel.Backdrop.EffectiveMode);
     });
 
     [Fact]

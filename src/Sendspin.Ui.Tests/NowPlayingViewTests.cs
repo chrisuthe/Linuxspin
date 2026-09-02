@@ -103,10 +103,11 @@ public sealed class NowPlayingViewTests(HeadlessSession headless)
         Assert.Equal(expected, NowPlayingView.TextColumnWidthFor(art, width));
 
     /// <remarks>
-    /// The smallest window the shell allows, with the diagnostics panel taking its share of the
-    /// body: the art is at its floor, the text column is not, and both times sit beside the bar.
-    /// The hour-long case leaves the bar less than the theme's 200 px minimum, which the track
-    /// style has to override for the bar to stay in its column.
+    /// The smallest window the shell allows, with the footer taking its share of the body: the
+    /// art is below the text column's floor, the column is not, and both times sit beside the
+    /// bar. The hour-long case leaves the bar less than the theme's 200 px minimum, which the
+    /// track style has to override for the bar to stay in its column. (The inline diagnostics
+    /// panel this once opened to shorten the body is a window of its own since Phase 4.)
     /// </remarks>
     [Theory]
     [InlineData(238, 144)]
@@ -114,7 +115,6 @@ public sealed class NowPlayingViewTests(HeadlessSession headless)
     public void TheTextColumn_StaysReadableWhenTheBodyIsShort(int durationSeconds, int positionSeconds) => headless.Run(() =>
     {
         using var shell = Shell.Show();
-        shell.ViewModel.Diagnostics.SetVisible(true);
         shell.Window.Width = 400;
         shell.Window.Height = 560;
         var (view, art, _, _, _) = Connect(shell);
@@ -136,8 +136,7 @@ public sealed class NowPlayingViewTests(HeadlessSession headless)
         var duration = shell.FindIn<TextBlock>(view, "DurationText");
 
         Assert.False(view.IsWide);
-        Assert.True(shell.ViewModel.Diagnostics.IsVisible);
-        Assert.True(view.Bounds.Height < 400, $"body is {view.Bounds.Height} tall");
+        Assert.True(view.Bounds.Height < shell.Window.ClientSize.Height, $"body is {view.Bounds.Height} tall");
         Assert.True(art.Bounds.Width < NowPlayingView.MinTextColumnWidth, $"art is {art.Bounds.Width} wide");
         Assert.True(text.Bounds.Width >= NowPlayingView.MinTextColumnWidth, $"text column is {text.Bounds.Width} wide");
         Assert.True(text.Bounds.Width <= view.Bounds.Width - 2 * NowPlayingView.EdgeMargin);
@@ -180,8 +179,10 @@ public sealed class NowPlayingViewTests(HeadlessSession headless)
         Assert.Null(shell.ViewModel.Artwork);
         Assert.True(placeholder.IsVisible);
 
-        // The wrapper Phase 5 animates carries nothing today.
-        Assert.Null(breath.RenderTransform);
+        // The wrapper Breathing Art animates rests at scale 1 while any other style is up.
+        var scale = Assert.IsType<ScaleTransform>(breath.RenderTransform);
+        Assert.Equal(1.0, scale.ScaleX);
+        Assert.Equal(1.0, scale.ScaleY);
         Assert.Same(tile, breath.Child);
     });
 

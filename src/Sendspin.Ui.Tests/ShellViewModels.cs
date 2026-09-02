@@ -6,6 +6,7 @@ using Sendspin.Core.MediaSession;
 using Sendspin.Core.Notifications;
 using Sendspin.Core.Platform;
 using Sendspin.Core.Presence;
+using Sendspin.Core.Visualization;
 using Sendspin.Platform.Shared.Client;
 using Sendspin.Platform.Shared.Media;
 using Sendspin.Platform.Shared.Notifications;
@@ -34,12 +35,10 @@ internal static class ShellViewModels
     /// Edits the settings the graph starts from. The view model reads the connection mode once,
     /// at construction, so a test that wants discover mode has to say so before it exists.
     /// </param>
-    public static ShellGraph CreateMain(Action<PlayerSettings>? configure = null)
+    /// <param name="hasGpu">What the renderer probe answers; a GPU unless a test says otherwise.</param>
+    public static ShellGraph CreateMain(Action<PlayerSettings>? configure = null, bool hasGpu = true)
     {
-        var initial = new PlayerSettings();
-        configure?.Invoke(initial);
-
-        var settings = new SettingsService(new InMemorySettingsStore(initial), NullLogger<SettingsService>.Instance);
+        var settings = CreateSettings(configure);
         var devices = new NoAudioDevices();
         var presence = new NullPresenceService();
 
@@ -62,13 +61,29 @@ internal static class ShellViewModels
             presence,
             new SettingsViewModel(settings, player, devices, presence, NullLogger<SettingsViewModel>.Instance),
             new DiagnosticsViewModel(player, new SyncCorrectionPolicy()),
+            new AmbientBackdropViewModel(settings, new FixedProbe(hasGpu), NullLogger<AmbientBackdropViewModel>.Instance),
             NullLogger<MainViewModel>.Instance);
 
         return new ShellGraph(viewModel, settings);
     }
 
+    /// <summary>A settings service over memory, starting from the defaults as <paramref name="configure"/> edits them.</summary>
+    public static SettingsService CreateSettings(Action<PlayerSettings>? configure = null)
+    {
+        var initial = new PlayerSettings();
+        configure?.Invoke(initial);
+
+        return new SettingsService(new InMemorySettingsStore(initial), NullLogger<SettingsService>.Instance);
+    }
+
     private static IAudioPlayer NoAudioPlayer() =>
         throw new InvalidOperationException("A shell test never opens an audio device.");
+
+    /// <summary>A renderer probe with the answer a test wants.</summary>
+    internal sealed class FixedProbe(bool hasGpu) : IGraphicsContextProbe
+    {
+        public bool HasGpuContext() => hasGpu;
+    }
 
     private sealed class InMemorySettingsStore(PlayerSettings initial) : ISettingsStore
     {

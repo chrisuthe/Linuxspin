@@ -86,6 +86,14 @@ public sealed partial class SettingsViewModel : ObservableObject, IAsyncDisposab
     [ObservableProperty]
     private bool _showSwitchGroupButton;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsBackdropIntensityVisible))]
+    private BackdropMode _backdropMode;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(BackdropIntensityText))]
+    private double _backdropIntensity;
+
     public SettingsViewModel(
         SettingsService settings,
         SendspinPlayerService player,
@@ -126,6 +134,16 @@ public sealed partial class SettingsViewModel : ObservableObject, IAsyncDisposab
 
     /// <summary>Gets the codecs this build can decode.</summary>
     public IReadOnlyList<string> Codecs { get; } = PlayerCapabilities.SupportedCodecs;
+
+    /// <summary>Gets the backdrop styles, for a bound selector, in the order the row offers them.</summary>
+    public IReadOnlyList<BackdropMode> BackdropModes { get; } =
+        [BackdropMode.Off, BackdropMode.AmbientGlow, BackdropMode.BreathingArt];
+
+    /// <summary>Gets whether the intensity row has anything to control: a style other than Off is chosen.</summary>
+    public bool IsBackdropIntensityVisible => BackdropMode != BackdropMode.Off;
+
+    /// <summary>Gets the intensity as the slider's label shows it: a percentage of the tuned default.</summary>
+    public string BackdropIntensityText => $"{Math.Round(BackdropIntensity * 100.0)}%";
 
     /// <summary>Gets the version the settings card's footer shows.</summary>
     public string AppVersion => AppInfo.DisplayVersion;
@@ -292,6 +310,22 @@ public sealed partial class SettingsViewModel : ObservableObject, IAsyncDisposab
         }
     }
 
+    partial void OnBackdropModeChanged(BackdropMode value)
+    {
+        if (!_isLoading)
+        {
+            _settings.Update(s => s.Backdrop.Mode = value);
+        }
+    }
+
+    partial void OnBackdropIntensityChanged(double value)
+    {
+        if (!_isLoading)
+        {
+            _settings.Update(s => s.Backdrop.Intensity = Math.Clamp(value, 0.0, BackdropSettings.MaxIntensity));
+        }
+    }
+
     partial void OnDiscordRichPresenceChanged(bool value)
     {
         if (_isLoading)
@@ -334,6 +368,8 @@ public sealed partial class SettingsViewModel : ObservableObject, IAsyncDisposab
             CloseToTray = settings.CloseToTray;
             DiscordRichPresence = settings.DiscordRichPresence;
             ShowSwitchGroupButton = settings.ShowSwitchGroupButton;
+            BackdropMode = settings.Backdrop.Mode;
+            BackdropIntensity = settings.Backdrop.Intensity;
         }
         finally
         {

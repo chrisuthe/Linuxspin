@@ -25,11 +25,12 @@ internal sealed class Shell : IDisposable
     public SettingsService Settings { get; }
 
     /// <param name="configure">Edits the settings the shell starts from; see <see cref="ShellViewModels.CreateMain"/>.</param>
-    public static Shell Show(Action<PlayerSettings>? configure = null)
+    /// <param name="hasGpu">What the renderer probe answers; see <see cref="ShellViewModels.CreateMain"/>.</param>
+    public static Shell Show(Action<PlayerSettings>? configure = null, bool hasGpu = true)
     {
         PlayerResources.Merge();
 
-        var graph = ShellViewModels.CreateMain(configure);
+        var graph = ShellViewModels.CreateMain(configure, hasGpu);
         var window = new MainWindow { DataContext = graph.ViewModel };
         window.Show();
         Dispatcher.UIThread.RunJobs();

@@ -1137,7 +1137,7 @@ and the **toolbar inset** follows `WindowDecorationMargin` and `IsExtendedIntoWi
 the strip's height on top plus a fixed 78 px on the left for the traffic lights, which no property
 reports. Both are null-guarded because the Wayland backend raises
 `IsExtendedIntoWindowDecorations` from the base `Window` constructor, before the XAML has loaded. Above
-the root, bottom to top: the blurred-art `Image` (Phase 3), the ambient `ContentControl` (Phase 5),
+the root, bottom to top: the blurred-art `Image` (Phase 3), the ambient layer (Phase 5, a `Panel` — see there),
 the `VeilBrush` `Border` visible only when either backdrop is, and the content grid of toolbar, body
 and footer. `Sendspin.Ui.Tests/MainWindowShellTests` finds each layer by name and pins the opacity rule
 for both cases. Screenshots: `docs/screenshots/reskin/phase2-{wayland,x11}-{light,dark}.png`.
@@ -1296,3 +1296,137 @@ gone; `PlayerStyles.axaml` is the one scale plus `warning`. Screenshots:
 `docs/screenshots/reskin/phase4-settings-{light,dark}.png` and `phase4-stats-{light,dark}.png`,
 Wayland head, plus `phase4-settings-tall-dark.png`, the window stretched so the whole card is
 in one frame.
+
+### As shipped (reskin phase 5) — the living backdrop
+
+**The two roles.** `client/hello` now lists `color@v1` and `visualizer@v1` alongside the four
+Phase 0 roles, with a `visualizer@v1_support` object asking for `loudness` and `beat` at up to 30
+frames a second with a 4 096-byte buffer and no spectrum (`PlayerCapabilities.VisualizerSupport`).
+The role and the support object are one commit and one pin: the SDK emits the support object
+whenever `ClientCapabilities.VisualizerSupport` is set, and a support object for an unlisted role is
+the non-compliant hello `docs/COMPLIANCE.md` quotes. Verified live against Music Assistant on the
+advertise path on 2026-09-01: `server/hello` activated all six roles, the first palette arrived
+before the clock had converged, the first loudness frame arrived with `stream/start`, and the first
+beat frame a few bars later — the backdrop view model logs each of those once per session, so a box
+where they do not arrive says so in its log. `SendspinPlayerService` forwards the SDK's
+`ColorChanged` and `VisualizationReceived` from both the host and the client service as
+`PaletteChanged` and `VisualizerFrameReceived`, subscribed and unsubscribed in the same four
+places as artwork, on the SDK's threads; `Sendspin.Tests/PlayerServiceEventTests` drives the
+dialled path end to end through a recording transport (the service grew an internal
+`ConnectionFactory` seam for it) and explains why the advertised path is read rather than driven —
+the host only forwards for sessions its listener accepted, and starting the listener advertises on
+mDNS, which on this LAN is an invitation for the real server to dial in mid-test.
+
+**The view model** (`ViewModels/AmbientBackdropViewModel.cs`) is the WPF player's, ported, with
+two changes. Every input — the palette, the frames, and the settings service's change event, which
+is raised on whichever thread wrote — comes in through one `OnUiThread` and lands synchronously
+when already on the UI thread, so the views need no locks and the tests call the `Apply` methods
+directly. A palette equal by value to the last one is dropped, the way `SystemColorChangeFilter`
+drops the platform's duplicate colour reports; the SDK raises `ColorChanged` on every
+`server/state` that carries a colour object, changed or not. And **the swatches follow the theme
+variant**: the palette carries `BackgroundDark`/`BackgroundLight` and `OnDark`/`OnLight`, and the
+view model picks the dark pair as the base fill and the third blob in the dark variant and the
+light pair in the light one (`Sendspin.Ui.Tests/AmbientBackdropViewModelTests`). The fallbacks for
+a swatch the palette lacks are the theme's own colours — the theme background for the base,
+`SystemAccentColor` for the primary and "on" blobs, `GlowDefaultBrush` for the accent blob — pushed
+in by the view as a `BackdropTheme` on attach and on `ActualThemeVariantChanged`, since resources
+resolve in the tree and not in a view model; the reference's hard-coded purples are gone. The
+intensity is floored at `AmbientMath.IntensityFloor` (0.15) so the slider's 0 % is faint rather
+than dark; Off is a style. `MainViewModel` owns it, forwards the two service events, resets it on
+disconnect, and derives the layers from three facts in one place: `HasAmbientBackdrop` is
+connected-and-active, and `HasArtBackdrop` is connected-and-bitmap-and-*not*-ambient, so the glow
+hides the blurred art as the reference does. Over the glow the veil's `Opacity` is bound to
+`VeilOpacity`, ⅔, which brings the token's 0.75 down to 0.5 so the colour reads as colour; over the
+art it stays at the token (`MainWindowShellTests.TheVeil_ThinsToHalfOverTheGlow`).
+
+**Ambient Glow** (`Views/AmbientBackdropView.axaml`) is the reference's tree — a base `Rectangle`
+and three `Ellipse`s of 520, 460 and 420 px with `RadialGradientBrush` fills from the blob colour
+at the centre to transparent at the edge, each with a `ScaleTransform` and a `TranslateTransform`
+about its centre — with the brushes, stops and transforms built in the code-behind, because no
+colour may be named in axaml (the hygiene test) and the stops are mutated in place every frame
+anyway (the effect table has mutation and brush swap equal, and mutation allocates nothing).
+Layer 0b is now a `Panel` holding the view, like layer 0, rather than the `ContentControl` Phase 2
+left: a hidden `ContentControl` is never measured, so never templates, so its content never joins
+the tree — and the view has to be in the tree while hidden, to hear the palette arrive and to run
+the renderer probe. **The loop is a `UiClock` at 16 ms**, never `RequestAnimationFrame`, a
+dispatcher timer or an Avalonia `Animation` (the clock table above), and it is gated by the ported
+`RenderLoopGate` on three inputs re-evaluated from every one of them: attached, the window visible,
+and the view model active. Hiding to the tray leaves the control's own `IsVisible` true, so the
+window's `IsVisible` is the "effectively visible" that matters; the mode and the connection both
+arrive through `IsActive`. The beat handler is attached and detached with the loop, for the
+reference's reason: it only ever adds to a pulse target the loop decays, and left subscribed while
+stopped it would fire one huge pulse on re-show. The eased colours persist across a stop, so a
+re-show resumes from where the glow was. `Sendspin.Ui.Tests/AmbientBackdropViewTests` pins the
+gate through the window: the loop stops within one tick of the style going Off and of the window
+hiding, and draws no frame after.
+
+**Breathing Art** (`Views/BreathingArtAnimator.cs`) is owned by `NowPlayingView` while it is
+attached over a main view model. It puts a `ScaleTransform` about the centre on the `ArtBreath`
+wrapper Phase 3 left empty — rest 1.0, +6 % at full energy, +4 % on a beat, times intensity, plus an
+idle breath of ±2 % at about five seconds while the group plays — and replaces the `ArtTile`'s
+resting `BoxShadow` with a glow: blur 0–40 px and alpha 0–0.85 from `AmbientMath.BreathGlow`, in
+the accent blob's colour eased at the same time constant as the glow's. A `BoxShadow`, not a
+`DropShadowEffect`: on a GPU the two are identical and on software raster the box shadow is five
+times cheaper. Same clock, same gate rules; the second gate input here is the view's own
+`IsVisible` (the settings card steps Now Playing aside) and the window's. When the loop stops it
+puts the wrapper back to scale 1 and hands the shadow back to the view's `ApplyShadow`, which
+otherwise leaves the shadow alone while the art is breathing
+(`Sendspin.Ui.Tests/BreathingArtTests`). Liveness follows `IsPlaying`, not energy: the visualizer
+stream does not reliably resume on a same-track pause and resume.
+
+**The software-rendering guard.** `Core/Visualization/MappedGraphicsProbe.cs` reads
+`/proc/self/maps` and `/proc/self/fd` the way the spike's probe did and calls it a GPU when a GL
+driver (`libGLX`, `libGL.`, `_dri`, `gallium`, `nvidia`) is mapped or a `/dev/dri/` render node is
+open, and neither `llvmpipe` nor `swrast` is; a bare `libEGL` does not count, because the vendor
+loader is mapped even when it found no vendor — the shm evidence line below. Windows and macOS are
+assumed to have a GPU, and `SENDSPIN_ASSUME_GPU=1` makes Linux say the same, which is how the shm
+row below was measured at all. Behind `IGraphicsContextProbe` so the headless tests drive both
+answers. The view runs it once, after the first frame (one animation-frame callback, not re-armed,
+then a background-priority post); the view model turns "no GPU" into `EffectiveMode = Off` without
+touching the setting, so the style comes back on a box that has one, and the settings card shows a
+one-line warning under the Backdrop style row while it holds. On this box the log reads:
+
+```
+Renderer probe: GPU context; mapped graphics libraries [libEGL.so.1.1.0, libEGL_mesa.so.0.0.0, libEGL_nvidia.so.610.57.04, libSkiaSharp.so, libgallium-26.1.8.so, libnvidia-egl-gbm.so.1.1.3, …]; open DRM nodes [/dev/dri/renderD128]
+Renderer probe: no GPU context, backdrop forced off; mapped graphics libraries [libEGL.so.1.1.0, libSkiaSharp.so]; open DRM nodes []
+```
+
+the second with `__EGL_VENDOR_LIBRARY_FILENAMES=/nonexistent`, the same evidence the spike
+recorded for its shm column. Note that Mesa 26 no longer maps a `*_dri.so` per driver — the
+driver is `libgallium-26.1.8.so` and llvmpipe would live inside the same library — so on a modern
+Mesa the DRM node is the discriminating fact, and the `llvmpipe`/`swrast` names are kept for the
+older layouts where they still appear.
+
+**Settings.** `PlayerSettings.Backdrop` is `Mode` (`Off`, `AmbientGlow`, `BreathingArt`; default
+Ambient Glow) and `Intensity` (0–2, default 1), persisted like everything else and round-tripped
+by `SettingsPersistenceTests`. The General section gained a **Backdrop style** picker after the
+Switch Group row and an **Intensity** slider labelled as a percentage, hidden while the style is
+Off; both write through `SettingsViewModel`, and the backdrop view model follows
+`SettingsService.Changed` rather than the settings view model, so the file stays the one
+authority. `EverySettingsComboBoxIsGuarded` counts five.
+
+**Measured cost, the running app.** `SENDSPIN_BACKDROP_PROFILE=1` makes each loop log its cost
+every ten seconds the way the spike did — `Process.TotalProcessorTime` over the frames it drew,
+after a three-second warm-up — and the figure is the whole process, audio pipeline included, which
+is what the spike's rows are too. Release build, `DOTNET_TieredCompilation=0`, the default 440×700
+window at scale 1.25 on the Wayland head, Music Assistant streaming FLAC 48 kHz, taken on
+2026-09-01 as the median of five consecutive ten-second windows; the Off row is the same process
+sampled from `/proc/<pid>/stat` over ten seconds and divided by the 62.5 frames a second the loop
+would have drawn:
+
+| Case | CPU ms per frame | Spike row it compares to |
+|---|---|---|
+| Backdrop Off, playing (the app's floor) | 0.75 (0.69–0.75) | `baseline` 1.72 — but the spike's baseline redrew a counter every frame; this one presents nothing |
+| Ambient Glow, GPU, playing | 3.07 (3.05–3.37) | `gradient-mutate` 1.81 |
+| Breathing Art, GPU, playing | 2.55 (2.49–2.99) | `glow-boxshadow` 1.95 |
+| Ambient Glow, Wayland shm, playing (`SENDSPIN_ASSUME_GPU=1`) | 12.23 (12.19–12.73) | `gradient-mutate` shm 11.12 |
+
+Read against the floor, the glow costs the app about 2.3 ms a frame on the GPU and 11.5 ms on
+shm — a fifth and two thirds of a 16 ms frame respectively, on one core. The GPU figure is half a
+millisecond above the spike's, which is the difference between the spike's bare window and this
+one's full layer stack being composited each frame; the shm figure is within a millisecond of the
+spike's, and is exactly why the guard exists. The loop itself held 62.5 fps in every window
+(`UiClock` at 16 ms, no dropped ticks). Screenshots, taken with a track playing:
+`docs/screenshots/reskin/phase5-glow-{light,dark}.png` (the window as the user had it, wide) and
+`phase5-breathing-dark.png`; the settings-card shot `phase5-settings-backdrop.png` needs a hand on
+the gear and is not in this commit.

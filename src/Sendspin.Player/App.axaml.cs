@@ -14,6 +14,7 @@ using Sendspin.Core.Diagnostics;
 using Sendspin.Core.MediaSession;
 using Sendspin.Core.Platform;
 using Sendspin.Core.Presence;
+using Sendspin.Core.Visualization;
 using Sendspin.Discord;
 using Sendspin.Platform.Shared.Client;
 using Sendspin.Platform.Shared.Media;
@@ -210,10 +211,14 @@ public sealed partial class App : Application
         services.AddSingleton<IDiagnosticsProvider>(p => p.GetRequiredService<SendspinPlayerService>());
         services.AddSingleton<PlayerCommandRouter>();
 
+        // The backdrop asks the loader whether a GPU is drawing, after the first frame.
+        services.AddSingleton<IGraphicsContextProbe, MappedGraphicsProbe>();
+
         services.AddSingleton<TrayIconController>();
         services.AddSingleton<MainViewModel>();
         services.AddSingleton<SettingsViewModel>();
         services.AddSingleton<DiagnosticsViewModel>();
+        services.AddSingleton<AmbientBackdropViewModel>();
 
         return services.BuildServiceProvider();
     }

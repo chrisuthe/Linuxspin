@@ -54,6 +54,13 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private readonly ILogger<MainViewModel> _logger;
 
     /// <summary>
+    /// The veil's opacity over the ambient glow, as a factor on the <c>VeilBrush</c> token's own
+    /// 0.75: together they make 0.5, which lets the glow read as colour rather than as a tint.
+    /// Over the blurred art the veil stays at the token's full strength.
+    /// </summary>
+    internal const double AmbientVeilFactor = 0.5 / 0.75;
+
+    /// <summary>
     /// Advances the progress bar between the server's position reports, which arrive only when
     /// metadata changes.
     /// </summary>
@@ -167,18 +174,20 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private bool _isSettingsOpen;
 
     /// <summary>
-    /// Whether the blurred-artwork layer has a bitmap to show: connected, and
-    /// <see cref="ArtBackdrop"/> is set. Phase 5 also clears it while the ambient backdrop runs.
+    /// Whether the blurred-artwork layer has a bitmap to show: connected, <see cref="ArtBackdrop"/>
+    /// is set, and the ambient glow is not running over it (the glow hides the blurred art, as the
+    /// reference does; both at once is mud).
     /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasBackdrop))]
     private bool _hasArtBackdrop;
 
     /// <summary>
-    /// Whether the ambient backdrop is running. Phase 5 sets it.
+    /// Whether the ambient glow is running: connected, and <see cref="AmbientBackdropViewModel.IsActive"/>.
     /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasBackdrop))]
+    [NotifyPropertyChangedFor(nameof(VeilOpacity))]
     private bool _hasAmbientBackdrop;
 
     public MainViewModel(
@@ -190,6 +199,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         IPresenceService presence,
         SettingsViewModel settingsViewModel,
         DiagnosticsViewModel diagnostics,
+        AmbientBackdropViewModel backdrop,
         ILogger<MainViewModel> logger)
     {
         ArgumentNullException.ThrowIfNull(player);
@@ -200,6 +210,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         ArgumentNullException.ThrowIfNull(presence);
         ArgumentNullException.ThrowIfNull(settingsViewModel);
         ArgumentNullException.ThrowIfNull(diagnostics);
+        ArgumentNullException.ThrowIfNull(backdrop);
         ArgumentNullException.ThrowIfNull(logger);
 
         _player = player;
@@ -212,6 +223,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
         Settings = settingsViewModel;
         Diagnostics = diagnostics;
+        Backdrop = backdrop;
         _work = new BackgroundTaskSet(logger);
 
         Volume = settings.Current.Volume;
@@ -228,8 +240,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         _player.ConnectionChanged += OnConnectionChanged;
         _player.StateChanged += OnStateChanged;
         _player.DiscoveredServersChanged += OnDiscoveredServersChanged;
+        _player.PaletteChanged += OnPaletteChanged;
+        _player.VisualizerFrameReceived += OnVisualizerFrameReceived;
         _mediaSession.IntentReceived += OnMediaSessionIntent;
         _router.LocalActionRequested += OnLocalActionRequested;
+        Backdrop.PropertyChanged += OnBackdropPropertyChanged;
 
         _progressClock.Tick += OnProgressTick;
     }
@@ -246,6 +261,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     /// <summary>Gets the diagnostics view model.</summary>
     public DiagnosticsViewModel Diagnostics { get; }
+
+    /// <summary>Gets the living backdrop's view model: the palette, the signal, and the style that runs.</summary>
+    public AmbientBackdropViewModel Backdrop { get; }
 
     /// <summary>Gets the servers currently visible on the network.</summary>
     public ObservableCollection<DiscoveredServer> DiscoveredServers { get; } = [];
@@ -273,6 +291,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     /// <summary>Gets whether either backdrop layer is showing, which is when the veil is needed.</summary>
     public bool HasBackdrop => HasArtBackdrop || HasAmbientBackdrop;
+
+    /// <summary>
+    /// Gets the veil's opacity: <see cref="AmbientVeilFactor"/> over the glow, full over the art.
+    /// </summary>
+    public double VeilOpacity => HasAmbientBackdrop ? AmbientVeilFactor : 1.0;
 
     /// <summary>
     /// Gets whether the footer shows the status message in place of the volume row: there is
@@ -620,8 +643,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         _player.ConnectionChanged -= OnConnectionChanged;
         _player.StateChanged -= OnStateChanged;
         _player.DiscoveredServersChanged -= OnDiscoveredServersChanged;
+        _player.PaletteChanged -= OnPaletteChanged;
+        _player.VisualizerFrameReceived -= OnVisualizerFrameReceived;
         _mediaSession.IntentReceived -= OnMediaSessionIntent;
         _router.LocalActionRequested -= OnLocalActionRequested;
+        Backdrop.PropertyChanged -= OnBackdropPropertyChanged;
         DiscoveredServers.CollectionChanged -= OnDiscoveredServersCollectionChanged;
 
         // Cancel and drain outstanding work before releasing what it touches.
@@ -634,6 +660,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         await _work.DisposeAsync().ConfigureAwait(false);
 
         Diagnostics.Dispose();
+        Backdrop.Dispose();
 
         // Same ordering as above: ShutdownRequested fires before windows close, so the images are
         // still bound at this point.
@@ -758,9 +785,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             _promptServerId = null;
             _artworkPath = null;
             ClearArtwork();
+            Backdrop.Reset();
         }
 
-        HasArtBackdrop = IsConnected && ArtBackdrop is not null;
+        UpdateBackdropLayers();
     }
 
     private void OnStateChanged(object? sender, MediaSessionState state)
@@ -788,6 +816,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         State = state;
         Position = state.Position;
         _anchoredPosition.Anchor(state.Position, _progressClock.Elapsed);
+        Backdrop.SetPlaying(IsPlaying);
 
         _suppressVolumePush = true;
         try
@@ -887,7 +916,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
         Artwork = artwork;
         ArtBackdrop = backdrop;
-        HasArtBackdrop = IsConnected && backdrop is not null;
+        UpdateBackdropLayers();
 
         previous?.Dispose();
         previousBackdrop?.Dispose();
@@ -908,11 +937,34 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
         Artwork = null;
         ArtBackdrop = null;
-        HasArtBackdrop = false;
+        UpdateBackdropLayers();
 
         artwork?.Dispose();
         backdrop?.Dispose();
     }
+
+    /// <summary>
+    /// Which backdrop layer shows, from the three facts that decide it: connected, a scaled
+    /// bitmap, and the glow being active. The glow wins when both could show.
+    /// </summary>
+    private void UpdateBackdropLayers()
+    {
+        HasAmbientBackdrop = IsConnected && Backdrop.IsActive;
+        HasArtBackdrop = IsConnected && ArtBackdrop is not null && !HasAmbientBackdrop;
+    }
+
+    private void OnBackdropPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(AmbientBackdropViewModel.IsActive))
+        {
+            UpdateBackdropLayers();
+        }
+    }
+
+    // Both arrive on the SDK's threads; the backdrop view model marshals them itself.
+    private void OnPaletteChanged(object? sender, SDK.Models.ColorPalette palette) => Backdrop.ReceivePalette(palette);
+
+    private void OnVisualizerFrameReceived(object? sender, SDK.Models.VisualizerFrame frame) => Backdrop.ReceiveFrame(frame);
 
     partial void OnVolumeChanged(int value)
     {
