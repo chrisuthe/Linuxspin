@@ -582,7 +582,7 @@ the host's and the shell cannot follow a path into it.
 
 ## UI shell
 
-**What shipped, by paragraph.** The measurements below are long; these are the six "As shipped"
+**What shipped, by paragraph.** The measurements below are long; these are the "As shipped"
 paragraphs that say what the player does with them, so a reader after the shell rather than the
 numbers can go straight there:
 

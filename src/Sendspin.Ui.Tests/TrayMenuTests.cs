@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Threading;
 using Microsoft.Extensions.Logging.Abstractions;
 using Sendspin.Player;
+using Sendspin.Player.ViewModels;
 using Xunit;
 
 namespace Sendspin.Ui.Tests;
@@ -107,7 +108,7 @@ public sealed class TrayMenuTests(HeadlessSession headless)
 
         public TrayIconController Controller { get; }
 
-        public Sendspin.Player.ViewModels.MainViewModel ViewModel { get; }
+        public MainViewModel ViewModel { get; }
 
         public static Tray Attach()
         {
