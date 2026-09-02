@@ -1268,7 +1268,10 @@ same call, the view model's `SetVisible` starts and stops the 500 ms `UiClock`, 
 one instance for its own lifetime: the Diagnostics row's `OpenStatsCommand` sets the flag and raises
 `StatsRequested`, which activates the window if it was already open; the user's close is cancelled
 by `StatsWindow.OnClosing` and turned into a hide, with `MainWindow` recording it through
-`SetStatsVisible(false)` (a programmatic close, which is what shutdown does, is let through). The
+`SetStatsVisible(false)`. A user's close is a non-programmatic close whose reason is
+`WindowClosing`, and only that: an OS-initiated quit (Cmd+Q, a session end) also reaches every
+unowned window as a non-programmatic close, with a shutdown reason, and that one is let through with
+the flag untouched, or the app would never quit and the window would never come back. The
 window is deliberately **not** an owned window: Avalonia hides owned windows with their owner and
 never re-shows them, so instead the rule is *visible iff the main window is visible and `IsVisible`
 is set* — hiding to the tray takes it along, showing again brings it back, and a start hidden in the
@@ -1286,4 +1289,5 @@ otherwise (`MainViewModel.HasFooter`). The Switch Group button binds its visibil
 classes (`h1`/`h2`/`h3`/`subtle`/`fieldLabel`/`metricLabel`/`metricValue`) had no users left and are
 gone; `PlayerStyles.axaml` is the one scale plus `warning`. Screenshots:
 `docs/screenshots/reskin/phase4-settings-{light,dark}.png` and `phase4-stats-{light,dark}.png`,
-Wayland head.
+Wayland head, plus `phase4-settings-tall-dark.png`, the window stretched so the whole card is
+in one frame.

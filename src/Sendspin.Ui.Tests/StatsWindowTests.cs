@@ -81,6 +81,28 @@ public sealed partial class StatsWindowTests(HeadlessSession headless)
         Assert.True(shell.ViewModel.Diagnostics.IsRefreshing);
     });
 
+    /// <remarks>
+    /// Cmd+Q on macOS and a Windows session end reach every unowned window as a close that is
+    /// not programmatic but carries a shutdown reason. That close must go through, and it must
+    /// not be mistaken for the user closing the window: the flag says "open at exit".
+    /// </remarks>
+    [Theory]
+    [InlineData(WindowCloseReason.ApplicationShutdown)]
+    [InlineData(WindowCloseReason.OSShutdown)]
+    public void AShutdownsClose_GoesThroughAndLeavesTheFlagAlone(WindowCloseReason reason) => headless.Run(() =>
+    {
+        using var shell = Shell.Show();
+        var stats = Open(shell);
+
+        var cancelled = CloseFromTheDesktop(stats, reason);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.False(cancelled);
+        Assert.False(stats.IsVisible);
+        Assert.True(shell.Settings.Current.ShowDiagnostics);
+        Assert.True(shell.ViewModel.Diagnostics.IsVisible);
+    });
+
     [Fact]
     public void TheWindow_ShowsEveryFieldWithTheTimingSourceFirst() => headless.Run(() =>
     {
@@ -270,7 +292,8 @@ public sealed partial class StatsWindowTests(HeadlessSession headless)
     /// that <see cref="Window.Close"/> cannot take. The headless platform exposes it as the
     /// window impl's <c>Closing</c> callback, which is what a real backend invokes.
     /// </summary>
-    private static void CloseFromTheDesktop(Window window)
+    /// <returns>Whether the window cancelled the close.</returns>
+    private static bool CloseFromTheDesktop(Window window, WindowCloseReason reason = WindowCloseReason.WindowClosing)
     {
         var impl = window.PlatformImpl;
         Assert.NotNull(impl);
@@ -278,7 +301,7 @@ public sealed partial class StatsWindowTests(HeadlessSession headless)
         var closing = impl!.GetType().GetProperty("Closing")?.GetValue(impl) as Func<WindowCloseReason, bool>;
         Assert.NotNull(closing);
 
-        closing!(WindowCloseReason.WindowClosing);
+        return closing!(reason);
     }
 
     [GeneratedRegex(@"\bDiagnosticsView\b")]

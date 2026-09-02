@@ -162,9 +162,18 @@ public sealed partial class StepperRow : UserControl
 
     private void SyncRange()
     {
-        ValueSlider.Minimum = Minimum;
-        ValueSlider.Maximum = Maximum;
-        ValueSlider.TickFrequency = Step;
+        // A range change coerces the slider's own value, and that is not the user moving it.
+        _isPushingToSlider = true;
+        try
+        {
+            ValueSlider.Minimum = Minimum;
+            ValueSlider.Maximum = Maximum;
+            ValueSlider.TickFrequency = Step;
+        }
+        finally
+        {
+            _isPushingToSlider = false;
+        }
     }
 
     private void SyncValue()
@@ -184,11 +193,15 @@ public sealed partial class StepperRow : UserControl
         IncrementButton.IsEnabled = Value < Maximum;
     }
 
+    /// <remarks>
+    /// Rounded to a whole unit: the box shows whole units, and a drag that stored 123.45 would
+    /// have the row holding a number it does not show.
+    /// </remarks>
     private void OnSliderValueChanged(object? sender, RangeBaseValueChangedEventArgs e)
     {
         if (!_isPushingToSlider)
         {
-            Value = e.NewValue;
+            Value = Math.Round(e.NewValue);
         }
     }
 

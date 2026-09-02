@@ -160,6 +160,34 @@ public sealed class StepperRowTests(HeadlessSession headless)
         window.Close();
     });
 
+    /// <remarks>
+    /// A range change coerces the slider's value, and that coercion is not a move by the user.
+    /// </remarks>
+    [Fact]
+    public void ARangeChange_DoesNotRewriteTheValue() => headless.Run(() =>
+    {
+        var (_, row) = Build(0, 2000, 50);
+
+        row.Minimum = 100;
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(50, row.Value);
+        Assert.Equal(100, Slider(row).Value);
+        Assert.Equal("50", Box(row).Text);
+    });
+
+    [Fact]
+    public void ADrag_LandsOnAWholeUnit() => headless.Run(() =>
+    {
+        var (_, row) = Build(0, 2000, 100);
+
+        Slider(row).Value = 123.45;
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(123, row.Value);
+        Assert.Equal("123", Box(row).Text);
+    });
+
     [Fact]
     public void TheUnit_IsShownAfterTheValue() => headless.Run(() =>
     {

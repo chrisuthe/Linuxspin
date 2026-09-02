@@ -198,11 +198,12 @@ public sealed partial class MainWindow : Window
     /// <summary>
     /// Records that the user closed the Stats window. The window itself cancels the close and
     /// hides (see <see cref="StatsWindow"/>); what has to happen here is the view model learning
-    /// of it, so the refresh clock stops and the next start does not reopen it.
+    /// of it, so the refresh clock stops and the next start does not reopen it. A shutdown's
+    /// close is not the user's: it must leave the "open at exit" flag as it is.
     /// </summary>
     private void OnStatsClosing(object? sender, WindowClosingEventArgs e)
     {
-        if (!e.IsProgrammatic)
+        if (StatsWindow.IsUserClose(e))
         {
             _viewModel?.SetStatsVisible(false);
         }
