@@ -38,6 +38,10 @@ public sealed class SettingsPersistenceTests
 
         // The group switcher is part of the footer until someone says otherwise.
         Assert.True(settings.ShowSwitchGroupButton);
+
+        // The window is alive out of the box, at the tuned strength.
+        Assert.Equal(BackdropMode.AmbientGlow, settings.Backdrop.Mode);
+        Assert.Equal(1.0, settings.Backdrop.Intensity);
     }
 
     [Fact]
@@ -64,7 +68,8 @@ public sealed class SettingsPersistenceTests
             CloseToTray = false,
             DiscordRichPresence = true,
             ShowSwitchGroupButton = false,
-            ShowDiagnostics = true
+            ShowDiagnostics = true,
+            Backdrop = new BackdropSettings { Mode = BackdropMode.BreathingArt, Intensity = 1.5 }
         };
 
         original.SetManualLatencyOffsetMs("device-abc", -25.0);
@@ -91,6 +96,8 @@ public sealed class SettingsPersistenceTests
         Assert.Equal(original.DiscordRichPresence, loaded.DiscordRichPresence);
         Assert.Equal(original.ShowSwitchGroupButton, loaded.ShowSwitchGroupButton);
         Assert.Equal(original.ShowDiagnostics, loaded.ShowDiagnostics);
+        Assert.Equal(BackdropMode.BreathingArt, loaded.Backdrop.Mode);
+        Assert.Equal(1.5, loaded.Backdrop.Intensity);
         Assert.Equal(-25.0, loaded.GetManualLatencyOffsetMs("device-abc"));
         Assert.True(loaded.Notifications.TrackChange);
         Assert.False(loaded.Notifications.IncludeArtwork);

@@ -50,12 +50,28 @@
             </Image>
         </Panel>
 
-        <!-- Layer 0b: the ambient backdrop. Phase 5 fills this and flips HasAmbientBackdrop. -->
-        <ContentControl Name="AmbientBackdrop" IsVisible="{Binding HasAmbientBackdrop}" />
+        <!--
+          Layer 0b: the ambient glow, over its own view model. Shown while connected and the glow
+          is active, which is also when the blurred art above is hidden: one backdrop at a time.
+          The view's own frame loop stops itself whenever this window is hidden.
 
-        <!-- Layer 1: the veil, so theme-foreground text keeps its contrast over either backdrop. -->
+          A Panel, like layer 0, rather than the ContentControl Phase 2 left here: a hidden
+          ContentControl is never measured, so never templates, so its content never joins the
+          tree — and the view has to be in the tree while hidden, to hear the palette arrive and
+          to probe the renderer after the first frame. A hidden Panel keeps its children attached.
+        -->
+        <Panel Name="AmbientBackdrop" IsVisible="{Binding HasAmbientBackdrop}">
+            <views:AmbientBackdropView Name="AmbientGlow" DataContext="{Binding Backdrop}" />
+        </Panel>
+
+        <!--
+          Layer 1: the veil, so theme-foreground text keeps its contrast over either backdrop. Its
+          token is 0.75 over the blurred art; over the glow the view model thins it to 0.5, so the
+          colour comes through as colour.
+        -->
         <Border Name="Veil"
                 Background="{DynamicResource VeilBrush}"
+                Opacity="{Binding VeilOpacity}"
                 IsVisible="{Binding HasBackdrop}" />
 
         <!-- Layer 2: the content. -->

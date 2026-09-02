@@ -49,11 +49,18 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
     private MdnsServerDiscovery? _discovery;
     private SendspinHostService? _host;
     private SendspinClientService? _client;
-    private SendspinConnection? _connection;
+    private ISendspinConnection? _connection;
     private IClockSynchronizer? _clockSync;
     private IAudioPipeline? _pipeline;
     private SyncCorrectedSampleSource? _sampleSource;
     private AudioPlayerBase? _activePlayer;
+
+    /// <summary>
+    /// Makes the transport a dialled session runs over. The real one opens a WebSocket; the tests
+    /// substitute a recording connection so the client path can be driven end to end without a
+    /// server, which is the only way to prove what this service forwards from it.
+    /// </summary>
+    internal Func<ISendspinConnection> ConnectionFactory { get; set; }
 
     private string? _adoptedServerId;
     private GroupState? _group;
@@ -91,6 +98,9 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
         _syncPolicy = syncPolicy;
         _softwareVersion = softwareVersion;
         _background = new BackgroundTaskSet(_logger);
+        ConnectionFactory = () => new SendspinConnection(
+            _loggerFactory.CreateLogger<SendspinConnection>(),
+            new ConnectionOptions());
     }
 
     /// <summary>Raised when the connection comes up or goes down.</summary>
@@ -101,6 +111,23 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
 
     /// <summary>Raised when a server appears in or disappears from discovery.</summary>
     public event EventHandler? DiscoveredServersChanged;
+
+    /// <summary>
+    /// Raised with the group's colour palette whenever the server sends one (the <c>color@v1</c>
+    /// role), from whichever connection path is carrying the session.
+    /// </summary>
+    /// <remarks>
+    /// Forwarded as the SDK raises it: on a background thread, and on every <c>server/state</c>
+    /// that carries a colour object, including ones that change nothing. The view model marshals
+    /// and deduplicates, as it does for state.
+    /// </remarks>
+    public event EventHandler<ColorPalette>? PaletteChanged;
+
+    /// <summary>
+    /// Raised for each visualizer feature frame (the <c>visualizer@v1</c> role), loudness or beat
+    /// as advertised, from whichever connection path is carrying the session. Background thread.
+    /// </summary>
+    public event EventHandler<VisualizerFrame>? VisualizerFrameReceived;
 
     /// <inheritdoc/>
     public bool CanSend => _client is { ConnectionState: ConnectionState.Connected }
@@ -218,6 +245,8 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
             client.PlayerStateChanged -= OnPlayerStateChanged;
             client.ArtworkReceived -= OnArtworkReceived;
             client.ArtworkCleared -= OnArtworkCleared;
+            client.ColorChanged -= OnColorChanged;
+            client.VisualizationReceived -= OnVisualizationReceived;
 
             try
             {
@@ -438,6 +467,8 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
             host.GroupStateChanged -= OnGroupStateChanged;
             host.ArtworkReceived -= OnArtworkReceived;
             host.ArtworkCleared -= OnArtworkCleared;
+            host.ColorChanged -= OnColorChanged;
+            host.VisualizationReceived -= OnVisualizationReceived;
             await host.DisposeAsync().ConfigureAwait(false);
         }
 
@@ -522,6 +553,8 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
         host.GroupStateChanged += OnGroupStateChanged;
         host.ArtworkReceived += OnArtworkReceived;
         host.ArtworkCleared += OnArtworkCleared;
+        host.ColorChanged += OnColorChanged;
+        host.VisualizationReceived += OnVisualizationReceived;
 
         lock (_sessionGate)
         {
@@ -541,7 +574,7 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
         ObjectDisposedException.ThrowIf(_isDisposed, this);
 
         // Tear down *any* existing client, not only a connected one. A client that failed to
-        // connect, or that dropped, is still subscribed to these five events and still owns a
+        // connect, or that dropped, is still subscribed to these seven events and still owns a
         // socket; overwriting the field would leak it and — if its own reconnect later succeeded —
         // leave two clients driving one UI and one settings file.
         if (_client is not null)
@@ -555,9 +588,7 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
         var capabilities = BuildCapabilities(settings, device);
         var (clockSync, pipeline) = EnsureAudioSession(device);
 
-        var connection = new SendspinConnection(
-            _loggerFactory.CreateLogger<SendspinConnection>(),
-            new ConnectionOptions());
+        var connection = ConnectionFactory();
 
         var client = new SendspinClientService(
             _loggerFactory.CreateLogger<SendspinClientService>(),
@@ -572,6 +603,8 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
         client.PlayerStateChanged += OnPlayerStateChanged;
         client.ArtworkReceived += OnArtworkReceived;
         client.ArtworkCleared += OnArtworkCleared;
+        client.ColorChanged += OnColorChanged;
+        client.VisualizationReceived += OnVisualizationReceived;
 
         lock (_sessionGate)
         {
@@ -1052,6 +1085,13 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
 
         PublishState();
     }
+
+    // Both forwarded as they arrive, on the SDK's thread. There is nothing to merge or persist:
+    // the palette and the frames are display state, and the view model owns their marshalling.
+    private void OnColorChanged(object? sender, ColorPalette palette) => PaletteChanged?.Invoke(this, palette);
+
+    private void OnVisualizationReceived(object? sender, VisualizerFrame frame) =>
+        VisualizerFrameReceived?.Invoke(this, frame);
 
     /// <summary>
     /// Rebuilds the media-session snapshot from the server's group state and announces it.

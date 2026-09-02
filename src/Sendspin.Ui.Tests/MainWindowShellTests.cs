@@ -51,7 +51,7 @@ public sealed class MainWindowShellTests(HeadlessSession headless)
 
         Assert.IsType<Border>(stack.Children[0]);
         Assert.IsType<Image>(Assert.Single(Assert.IsType<Panel>(stack.Children[1]).Children));
-        Assert.IsType<ContentControl>(stack.Children[2]);
+        Assert.IsType<AmbientBackdropView>(Assert.Single(Assert.IsType<Panel>(stack.Children[2]).Children));
         Assert.IsType<Border>(stack.Children[3]);
         Assert.IsType<Grid>(stack.Children[4]);
     });
@@ -66,7 +66,7 @@ public sealed class MainWindowShellTests(HeadlessSession headless)
         Assert.False(shell.ViewModel.HasBackdrop);
 
         Assert.False(shell.Find<Panel>("ArtBackdrop").IsVisible);
-        Assert.False(shell.Find<ContentControl>("AmbientBackdrop").IsVisible);
+        Assert.False(shell.Find<Panel>("AmbientBackdrop").IsVisible);
         Assert.False(shell.Find<Border>("Veil").IsVisible);
         Assert.True(shell.Find<Grid>("ContentLayer").IsVisible);
 
@@ -76,14 +76,14 @@ public sealed class MainWindowShellTests(HeadlessSession headless)
 
         Assert.True(shell.Find<Panel>("ArtBackdrop").IsVisible);
         Assert.True(shell.Find<Border>("Veil").IsVisible);
-        Assert.False(shell.Find<ContentControl>("AmbientBackdrop").IsVisible);
+        Assert.False(shell.Find<Panel>("AmbientBackdrop").IsVisible);
 
         shell.ViewModel.HasArtBackdrop = false;
         shell.ViewModel.HasAmbientBackdrop = true;
         Dispatcher.UIThread.RunJobs();
 
         Assert.False(shell.Find<Panel>("ArtBackdrop").IsVisible);
-        Assert.True(shell.Find<ContentControl>("AmbientBackdrop").IsVisible);
+        Assert.True(shell.Find<Panel>("AmbientBackdrop").IsVisible);
         Assert.True(shell.Find<Border>("Veil").IsVisible);
     });
 
@@ -94,6 +94,29 @@ public sealed class MainWindowShellTests(HeadlessSession headless)
 
         Assert.True(Application.Current!.TryGetResource("VeilBrush", shell.Window.ActualThemeVariant, out var token));
         Assert.Same(token, shell.Find<Border>("Veil").Background);
+    });
+
+    /// <remarks>
+    /// The token's 0.75 over the blurred art; 0.5 over the glow, so the glow's colour reads as
+    /// colour. The border's opacity is what thins it, so the product is what is pinned.
+    /// </remarks>
+    [Fact]
+    public void TheVeil_ThinsToHalfOverTheGlow() => headless.Run(() =>
+    {
+        using var shell = Shell.Show();
+        var veil = shell.Find<Border>("Veil");
+        var brush = Assert.IsAssignableFrom<ISolidColorBrush>(veil.Background);
+
+        shell.ViewModel.HasArtBackdrop = true;
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(1.0, veil.Opacity);
+        Assert.Equal(0.75, brush.Opacity * veil.Opacity, 0.001);
+
+        shell.ViewModel.HasArtBackdrop = false;
+        shell.ViewModel.HasAmbientBackdrop = true;
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(MainViewModel.AmbientVeilFactor, veil.Opacity);
+        Assert.Equal(0.5, brush.Opacity * veil.Opacity, 0.001);
     });
 
     /// <remarks>

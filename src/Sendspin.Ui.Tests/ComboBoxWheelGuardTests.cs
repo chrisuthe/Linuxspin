@@ -24,8 +24,8 @@ public sealed class ComboBoxWheelGuardTests(HeadlessSession headless)
 {
     private static readonly string[] Codecs = ["flac", "opus", "pcm"];
 
-    /// <summary>Connection mode, auto-connect, output device and preferred codec.</summary>
-    private const int SettingsComboBoxCount = 4;
+    /// <summary>Backdrop style, connection mode, auto-connect, output device and preferred codec.</summary>
+    private const int SettingsComboBoxCount = 5;
 
     [Fact]
     public void AnUnguardedComboBoxStepsItsSelectionOnAWheelNotch() => headless.Run(() =>

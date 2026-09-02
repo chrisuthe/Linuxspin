@@ -1,0 +1,31 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Sendspin.Player.ViewModels"
+             mc:Ignorable="d"
+             x:Class="Sendspin.Player.Views.AmbientBackdropView"
+             x:DataType="vm:AmbientBackdropViewModel"
+             IsHitTestVisible="False"
+             ClipToBounds="True">
+
+    <!--
+      Ambient Glow: a base fill and three soft blobs, the reference's tree. Each blob is an ellipse
+      with a radial gradient from its colour at the centre to nothing at the edge, so the glow is
+      the gradient itself and no blur effect runs. The fills, the gradient stops and the scale and
+      translate transforms are built in the code-behind, which mutates them in place every frame;
+      the effect table measured that as free on a GPU and no worse than swapping brushes anywhere.
+      No colour is named here, and none could be: the stops carry the palette.
+    -->
+
+    <Panel Name="Root">
+        <Rectangle Name="BaseFill" />
+
+        <Ellipse Name="Blob1" Width="520" Height="520"
+                 HorizontalAlignment="Center" VerticalAlignment="Center" />
+        <Ellipse Name="Blob2" Width="460" Height="460"
+                 HorizontalAlignment="Center" VerticalAlignment="Center" />
+        <Ellipse Name="Blob3" Width="420" Height="420"
+                 HorizontalAlignment="Center" VerticalAlignment="Center" />
+    </Panel>
+</UserControl>

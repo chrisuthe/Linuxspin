@@ -16,4 +16,14 @@
     <ProjectReference Include="..\Sendspin.Core\Sendspin.Core.csproj" />
   </ItemGroup>
 
+  <!--
+    So the tests can hand the player service a recording transport and drive a dialled session
+    through it. The service builds its own SDK client around its own WebSocket, and the SDK's
+    client is sealed, so without this seam what the service forwards from a session could only be
+    read, never asserted.
+  -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Sendspin.Tests" />
+  </ItemGroup>
+
 </Project>

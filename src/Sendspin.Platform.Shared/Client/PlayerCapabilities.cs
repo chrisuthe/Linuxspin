@@ -105,14 +105,41 @@ public static class PlayerCapabilities
     /// kept the bare spellings. So these are written out here rather than taken from
     /// <c>ClientRoles</c>, which has no versioned members to take.
     /// </para>
+    /// <para>
+    /// <c>color@v1</c> and <c>visualizer@v1</c> feed the living backdrop: the palette the server
+    /// extracts from the artwork, and the loudness and beat frames it derives from the audio. The
+    /// visualizer role goes with <see cref="VisualizerSupport"/> and must not be listed without
+    /// it, nor the support set without the role: the SDK emits <c>visualizer@v1_support</c>
+    /// whenever the support object is set, and a support object for an unlisted role is the
+    /// non-compliant hello quoted above.
+    /// </para>
     /// </remarks>
     public static IReadOnlyList<string> AdvertisedRoles { get; } =
         [
             $"{ClientRoles.Player}@v1",
             $"{ClientRoles.Controller}@v1",
             $"{ClientRoles.Metadata}@v1",
-            $"{ClientRoles.Artwork}@v1"
+            $"{ClientRoles.Artwork}@v1",
+            "color@v1",
+            $"{ClientRoles.Visualizer}@v1"
         ];
+
+    /// <summary>
+    /// The visualizer features the backdrop consumes, and the rate it wants them at.
+    /// </summary>
+    /// <remarks>
+    /// Loudness and beat only: the glow eases toward loudness and pulses on beats, and nothing
+    /// here draws a spectrum. 30 frames a second is plenty for values that are eased over
+    /// hundreds of milliseconds anyway, and 4 096 bytes of buffered frames is the WPF player's
+    /// figure, which a server has been seen to honour. Spectrum is not listed, so no spectrum
+    /// configuration is needed.
+    /// </remarks>
+    public static VisualizerSupport VisualizerSupport { get; } = new()
+    {
+        Types = [VisualizerTypes.Loudness, VisualizerTypes.Beat],
+        RateMax = 30,
+        BufferCapacity = 4096
+    };
 
     /// <summary>
     /// Codecs this build can decode, best first.
@@ -150,6 +177,9 @@ public static class PlayerCapabilities
             SoftwareVersion = softwareVersion,
             Roles = [.. AdvertisedRoles],
             AudioFormats = BuildFormats(settings.PreferredCodec, device),
+
+            // Alongside visualizer@v1 in the roles above; the two go together or not at all.
+            VisualizerSupport = VisualizerSupport,
 
             // BufferCapacity is deliberately unset. It is compressed *bytes*, not milliseconds,
             // and the 8 000 that used to be set here — read as 8 s — advertised about one second

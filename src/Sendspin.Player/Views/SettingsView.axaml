@@ -6,6 +6,8 @@
              xmlns:audio="using:Sendspin.Core.Audio"
              xmlns:behaviors="using:Sendspin.Player.Behaviors"
              xmlns:controls="using:Sendspin.Player.Controls"
+             xmlns:converters="using:Sendspin.Player.Converters"
+             xmlns:config="using:Sendspin.Core.Configuration"
              mc:Ignorable="d"
              x:Class="Sendspin.Player.Views.SettingsView"
              x:DataType="vm:MainViewModel">
@@ -127,6 +129,59 @@
                               Classes="setting"
                               IsChecked="{Binding Settings.ShowSwitchGroupButton}" />
             </Grid>
+
+            <!--
+              The living backdrop. The style is immediate, no reconnect; the note beneath it
+              appears only when the renderer turned out to be software and the style was forced
+              off, which the backdrop's view model decides after the first frame.
+            -->
+            <StackPanel Classes="settingRow">
+                <StackPanel Classes="settingText">
+                    <TextBlock Text="Backdrop style" Classes="body" />
+                    <TextBlock Text="Animate the window with the music, or breathe the album art, or turn it off"
+                               Classes="caption" />
+                </StackPanel>
+                <ComboBox Name="BackdropModeBox"
+                          ItemsSource="{Binding Settings.BackdropModes}"
+                          SelectedItem="{Binding Settings.BackdropMode}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="config:BackdropMode">
+                            <TextBlock Text="{Binding, Converter={x:Static converters:BackdropModeLabel.Instance}}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <TextBlock Name="BackdropSoftwareNote"
+                           Text="Off for now: this window is drawing without a GPU, and the backdrop costs too much in software."
+                           Classes="warning"
+                           TextWrapping="Wrap"
+                           IsVisible="{Binding Backdrop.IsSoftwareRendering}" />
+            </StackPanel>
+
+            <!-- Hidden while the style is Off: there is nothing for it to scale. -->
+            <StackPanel Name="BackdropIntensityRow"
+                        Classes="settingRow"
+                        IsVisible="{Binding Settings.IsBackdropIntensityVisible}">
+                <StackPanel Classes="settingText">
+                    <TextBlock Text="Intensity" Classes="body" />
+                    <TextBlock Text="How strongly the backdrop reacts, glows and moves" Classes="caption" />
+                </StackPanel>
+                <Grid ColumnDefinitions="*,Auto">
+                    <Slider Grid.Column="0"
+                            Name="BackdropIntensitySlider"
+                            Minimum="0" Maximum="2"
+                            TickFrequency="0.05" IsSnapToTickEnabled="True"
+                            Value="{Binding Settings.BackdropIntensity}"
+                            VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1"
+                               Name="BackdropIntensityText"
+                               Text="{Binding Settings.BackdropIntensityText}"
+                               Classes="caption"
+                               MinWidth="44"
+                               TextAlignment="Right"
+                               VerticalAlignment="Center"
+                               Margin="12,0,0,0" />
+                </Grid>
+            </StackPanel>
 
             <StackPanel Classes="settingRow">
                 <StackPanel Classes="settingText">

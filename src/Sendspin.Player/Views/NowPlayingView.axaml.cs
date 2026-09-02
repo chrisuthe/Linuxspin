@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
+using Sendspin.Player.ViewModels;
 
 namespace Sendspin.Player.Views;
 
@@ -21,6 +22,12 @@ namespace Sendspin.Player.Views;
 /// text and transport have taken what they need, and never more than <see cref="ArtMaxSize"/>.
 /// The tile's shadow is a <see cref="BoxShadow"/> — the cheap kind, by the spike's measurements
 /// — and it is set here because a shadow takes a <see cref="Color"/>, and the colour is a token.
+/// </para>
+/// <para>
+/// Breathing Art lives in a <see cref="BreathingArtAnimator"/> this view owns while attached. It
+/// scales the <c>ArtBreath</c> wrapper and replaces the tile's shadow with a glow, only while that
+/// style is in effect; the animator hands the shadow back when it stops, and this view leaves the
+/// shadow alone while it runs.
 /// </para>
 /// </remarks>
 public sealed partial class NowPlayingView : UserControl
@@ -48,6 +55,10 @@ public sealed partial class NowPlayingView : UserControl
     /// </summary>
     private const double DetailsHeightFallback = 240;
 
+    private MainViewModel? _viewModel;
+    private BreathingArtAnimator? _breath;
+    private Window? _window;
+
     public NowPlayingView()
     {
         InitializeComponent();
@@ -59,6 +70,9 @@ public sealed partial class NowPlayingView : UserControl
 
     /// <summary>Gets whether the wide composition is active.</summary>
     public bool IsWide => Composition.Classes.Contains("wide");
+
+    /// <summary>Gets the Breathing Art animator, while the view is attached over a view model.</summary>
+    internal BreathingArtAnimator? Breath => _breath;
 
     /// <summary>Which composition a view of this width gets.</summary>
     internal static bool IsWideFor(double width) => width >= WideThreshold;
@@ -100,11 +114,78 @@ public sealed partial class NowPlayingView : UserControl
         Compose(e.NewSize);
     }
 
+    protected override void OnDataContextChanged(EventArgs e)
+    {
+        base.OnDataContextChanged(e);
+
+        _viewModel = DataContext as MainViewModel;
+        RebuildAnimator();
+    }
+
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
+
+        _window = TopLevel.GetTopLevel(this) as Window;
+        if (_window is { } window)
+        {
+            window.PropertyChanged += OnWindowPropertyChanged;
+        }
+
         ApplyShadow();
+        RebuildAnimator();
     }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+
+        if (_window is { } window)
+        {
+            window.PropertyChanged -= OnWindowPropertyChanged;
+            _window = null;
+        }
+
+        RebuildAnimator();
+    }
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+
+        if (change.Property == IsVisibleProperty)
+        {
+            UpdateBreathVisibility();
+        }
+    }
+
+    private void OnWindowPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+    {
+        if (e.Property == IsVisibleProperty)
+        {
+            UpdateBreathVisibility();
+        }
+    }
+
+    /// <summary>
+    /// An animator exists exactly while the view is attached over a main view model; it is torn
+    /// down (which rests the art) and rebuilt on either side changing, rather than re-pointed.
+    /// </summary>
+    private void RebuildAnimator()
+    {
+        _breath?.Dispose();
+        _breath = null;
+
+        if (_window is not null && _viewModel is { } viewModel)
+        {
+            _breath = new BreathingArtAnimator(ArtBreath, ArtTile, viewModel.Backdrop, ApplyShadow);
+            UpdateBreathVisibility();
+        }
+    }
+
+    /// <summary>On screen: this view visible, in a visible window. The style is the animator's half.</summary>
+    private void UpdateBreathVisibility() =>
+        _breath?.SetVisible(IsVisible && _window is { IsVisible: true });
 
     private void Compose(Size size)
     {
@@ -129,8 +210,17 @@ public sealed partial class NowPlayingView : UserControl
         TrackText.Width = isWide ? double.NaN : TextColumnWidthFor(art, size.Width);
     }
 
+    /// <summary>
+    /// The resting shadow. Left alone while the art is breathing: the glow owns the shadow then,
+    /// and puts this back through the same call when it stops.
+    /// </summary>
     private void ApplyShadow()
     {
+        if (_breath is { IsRunning: true })
+        {
+            return;
+        }
+
         if (this.TryFindResource("ArtShadowBrush", ActualThemeVariant, out var resource)
             && resource is ISolidColorBrush brush)
         {

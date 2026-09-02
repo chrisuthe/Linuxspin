@@ -344,6 +344,9 @@ internal sealed class RecordingConnection : ISendspinConnection
     /// <summary>Delivers an inbound frame, as the transport's receive loop would.</summary>
     public void Receive(string json) => TextMessageReceived?.Invoke(this, json);
 
+    /// <summary>Delivers an inbound binary message, as the transport's receive loop would.</summary>
+    public void ReceiveBinary(byte[] data) => BinaryMessageReceived?.Invoke(this, data);
+
     /// <summary>
     /// The messages sent so far of one protocol type, newest last.
     /// </summary>

@@ -50,7 +50,7 @@ public sealed class PlayerCapabilitiesTests
         var capabilities = Build();
 
         Assert.Equal(
-            ["player@v1", "controller@v1", "metadata@v1", "artwork@v1"],
+            ["player@v1", "controller@v1", "metadata@v1", "artwork@v1", "color@v1", "visualizer@v1"],
             capabilities.Roles);
     }
 
@@ -63,7 +63,9 @@ public sealed class PlayerCapabilitiesTests
     /// repository controls. So the invariant is asserted from the other direction: every role
     /// whose support object the SDK will emit has to appear in what we advertise. A server
     /// rejects the hello as non-compliant otherwise, naming exactly the roles that are listed
-    /// nowhere.
+    /// nowhere. <c>visualizer@v1_support</c> joined the list with the living backdrop: it is
+    /// emitted whenever <c>VisualizerSupport</c> is set, so the role and the support object have
+    /// to travel together, and this is the half of that pin the capabilities object can carry.
     /// </remarks>
     [Fact]
     public void Roles_CoverEveryRoleTheSdkEmitsASupportObjectFor()
@@ -72,6 +74,23 @@ public sealed class PlayerCapabilitiesTests
 
         Assert.Contains("player@v1", capabilities.Roles);
         Assert.Contains("artwork@v1", capabilities.Roles);
+        Assert.Contains("visualizer@v1", capabilities.Roles);
+        Assert.NotNull(capabilities.VisualizerSupport);
+    }
+
+    /// <summary>
+    /// The visualizer stream the backdrop is built for: loudness and beat, at a rate the eased
+    /// visuals can use, and nothing that would need a spectrum configuration.
+    /// </summary>
+    [Fact]
+    public void VisualizerSupport_AsksForLoudnessAndBeatOnly()
+    {
+        var support = Build().VisualizerSupport!;
+
+        Assert.Equal(["loudness", "beat"], support.Types);
+        Assert.Equal(30, support.RateMax);
+        Assert.Equal(4096, support.BufferCapacity);
+        Assert.Null(support.Spectrum);
     }
 
     /// <summary>

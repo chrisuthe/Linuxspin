@@ -18,8 +18,8 @@ contradict what the plan originally assumed.
 | `controller@v1` | Implemented (transport commands, volume, mute, `switch`) |
 | `metadata@v1` | Implemented (title, artist, album, album artist, progress) |
 | `artwork@v1` | Implemented (one album channel, JPEG, 512×512) |
-| `visualizer@v1` | **Not implemented** — not advertised, so no visualizer stream is negotiated |
-| `color@v1` | **Not implemented** — the SDK surfaces `ColorChanged`; the UI does not consume it yet |
+| `visualizer@v1` | Implemented (loudness and beat at up to 30 frames a second, 4 096-byte buffer; no spectrum) — drives the living backdrop |
+| `color@v1` | Implemented (the server's palette, picked per theme variant) — drives the living backdrop |
 | `management@v1` | **Not implemented** — see "Blocked on the SDK" below |
 | Noise `KKpsk2` transport encryption | **Not implemented** — see below |
 | Pairing (PSK, and the optional CPace PIN flow) | **Not implemented** — see below |
@@ -127,6 +127,21 @@ artwork and metadata all work. Pinned by
 This is ours to fix rather than a blocked-on-10.x item, because `ClientCapabilities.Roles` is a
 plain settable `List<string>` — the SDK imposes no constant. If a 10.x ever ships versioned members
 on `ClientRoles`, this list should be built from those instead of interpolating the suffix.
+
+### `color@v1` and `visualizer@v1` — the living backdrop's two roles
+
+Both advertised since reskin phase 5, and both consumed: the palette recolours the Ambient Glow
+blobs and the Breathing Art glow, the loudness frames drive their energy and the beat frames their
+pulse. `visualizer@v1` goes with a `visualizer@v1_support` object asking for `loudness` and `beat`
+at up to 30 frames a second with a 4 096-byte buffer, and no spectrum — the SDK emits the support
+object whenever `ClientCapabilities.VisualizerSupport` is set, so the role and the object have to
+travel together or the hello is the non-compliant one quoted above. Pinned by
+`PlayerCapabilitiesTests.Roles_AreAdvertisedWithTheirVersionSuffix`,
+`Roles_CoverEveryRoleTheSdkEmitsASupportObjectFor` and `VisualizerSupport_AsksForLoudnessAndBeatOnly`
+against the capabilities object, and by
+`ClientAdvertisementTests.Visualizer_SupportIsAdvertisedAlongsideTheVisualizerAndColorRoles` on the
+wire. What the player does with the frames is the UI's business and is recorded under "As shipped
+(reskin phase 5)" in `docs/ARCHITECTURE.md`. Spectrum, peak and pitch are not requested.
 
 ### Two defects the 9.3.2 bump closed
 
