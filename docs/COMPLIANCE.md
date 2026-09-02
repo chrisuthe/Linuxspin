@@ -16,8 +16,8 @@ contradict what the plan originally assumed.
 |---|---|
 | `player@v1` | Implemented |
 | `controller@v1` | Implemented (transport commands, volume, mute, `switch`) |
-| `metadata@v1` | Implemented (title, artist, album, album artist, progress) |
-| `artwork@v1` | Implemented (one album channel, JPEG, 512×512) |
+| `metadata@v1` | Implemented (title, artist, album, album artist, progress; scheduled updates held until their timestamp and position projected from the current metadata's timestamp — `PlayerServiceEventTests`, `ScheduledValueTests`, `MediaSessionMapperTests.ProjectPosition_*`) |
+| `artwork@v1` | Implemented (one album channel, JPEG, 512×512; scheduled images and clears held until their timestamp per channel — `PlayerServiceEventTests.ScheduledArtworkAndMetadata_*`; the announce-and-parts transfer the spec adopted on 2026-09-02 awaits an SDK bump, see `docs/ARCHITECTURE.md`) |
 | `visualizer@v1` | Implemented (loudness and beat at up to 30 frames a second, 4 096-byte buffer; no spectrum) — drives the living backdrop |
 | `color@v1` | Implemented (the server's palette, picked per theme variant) — drives the living backdrop |
 | `management@v1` | **Not implemented** — see "Blocked on the SDK" below |

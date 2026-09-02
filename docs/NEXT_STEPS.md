@@ -239,19 +239,19 @@ dotnet run --project scripts/spike/ShellSpike -- clock
 
 ---
 
-## 9. The artwork handler ignores the frame's channel and display timestamp
+## 9. Scheduled artwork and metadata are honoured; `stream/end` is not yet seen
 
-`SendspinPlayerService.OnArtworkReceived` and `OnArtworkCleared` read neither `Channel` nor
-`Timestamp` off the artwork frame. Harmless today: `client/hello` advertises exactly one artwork
-channel, so every frame is channel 0, and the server-clock timestamp — when the picture *should be
-shown* — is ignored in favour of showing it on arrival. Naming the cached file by its bytes fixed
-the stale-art race that ordering produced, so the residue is at worst a sub-second early cover
-when the next track's picture lands ahead of its metadata.
+`SendspinPlayerService` now holds a picture, a clear or a metadata update stamped for the future
+until its timestamp, per channel for artwork, and computes position from the current metadata's
+timestamp (`docs/ARCHITECTURE.md`, "The SDK surfaces the artwork and metadata timestamps but holds
+nothing pending"). What remains is upstream: SDK 9.3.2 raises no event for `stream/end`, where the
+spec discards pending values, so a pending value outlives a stream end until its own timestamp; and
+the announce-and-parts artwork transfer the spec adopted on 2026-09-02 is not in 9.3.2 at all.
 
-**First action:** none until a second channel (artist art) is advertised; a clear on channel 1 would
-then blank the album art. Honouring the timestamp means holding the publish until clock sync says
-server time has reached it, and is its own change — it does not replace per-picture paths, which are
-still needed at the boundary.
+**First action:** none until the SDK bump that adds both. When it lands, discard pending values on
+the stream-end event and take "transfer complete" from the SDK — the scheduler is built on the
+complete-image event, so nothing else moves. The cross-fade the spec permits around a picture's
+timestamp is a UI follow-up that can be picked up independently.
 
 ---
 
