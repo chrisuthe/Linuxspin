@@ -261,3 +261,19 @@ Recorded so the reasoning is not relitigated from scratch:
   complete first-party Swift SDK; SwiftUI plus SendspinKit is the answer there.
 - **No native C audio shim yet.** See `docs/ARCHITECTURE.md` for the per-platform realtime story and
   where the macOS one is knowingly short.
+- **The native shell.** The window follows the system theme, accent and font, with the OS's own
+  decorations; the composition — the layer stack, Now Playing's two layouts, the settings card, the
+  Stats window, the living backdrop — comes from Sendspin for Windows, and the colours do not. Every
+  colour is a theme or accent token; the hygiene test in `Sendspin.Ui.Tests` keeps literal colours
+  out of the axaml. The reasoning and the measurements are the *UI shell* section of
+  `docs/ARCHITECTURE.md`.
+- **The `UiClock` rule.** No `DispatcherTimer`, `RequestAnimationFrame` or Avalonia `Animation` in
+  the app: the Wayland backend quantises the first and runs the other two at tens of kilohertz with
+  no frame between (item 8). Everything periodic goes through `Player/Threading/UiClock.cs`, and a
+  hygiene test keeps `DispatcherTimer` out of every other file. Re-measure the backend on every
+  `Avalonia.Wayland` bump before relaxing this; do not relax it on the strength of a reading.
+- **The two backdrop roles are advertised.** `client/hello` lists `color@v1` and `visualizer@v1`
+  with a `visualizer@v1_support` object, verified live against Music Assistant; the roles and the
+  support object are one pin. Taking them out again to slim the hello would put the living backdrop
+  back on the theme accent alone — the fallback exists for a server that lacks the roles, not as a
+  mode to prefer.

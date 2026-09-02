@@ -41,16 +41,29 @@ namespace Sendspin.Player;
 /// </list>
 /// <para>
 /// Two Avalonia defects also constrain the menu: <c>NativeMenuItem.IsChecked</c> does not work on
-/// Windows (#8751), so shuffle and repeat cannot carry checkmarks, and <c>NativeMenu.Opening</c>
+/// Windows (#8751), so mute, shuffle and repeat cannot carry checkmarks, and <c>NativeMenu.Opening</c>
 /// never fires (#8076), so the menu cannot be rebuilt to show the current track. The menu is
-/// therefore static, with state shown in labels that are updated on change instead.
+/// therefore static, with state shown in labels that are updated on change instead: Play / Pause
+/// and Mute / Unmute follow the view model, and the volume is a disabled readout.
+/// </para>
+/// <para>
+/// The items are the Sendspin for Windows tray menu's, in its order, under this app's status
+/// line. Switch Group is here whether or not the footer shows its button: the menu is where a
+/// hidden button's function still lives.
 /// </para>
 /// </remarks>
 public sealed class TrayIconController
 {
     private readonly ILogger<TrayIconController> _logger;
-    private readonly NativeMenuItem _playPauseItem;
     private readonly NativeMenuItem _statusItem;
+    private readonly NativeMenuItem _playPauseItem;
+    private readonly NativeMenuItem _nextItem;
+    private readonly NativeMenuItem _previousItem;
+    private readonly NativeMenuItem _switchGroupItem;
+    private readonly NativeMenuItem _muteItem;
+    private readonly NativeMenuItem _volumeItem;
+    private readonly NativeMenuItem _showItem;
+    private readonly NativeMenuItem _quitItem;
 
     private TrayIcon? _icon;
     private MainViewModel? _viewModel;
@@ -62,7 +75,35 @@ public sealed class TrayIconController
 
         _statusItem = new NativeMenuItem("Not connected") { IsEnabled = false };
         _playPauseItem = new NativeMenuItem("Play");
+        _nextItem = new NativeMenuItem("Next");
+        _previousItem = new NativeMenuItem("Previous");
+        _switchGroupItem = new NativeMenuItem("Switch Group");
+        _muteItem = new NativeMenuItem("Mute");
+        _volumeItem = new NativeMenuItem("Volume: 100 %") { IsEnabled = false };
+        _showItem = new NativeMenuItem("Show Sendspin Player");
+        _quitItem = new NativeMenuItem("Quit");
+
+        Menu = new NativeMenu
+        {
+            _statusItem,
+            new NativeMenuItemSeparator(),
+            _playPauseItem,
+            _nextItem,
+            _previousItem,
+            _switchGroupItem,
+            new NativeMenuItemSeparator(),
+            _muteItem,
+            _volumeItem,
+            new NativeMenuItemSeparator(),
+            _showItem,
+            _quitItem,
+        };
     }
+
+    /// <summary>
+    /// The menu, built once; the icon shows it and the tests read it.
+    /// </summary>
+    internal NativeMenu Menu { get; }
 
     /// <summary>
     /// Creates the icon and binds it to the view model.
@@ -78,28 +119,16 @@ public sealed class TrayIconController
 
         _viewModel = viewModel;
 
-        var menu = new NativeMenu();
-        menu.Add(_statusItem);
-        menu.Add(new NativeMenuItemSeparator());
-        menu.Add(_playPauseItem);
-
-        var previous = new NativeMenuItem("Previous");
-        var next = new NativeMenuItem("Next");
-        var show = new NativeMenuItem("Show Sendspin Player");
-        var quit = new NativeMenuItem("Quit");
-
-        menu.Add(previous);
-        menu.Add(next);
-        menu.Add(new NativeMenuItemSeparator());
-        menu.Add(show);
-        menu.Add(new NativeMenuItemSeparator());
-        menu.Add(quit);
-
-        _playPauseItem.Click += OnPlayPause;
-        previous.Click += OnPrevious;
-        next.Click += OnNext;
-        show.Click += OnShow;
-        quit.Click += OnQuit;
+        // Commands rather than click handlers where the view model has one: NativeMenuItem
+        // follows CanExecute into IsEnabled, so every transport item greys out together while
+        // there is no connection.
+        _playPauseItem.Command = viewModel.PlayPauseCommand;
+        _nextItem.Command = viewModel.NextCommand;
+        _previousItem.Command = viewModel.PreviousCommand;
+        _switchGroupItem.Command = viewModel.SwitchGroupCommand;
+        _muteItem.Command = viewModel.ToggleMuteCommand;
+        _showItem.Click += OnShow;
+        _quitItem.Click += OnQuit;
 
         _icon = new TrayIcon
         {
@@ -107,7 +136,7 @@ public sealed class TrayIconController
             // Category and the icon silently never appears.
             ToolTipText = "Sendspin Player",
             Icon = LoadIcon(),
-            Menu = menu,
+            Menu = Menu,
             IsVisible = true
         };
 
@@ -136,7 +165,13 @@ public sealed class TrayIconController
         }
 
         _icon.Clicked -= OnShow;
-        _playPauseItem.Click -= OnPlayPause;
+        _showItem.Click -= OnShow;
+        _quitItem.Click -= OnQuit;
+        _playPauseItem.Command = null;
+        _nextItem.Command = null;
+        _previousItem.Command = null;
+        _switchGroupItem.Command = null;
+        _muteItem.Command = null;
 
         _icon.IsVisible = false;
         _icon.Dispose();
@@ -170,7 +205,9 @@ public sealed class TrayIconController
     {
         if (e.PropertyName is nameof(MainViewModel.IsPlaying)
             or nameof(MainViewModel.State)
-            or nameof(MainViewModel.ConnectionStatus))
+            or nameof(MainViewModel.ConnectionStatus)
+            or nameof(MainViewModel.IsMuted)
+            or nameof(MainViewModel.Volume))
         {
             UpdateLabels();
         }
@@ -188,19 +225,14 @@ public sealed class TrayIconController
         }
 
         _playPauseItem.Header = _viewModel.PlayPauseLabel;
-        _playPauseItem.IsEnabled = _viewModel.IsConnected;
+        _muteItem.Header = _viewModel.IsMuted ? "Unmute" : "Mute";
+        _volumeItem.Header = $"Volume: {_viewModel.Volume} %";
 
         var title = _viewModel.State.Title;
         _statusItem.Header = title is null
             ? _viewModel.ConnectionStatus
             : $"{title} — {_viewModel.State.Artist ?? "Unknown artist"}";
     }
-
-    private void OnPlayPause(object? sender, EventArgs e) => _viewModel?.PlayPauseCommand.Execute(null);
-
-    private void OnPrevious(object? sender, EventArgs e) => _viewModel?.PreviousCommand.Execute(null);
-
-    private void OnNext(object? sender, EventArgs e) => _viewModel?.NextCommand.Execute(null);
 
     private void OnShow(object? sender, EventArgs e) => (Application.Current as App)?.ShowMainWindow();
 

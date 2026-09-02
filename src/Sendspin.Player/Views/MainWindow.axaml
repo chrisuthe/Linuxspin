@@ -55,7 +55,7 @@
           is active, which is also when the blurred art above is hidden: one backdrop at a time.
           The view's own frame loop stops itself whenever this window is hidden.
 
-          A Panel, like layer 0, rather than the ContentControl Phase 2 left here: a hidden
+          A Panel, like layer 0, rather than a ContentControl: a hidden
           ContentControl is never measured, so never templates, so its content never joins the
           tree — and the view has to be in the tree while hidden, to hear the palette arrive and
           to probe the renderer after the first frame. A hidden Panel keeps its children attached.

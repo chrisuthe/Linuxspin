@@ -14,7 +14,7 @@ namespace Sendspin.Player.Views;
 /// below <see cref="WideThreshold"/>, art beside a text column at or above it — by setting the
 /// <c>wide</c> class on the composition grid, and the styles in the axaml do the rest. That is a
 /// class toggle rather than a container query because the test that pins which composition is
-/// active, and Phase 5's breathing-art work, both read the switch off this one control.
+/// active, and the Breathing Art animator, both read the switch off this one control.
 /// </para>
 /// <para>
 /// The art's size is the one value the styles cannot express: the body width minus the margins

@@ -110,6 +110,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [NotifyCanExecuteChangedFor(nameof(ToggleShuffleCommand))]
     [NotifyCanExecuteChangedFor(nameof(CycleRepeatCommand))]
     [NotifyCanExecuteChangedFor(nameof(SwitchGroupCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ToggleMuteCommand))]
     private bool _isConnected;
 
     [ObservableProperty]
@@ -508,6 +509,13 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [RelayCommand(CanExecute = nameof(CanControl))]
     private async Task SwitchGroupAsync() =>
         await _player.SendCommandAsync(SDK.Protocol.Messages.Commands.Switch);
+
+    /// <summary>
+    /// Mutes or unmutes: the tray's Mute / Unmute item. The footer's speaker button binds
+    /// <see cref="IsMuted"/> directly, so both go through the one property.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanControl))]
+    private void ToggleMute() => IsMuted = !IsMuted;
 
     private bool CanControl() => IsConnected;
 

@@ -582,6 +582,28 @@ the host's and the shell cannot follow a path into it.
 
 ## UI shell
 
+**What shipped, by paragraph.** The measurements below are long; these are the "As shipped"
+paragraphs that say what the player does with them, so a reader after the shell rather than the
+numbers can go straight there:
+
+- **The shell** — [reskin phase 1](#system-font--inter-wins-only-because-fluent-asks-for-it-first)
+  (system theme, accent and font, the "Decided and shipped" paragraph at the end of the font section)
+  and [reskin phase 2](#as-shipped-reskin-phase-2--the-window-shell): the 440×700 native-decorated
+  window, the layer stack, the opaque-root and toolbar-inset rules.
+- **The clock** — the "one timer" paragraph under
+  [reskin phase 2](#as-shipped-reskin-phase-2--the-window-shell): `UiClock`, the hygiene test that
+  keeps `DispatcherTimer` out, and the elapsed-time progress bar.
+- **The compositions** — [reskin phase 3](#as-shipped-reskin-phase-3--now-playing-welcome-the-backdrop-the-prompt):
+  Now Playing's narrow and wide layouts, Welcome, the blurred-art backdrop and the auto-connect prompt.
+- **The settings card** — [reskin phase 4](#as-shipped-reskin-phase-4--the-settings-card-and-the-stats-window),
+  first paragraph: the overlay card, its sections, and write-through with no Save.
+- **The Stats window** — [reskin phase 4](#as-shipped-reskin-phase-4--the-settings-card-and-the-stats-window),
+  "The Stats window": the separate diagnostics window and its refresh clock.
+- **The backdrop** — [reskin phase 5](#as-shipped-reskin-phase-5--the-living-backdrop): the two
+  advertised roles, Ambient Glow, Breathing Art, the software-rendering guard and the measured cost.
+- **The loose ends** — [reskin phase 6](#as-shipped-reskin-phase-6--tray-parity-friendly-labels-the-macos-font):
+  the tray menu at parity with the reference, the friendly picker labels, and the guarded macOS font.
+
 What the windowing layer actually does when asked to follow the desktop, and what the living-backdrop
 effect loop costs. Measured on two dev machines with a throwaway probe kept under
 `scripts/spike/ShellSpike/` so any of it can be re-run:
@@ -889,9 +911,14 @@ already sees, which is what takes the Flatpak from DejaVu Sans to the desktop's 
 portal or no key leaves `DefaultFamilyName` null, which is fontconfig's answer as before. The app logs
 what it ended up with at start-up (`UI font: $Default is …, glyphs from …, fallback face …`), which
 is the `font` probe's report without a second binary. Windows leaves the name null on the measurement
-above; macOS leaves it null on the Helvetica measurement; the table above shows `.AppleSystemUIFont` is the
-name that resolves to the system face and that an unresolvable name kills the process, so the macOS
-override is a follow-up that ships with a resolve check (`PlatformSelection.MacOS.cs`).
+above. **macOS: shipped, guarded** (reskin phase 6). The table above shows `.AppleSystemUIFont` is the
+name that resolves to the system face and that an unresolvable name kills the process, so
+`PlatformSelection.MacOS.cs` names it only after `SKFontManager.Default.MatchFamily` has returned a
+typeface for it — the same font manager Avalonia will ask — and leaves the name null, with a line on
+standard error, when it does not. The rule is `Core/Platform/MacSystemFont.Select`, a pure function
+over a resolver, pinned by `Sendspin.Tests/MacSystemFontTests` on both answers without a Mac. The
+start-up `UI font:` line is how the result is read on the machine: `$Default is .AppleSystemUIFont,
+glyphs from System Font` is the guard passing.
 
 
 ### Decorations and client-area extension — the hint does nothing under KWin
@@ -1430,3 +1457,29 @@ spike's, and is exactly why the guard exists. The loop itself held 62.5 fps in e
 `docs/screenshots/reskin/phase5-glow-{light,dark}.png` (the window as the user had it, wide) and
 `phase5-breathing-dark.png`; the settings-card shot `phase5-settings-backdrop.png` needs a hand on
 the gear and is not in this commit.
+
+### As shipped (reskin phase 6) — tray parity, friendly labels, the macOS font
+
+**The tray menu** (`Services/TrayIconController.cs`) carries the Sendspin for Windows items in its
+order, under this app's status line: Play / Pause, Next, Previous, Switch Group, a separator, Mute /
+Unmute, a disabled `Volume: NN %` readout, a separator, Show Sendspin Player, Quit. Switch Group is
+there whether or not the footer shows its button, because the menu is where a hidden button's
+function still lives. The two Avalonia constraints in the file's remarks still hold, so state is
+carried in labels — Play / Pause and Mute / Unmute follow the view model, the readout follows
+`Volume` — and never in `IsChecked`. The transport items bind the view model's commands rather than
+click handlers, which is what greys them all out together while there is no connection
+(`NativeMenuItem` follows `CanExecute`); Mute goes through a new `ToggleMuteCommand` so the footer's
+speaker button and the tray drive the one property. `Sendspin.Ui.Tests/TrayMenuTests` builds the
+menu over the headless platform's null tray and reads the headers in order, then flips mute and
+volume on the view model and reads them back.
+
+**The friendly labels.** `Converters/ConnectionModeLabel.cs` and `AutoConnectPolicyLabel.cs` follow
+`BackdropModeLabel`: the picker binds the enum through to the setting and only the item template
+goes through the converter, so "AdvertiseOnly" reads as "Advertise to servers, and let a server
+connect" and "JustOnce" as "Just once". `Sendspin.Ui.Tests/SettingLabelTests` pins every member of
+both enums, so a new member fails a test rather than showing raw; `ConnectionMode.Auto`, obsolete
+on this SDK line and removed on the next, is the one member allowed to fall through, and the test
+says so. `EverySettingsComboBoxIsGuarded` still counts five.
+
+**The macOS font** is the "shipped, guarded" paragraph at the end of the System font section
+above. The one thing this phase could not verify from Linux is that line on a Mac.
