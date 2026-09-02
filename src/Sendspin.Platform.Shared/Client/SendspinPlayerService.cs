@@ -1246,10 +1246,15 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
             return;
         }
 
-        // Rounded up: a timer that fires a fraction early finds nothing due and has to re-arm.
-        var delayMs = Math.Max(0, (next.Value - nowLocalMicros + 999) / 1000);
+        // Rounded up: a timer that fires a fraction early finds nothing due and has to re-arm. Capped
+        // because Timer.Change rejects anything past ~49 days, and only a broken clock conversion
+        // could ask for it; the callback re-evaluates and re-arms, so a cap costs nothing.
+        var delayMs = Math.Clamp((next.Value - nowLocalMicros + 999) / 1000, 0, MaxPromotionDelayMs);
         _promotion.Change(delayMs, Timeout.Infinite);
     }
+
+    /// <summary>Longest single arm of the promotion timer; see <see cref="RearmPromotion"/>.</summary>
+    private const long MaxPromotionDelayMs = 60 * 60 * 1000;
 
     private void OnPromotionDue()
     {
