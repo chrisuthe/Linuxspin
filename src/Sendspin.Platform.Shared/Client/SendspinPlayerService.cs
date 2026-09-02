@@ -1057,9 +1057,8 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
         });
     }
 
-    // The cache names the file by the bytes, not by whatever metadata the group holds right
-    // now: with a queue the next track's picture can land before its metadata, and a name taken
-    // from the current track would overwrite that track's file in place.
+    // Deliberately not keyed on the group's current metadata, which can lag the picture: see
+    // MediaSessionMapper.ArtworkFileName.
     private void OnArtworkReceived(object? sender, ArtworkReceivedEventArgs e)
     {
         var path = _artworkCache.Write(e.ImageData);

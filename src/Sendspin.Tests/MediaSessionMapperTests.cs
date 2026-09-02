@@ -212,10 +212,9 @@ public sealed class MediaSessionMapperTests
     /// Artwork filenames must be unique per picture, and stable for one.
     /// </summary>
     /// <remarks>
-    /// Every consumer dedupes by path — the window's reload check, GNOME's texture cache, Plasma's
-    /// applet — so a new picture must be a new path. The name comes from the bytes rather than the
-    /// track, because with a queue the picture can arrive before the metadata that describes it,
-    /// and a metadata-derived name would overwrite the current track's file in place.
+    /// Every consumer dedupes by path, so a new picture must be a new path; the name comes from the
+    /// bytes rather than the track for the reason <see cref="MediaSessionMapper.ArtworkFileName"/>
+    /// gives.
     /// </remarks>
     [Fact]
     public void ArtworkFileName_DiffersPerPictureAndIsStableForOne()

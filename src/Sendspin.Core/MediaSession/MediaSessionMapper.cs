@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using Sendspin.SDK.Models;
@@ -171,16 +170,17 @@ public static class MediaSessionMapper
     /// <remarks>
     /// <para>
     /// Unique per picture, and that is a requirement rather than tidiness. Every consumer of
-    /// the path dedupes by it: the window reloads only when the path changes, and GNOME's
-    /// texture cache and Plasma's applet cache cover art by URL for the life of the shell. So a
-    /// new picture must always land at a new path, and the same picture re-sent may land at the
-    /// same one.
+    /// the path dedupes by it: the window and each platform's media session reload only when
+    /// the path changes, and GNOME's texture cache and Plasma's applet cache cover art by URL
+    /// for the life of the shell. So a new picture must always land at a new path, and the same
+    /// picture re-sent may land at the same one.
     /// </para>
     /// <para>
     /// Hashing the bytes rather than the track's metadata is what makes that hold: with a queue
     /// the server can deliver the next track's picture before the next track's metadata, and a
     /// name taken from the metadata would then overwrite the current track's file in place,
-    /// under a path nobody rereads.
+    /// under a path nobody rereads. Everything else that touches the file names points here
+    /// for the reason rather than repeating it.
     /// </para>
     /// </remarks>
     public static string ArtworkFileName(ReadOnlySpan<byte> imageData, string extension = "jpg") =>
@@ -249,6 +249,6 @@ public static class MediaSessionMapper
     private static string ToHexToken(ReadOnlySpan<byte> value)
     {
         var hash = SHA256.HashData(value);
-        return Convert.ToHexString(hash.AsSpan(0, 16)).ToLower(CultureInfo.InvariantCulture);
+        return Convert.ToHexStringLower(hash.AsSpan(0, 16));
     }
 }

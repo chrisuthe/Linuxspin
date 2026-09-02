@@ -20,9 +20,7 @@ namespace Sendspin.Platform.Shared.Media;
 /// on the icon string for the lifetime of the shell, so writing every track's art to
 /// <c>artwork.jpg</c> leaves the first track's picture on screen for the rest of the session.
 /// Names come from <see cref="MediaSessionMapper.ArtworkFileName"/>, which hashes the image
-/// bytes: not the track's metadata, because with a queue the picture can arrive before the
-/// metadata that describes it, and a metadata-derived name would then overwrite the current
-/// track's file in place under a path every consumer has already cached.
+/// bytes rather than the track's metadata; its remarks say why.
 /// </para>
 /// <para>
 /// Files land in <see cref="IPlatformPaths.AlbumArtCacheDirectory"/>. Under Flatpak that

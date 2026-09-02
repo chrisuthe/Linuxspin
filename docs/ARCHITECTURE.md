@@ -543,8 +543,8 @@ Collected because each one is silent when wrong.
 `xesam:artist` is `as` not `s`; `mpris:trackid` is an **object path** unique per track and outside the
 reserved `/org/mpris` namespace; `mpris:length` is `x` in **microseconds**. Album art must be
 `file://` — KDE's lock screen blocks `http` and `data:`, and GNOME has no `data:` backend — written to
-a **unique filename per picture**, because GNOME's texture cache is keyed on the icon string for the
-life of the shell. Media keys need **nothing beyond MPRIS**: GNOME removed its `SettingsDaemon.MediaKeys`
+a **unique filename per picture** — named by a hash of the bytes, see the Flatpak note below for why
+not per track — because GNOME's texture cache is keyed on the icon string for the life of the shell. Media keys need **nothing beyond MPRIS**: GNOME removed its `SettingsDaemon.MediaKeys`
 API in 2021 with the message "superseded by MPRIS".
 
 **Linux tray.** Avalonia's `SetTitleAndTooltip` early-outs on a null tooltip and ships a

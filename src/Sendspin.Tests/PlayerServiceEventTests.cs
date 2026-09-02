@@ -91,11 +91,10 @@ public sealed class PlayerServiceEventTests
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The order seen live with a queue in place: track 1's metadata, its artwork A, then artwork B
-    /// <em>before</em> track 2's metadata. Every consumer of the published path dedupes by it — the
-    /// window's reload check, the MPRIS applets' URL cache — so if B were written under the name the
-    /// current metadata implies it would overwrite A's file in place and nothing would notice. The
-    /// path has to change the moment B arrives, and the two paths have to differ.
+    /// The order a queue produces: track 1's metadata, its artwork A, then artwork B <em>before</em>
+    /// track 2's metadata. Every consumer of the published path dedupes by it, so if B were written
+    /// under the name the current metadata implies it would overwrite A's file in place and nothing
+    /// would notice. The path has to change the moment B arrives, and the two paths have to differ.
     /// </para>
     /// <para>
     /// The same picture re-sent must land at the same path: that is the dedupe working as intended,
@@ -135,6 +134,37 @@ public sealed class PlayerServiceEventTests
         connection.ReceiveBinary(ArtworkFrame(timestamp: 3_000, Jpeg(marker: 0xB2)));
 
         Assert.Equal(pathB, published[^1]);
+    }
+
+    /// <summary>
+    /// The first track after connect is the same race with no metadata at all: two pictures before
+    /// any <c>server/state</c> must be two files, with the newer one published once there is a
+    /// state to publish it in.
+    /// </summary>
+    /// <remarks>
+    /// Nothing is published until the first group state arrives — the session is idle — so the
+    /// evidence is the cache directory, not the event stream.
+    /// </remarks>
+    [Fact]
+    public async Task TwoPicturesBeforeAnyMetadata_AreTwoFiles()
+    {
+        using var paths = new TemporaryPaths();
+        var (service, connection) = await ConnectAsync(paths);
+        await using var _ = service;
+
+        var published = new List<string?>();
+        service.StateChanged += (_, state) => published.Add(state.ArtworkFilePath);
+
+        connection.ReceiveBinary(ArtworkFrame(timestamp: 1_000, Jpeg(marker: 0xA1)));
+        connection.ReceiveBinary(ArtworkFrame(timestamp: 2_000, Jpeg(marker: 0xB2)));
+        connection.Receive("""
+            {"type":"server/state","payload":{"metadata":{"title":"One","artist":"A","album":"X"}}}
+            """);
+
+        var path = published[^1];
+        Assert.NotNull(path);
+        Assert.Equal(Jpeg(marker: 0xB2), await File.ReadAllBytesAsync(path));
+        Assert.Equal(2, Directory.GetFiles(paths.AlbumArtCacheDirectory).Length);
     }
 
     /// <remarks>
