@@ -239,7 +239,23 @@ dotnet run --project scripts/spike/ShellSpike -- clock
 
 ---
 
-## 9. Double-click the macOS toolbar to zoom
+## 9. The artwork handler ignores the frame's channel and display timestamp
+
+`SendspinPlayerService.OnArtworkReceived` and `OnArtworkCleared` read neither `Channel` nor
+`Timestamp` off the artwork frame. Harmless today: `client/hello` advertises exactly one artwork
+channel, so every frame is channel 0, and the server-clock timestamp — when the picture *should be
+shown* — is ignored in favour of showing it on arrival. Naming the cached file by its bytes fixed
+the stale-art race that ordering produced, so the residue is at worst a sub-second early cover
+when the next track's picture lands ahead of its metadata.
+
+**First action:** none until a second channel (artist art) is advertised; a clear on channel 1 would
+then blank the album art. Honouring the timestamp means holding the publish until clock sync says
+server time has reached it, and is its own change — it does not replace per-picture paths, which are
+still needed at the boundary.
+
+---
+
+## 10. Double-click the macOS toolbar to zoom
 
 The macOS window is movable by its toolbar (`MainWindow.OnToolbarPointerPressed`, and the
 drag-handle rule in `ARCHITECTURE.md`'s "As shipped (reskin phase 2)"). Double-clicking a title bar

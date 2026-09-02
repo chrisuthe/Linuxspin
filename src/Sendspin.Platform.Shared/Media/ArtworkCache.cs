@@ -16,11 +16,11 @@ namespace Sendspin.Platform.Shared.Media;
 /// discover that separately, every platform gets a file.
 /// </para>
 /// <para>
-/// <strong>One file per track, never one reused file.</strong> GNOME's texture cache is keyed
+/// <strong>One file per picture, never one reused file.</strong> GNOME's texture cache is keyed
 /// on the icon string for the lifetime of the shell, so writing every track's art to
 /// <c>artwork.jpg</c> leaves the first track's picture on screen for the rest of the session.
-/// Names come from <see cref="MediaSessionMapper.ArtworkFileName"/>, which derives them from
-/// track identity.
+/// Names come from <see cref="MediaSessionMapper.ArtworkFileName"/>, which hashes the image
+/// bytes rather than the track's metadata; its remarks say why.
 /// </para>
 /// <para>
 /// Files land in <see cref="IPlatformPaths.AlbumArtCacheDirectory"/>. Under Flatpak that
@@ -53,16 +53,14 @@ public sealed class ArtworkCache
     }
 
     /// <summary>
-    /// Writes artwork for a track and returns its absolute path, or null when it could not be
-    /// written.
+    /// Writes a picture and returns its absolute path, or null when it could not be written.
     /// </summary>
     /// <remarks>
     /// Returns null rather than throwing: artwork is decoration, and failing to cache a
     /// picture must not interrupt playback. The reason is logged.
     /// </remarks>
-    /// <param name="trackIdentity">Track identity, from <see cref="MediaSessionMapper"/>.</param>
     /// <param name="imageData">Encoded image bytes as received from the server.</param>
-    public string? Write(string? trackIdentity, ReadOnlySpan<byte> imageData)
+    public string? Write(ReadOnlySpan<byte> imageData)
     {
         if (imageData.IsEmpty)
         {
@@ -70,7 +68,7 @@ public sealed class ArtworkCache
         }
 
         var extension = DetectExtension(imageData);
-        var fileName = MediaSessionMapper.ArtworkFileName(trackIdentity, extension);
+        var fileName = MediaSessionMapper.ArtworkFileName(imageData, extension);
 
         try
         {

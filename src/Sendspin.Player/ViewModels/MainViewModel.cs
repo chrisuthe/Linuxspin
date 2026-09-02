@@ -884,6 +884,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     /// </summary>
     private void LoadArtwork(string? path)
     {
+        // The path is the whole test: the cache names files by content, so a new picture is
+        // always a new path (MediaSessionMapper.ArtworkFileName).
         if (path == _artworkPath)
         {
             return;
