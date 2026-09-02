@@ -46,6 +46,40 @@ public sealed class NotificationSettings
 }
 
 /// <summary>
+/// What the window does with the music: nothing, the Ambient Glow blobs, or the art breathing.
+/// </summary>
+public enum BackdropMode
+{
+    /// <summary>A still window: the blurred art alone, and the art tile at rest.</summary>
+    Off,
+
+    /// <summary>Drifting colour blobs from the server's palette, driven by loudness and beats.</summary>
+    AmbientGlow,
+
+    /// <summary>The art tile scales and glows with the music; no blobs.</summary>
+    BreathingArt
+}
+
+/// <summary>
+/// The living backdrop: which style, and how strongly it reacts.
+/// </summary>
+public sealed class BackdropSettings
+{
+    /// <summary>The intensity slider's ceiling; 1 is the tuned default.</summary>
+    public const double MaxIntensity = 2.0;
+
+    /// <summary>Gets or sets the backdrop style. Ambient Glow by default.</summary>
+    public BackdropMode Mode { get; set; } = BackdropMode.AmbientGlow;
+
+    /// <summary>
+    /// Gets or sets how strongly the backdrop reacts, glows and moves: 0 to
+    /// <see cref="MaxIntensity"/>, with 1 the tuned default. The renderer floors 0 to a faint
+    /// minimum rather than going dark; Off is a style, not an intensity.
+    /// </summary>
+    public double Intensity { get; set; } = 1.0;
+}
+
+/// <summary>
 /// Per-device calibration. The measured device latency is never the whole story: the
 /// analog, Bluetooth and AirPlay tail is not reported by any platform API, so it has to be
 /// a number the user can dial in per output.
@@ -170,6 +204,9 @@ public sealed class PlayerSettings
     /// same answer a clean exit would.
     /// </remarks>
     public bool ShowDiagnostics { get; set; }
+
+    /// <summary>Gets or sets the living backdrop's style and intensity.</summary>
+    public BackdropSettings Backdrop { get; set; } = new();
 
     /// <summary>
     /// Brings a just-loaded settings object forward to what this build supports.
