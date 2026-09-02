@@ -1057,16 +1057,11 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
         });
     }
 
+    // Deliberately not keyed on the group's current metadata, which can lag the picture: see
+    // MediaSessionMapper.ArtworkFileName.
     private void OnArtworkReceived(object? sender, ArtworkReceivedEventArgs e)
     {
-        GroupState? group;
-        lock (_sessionGate)
-        {
-            group = _group;
-        }
-
-        var identity = MediaSessionMapper.BuildTrackIdentity(group?.Metadata);
-        var path = _artworkCache.Write(identity, e.ImageData);
+        var path = _artworkCache.Write(e.ImageData);
 
         lock (_sessionGate)
         {

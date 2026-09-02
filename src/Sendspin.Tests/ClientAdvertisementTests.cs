@@ -316,7 +316,7 @@ public sealed class ClientAdvertisementTests
         using var paths = new TemporaryPaths();
         var cache = new ArtworkCache(paths, NullLogger<ArtworkCache>.Instance);
 
-        var path = cache.Write("track-1", JpegBytes(width: 512, height: 512));
+        var path = cache.Write(JpegBytes(width: 512, height: 512));
 
         Assert.NotNull(path);
         Assert.Equal(ExtensionFor(format), Path.GetExtension(path));
@@ -354,7 +354,7 @@ public sealed class ClientAdvertisementTests
         using var paths = new TemporaryPaths();
         var cache = new ArtworkCache(paths, NullLogger<ArtworkCache>.Instance);
 
-        var path = cache.Write("track-1", oversized);
+        var path = cache.Write(oversized);
 
         Assert.NotNull(path);
         Assert.Equal(oversized, await File.ReadAllBytesAsync(path));

@@ -543,8 +543,8 @@ Collected because each one is silent when wrong.
 `xesam:artist` is `as` not `s`; `mpris:trackid` is an **object path** unique per track and outside the
 reserved `/org/mpris` namespace; `mpris:length` is `x` in **microseconds**. Album art must be
 `file://` — KDE's lock screen blocks `http` and `data:`, and GNOME has no `data:` backend — written to
-a **unique filename per track**, because GNOME's texture cache is keyed on the icon string for the
-life of the shell. Media keys need **nothing beyond MPRIS**: GNOME removed its `SettingsDaemon.MediaKeys`
+a **unique filename per picture** — named by a hash of the bytes, see the Flatpak note below for why
+not per track — because GNOME's texture cache is keyed on the icon string for the life of the shell. Media keys need **nothing beyond MPRIS**: GNOME removed its `SettingsDaemon.MediaKeys`
 API in 2021 with the message "superseded by MPRIS".
 
 **Linux tray.** Avalonia's `SetTitleAndTooltip` early-outs on a null tooltip and ships a
@@ -578,7 +578,11 @@ output is swallowed inside a macios-hosted `.app`; log to a file during bring-up
 `<app_id>.*` and declaring it is a Flathub linter error. Prefer `--filesystem=xdg-run/pipewire-0`
 over `--socket=pulseaudio`, which forces `enable-shm=no` and pushes every buffer through the socket.
 Album art must go to `$XDG_RUNTIME_DIR/app/$FLATPAK_ID/`, not `/tmp` — the sandbox's `/tmp` is not
-the host's and the shell cannot follow a path into it.
+the host's and the shell cannot follow a path into it. Artwork files are named by a hash of the
+image bytes, not by the track's metadata: with a queue the server can deliver the next track's
+picture before the next track's metadata, and a metadata-derived name would overwrite the current
+track's file in place — under a path the window dedupes on and the Plasma and GNOME applets cache
+by URL, so nothing would refresh.
 
 ## UI shell
 
