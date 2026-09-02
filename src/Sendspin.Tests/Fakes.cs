@@ -110,6 +110,53 @@ internal sealed class ConvergedClockSynchronizer : IClockSynchronizer
 }
 
 /// <summary>
+/// A clock synchroniser with a fixed, known offset between the server's clock and the local one, so
+/// a test can stamp a message in server time and know exactly when it falls due locally.
+/// </summary>
+/// <remarks>
+/// <c>local = server + <see cref="OffsetMicros"/></c>. It reports minimal sync but not convergence,
+/// which is the state the spec's "current best estimate, no waiting for convergence" is written
+/// for. Measurements the SDK's time-sync loop feeds it are ignored, so the offset never moves.
+/// </remarks>
+internal sealed class OffsetClockSynchronizer(long offsetMicros) : IClockSynchronizer
+{
+    public long OffsetMicros => offsetMicros;
+
+    public bool IsConverged => false;
+
+    public bool HasMinimalSync => true;
+
+    public double StaticDelayMs { get; set; }
+
+    public void ProcessMeasurement(long t1, long t2, long t3, long t4)
+    {
+    }
+
+    public long ClientToServerTime(long clientTime) => clientTime - offsetMicros;
+
+    public long ServerToClientTime(long serverTime) => serverTime + offsetMicros;
+
+    public void Reset()
+    {
+    }
+
+    public ClockSyncStatus GetStatus() => new() { OffsetMicroseconds = -offsetMicros, MeasurementCount = 2 };
+}
+
+/// <summary>
+/// A local clock a test moves by hand, in microseconds, standing in for
+/// <c>HighPrecisionTimer.Shared</c>.
+/// </summary>
+internal sealed class ManualClock(long nowMicros)
+{
+    public long Now { get; private set; } = nowMicros;
+
+    public void Advance(TimeSpan by) => Now += (long)(by.TotalMilliseconds * 1000);
+
+    public void Set(long nowMicros) => Now = nowMicros;
+}
+
+/// <summary>
 /// The minimal sample source a pipeline needs in order to start.
 /// </summary>
 internal sealed class BufferSampleSource(ITimedAudioBuffer buffer, Func<long> now) : IAudioSampleSource

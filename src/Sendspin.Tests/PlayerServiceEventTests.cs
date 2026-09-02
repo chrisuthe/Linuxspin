@@ -1,19 +1,23 @@
 using System.Buffers.Binary;
+using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using Sendspin.Core.Audio;
 using Sendspin.Core.Configuration;
+using Sendspin.Core.MediaSession;
 using Sendspin.Platform.Shared.Client;
 using Sendspin.Platform.Shared.Media;
 using Sendspin.SDK.Models;
 using Sendspin.SDK.Protocol;
 using Sendspin.SDK.Protocol.Messages;
+using Sendspin.SDK.Synchronization;
 using Xunit;
 
 namespace Sendspin.Tests;
 
 /// <summary>
 /// Tests that the player service forwards the palette and the visualizer frames a session
-/// delivers, and that the artwork it publishes survives the order a queue delivers it in.
+/// delivers, that the artwork it publishes survives the order a queue delivers it in, and that
+/// artwork and metadata stamped for the future are held until their time.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -192,7 +196,173 @@ public sealed class PlayerServiceEventTests
         Assert.Equal(0, frames);
     }
 
-    private static async Task<(SendspinPlayerService Service, RecordingConnection Connection)> ConnectAsync(TemporaryPaths paths)
+    /// <summary>
+    /// A queue's next-track race, as the spec models it: track 1's metadata is in effect, then the
+    /// next picture and the next metadata arrive together stamped three seconds ahead. Nothing
+    /// visible changes until that moment, and then both change at once.
+    /// </summary>
+    /// <remarks>
+    /// The clock synchroniser has a known offset and the local clock is moved by hand, so "three
+    /// seconds ahead" is exact and the promotion is cranked rather than waited for. The position
+    /// published for track 1 also pins the spec's formula end to end: the metadata is stamped one
+    /// local second before "now", so the track is one second past its reported progress.
+    /// </remarks>
+    [Fact]
+    public async Task ScheduledArtworkAndMetadata_AreHeldUntilTheirTimestampAndChangeTogether()
+    {
+        using var paths = new TemporaryPaths();
+        var clock = new ManualClock(Second(10));
+        var (service, connection) = await ConnectAsync(paths, clock, new OffsetClockSynchronizer(Second(5)));
+        await using var _ = service;
+
+        var published = new List<(string? Title, string? Artwork, TimeSpan Position)>();
+        service.StateChanged += (_, state) => published.Add((state.Title, state.ArtworkFilePath, state.Position));
+
+        // Server 4 s is local 9 s: one second in the past.
+        connection.Receive(Metadata("One", serverMicros: Second(4), progressMs: 30_000));
+        connection.ReceiveBinary(ArtworkFrame(timestamp: Second(4), Jpeg(marker: 0xA1)));
+        var pathA = published[^1].Artwork;
+        Assert.NotNull(pathA);
+        Assert.Equal("One", published[^1].Title);
+        Assert.Equal(TimeSpan.FromSeconds(31), published[^1].Position);
+
+        // Server 8 s is local 13 s: three seconds ahead.
+        var before = published.Count;
+        connection.ReceiveBinary(ArtworkFrame(timestamp: Second(8), Jpeg(marker: 0xB2)));
+        connection.Receive(Metadata("Two", serverMicros: Second(8), progressMs: 0));
+
+        // The metadata carried a volume too, so a state was published — showing track 1 still.
+        Assert.All(published.Skip(before), state =>
+        {
+            Assert.Equal("One", state.Title);
+            Assert.Equal(pathA, state.Artwork);
+        });
+
+        clock.Advance(TimeSpan.FromSeconds(2.999));
+        service.PromoteDue();
+        Assert.Equal("One", published[^1].Title);
+        Assert.Equal(pathA, published[^1].Artwork);
+
+        clock.Advance(TimeSpan.FromSeconds(0.001));
+        var beforePromotion = published.Count;
+        service.PromoteDue();
+
+        var promoted = Assert.Single(published.Skip(beforePromotion));
+        Assert.Equal("Two", promoted.Title);
+        Assert.NotNull(promoted.Artwork);
+        Assert.NotEqual(pathA, promoted.Artwork);
+        Assert.Equal(TimeSpan.Zero, promoted.Position);
+    }
+
+    /// <summary>
+    /// The spec's cancel for metadata: re-sending the current state with a past or present timestamp
+    /// applies it and discards the pending update.
+    /// </summary>
+    [Fact]
+    public async Task APastMetadataAfterAScheduledOne_CancelsThePendingUpdate()
+    {
+        using var paths = new TemporaryPaths();
+        var clock = new ManualClock(Second(10));
+        var (service, connection) = await ConnectAsync(paths, clock, new OffsetClockSynchronizer(Second(5)));
+        await using var _ = service;
+
+        var titles = new List<string?>();
+        service.StateChanged += (_, state) => titles.Add(state.Title);
+
+        connection.Receive(Metadata("One", serverMicros: Second(4), progressMs: 0));
+        connection.Receive(Metadata("Two", serverMicros: Second(8), progressMs: 0));
+        connection.Receive(Metadata("One", serverMicros: Second(5), progressMs: 1_000));
+
+        clock.Advance(TimeSpan.FromSeconds(10));
+        service.PromoteDue();
+
+        Assert.Equal("One", titles[^1]);
+        Assert.DoesNotContain("Two", titles);
+    }
+
+    [Fact]
+    public async Task Disconnecting_DiscardsPendingUpdates()
+    {
+        using var paths = new TemporaryPaths();
+        var clock = new ManualClock(Second(10));
+        var (service, connection) = await ConnectAsync(paths, clock, new OffsetClockSynchronizer(Second(5)));
+        await using var _ = service;
+
+        var published = new List<MediaSessionState>();
+        service.StateChanged += (_, state) => published.Add(state);
+
+        connection.Receive(Metadata("One", serverMicros: Second(4), progressMs: 0));
+        connection.ReceiveBinary(ArtworkFrame(timestamp: Second(8), Jpeg(marker: 0xB2)));
+        connection.Receive(Metadata("Two", serverMicros: Second(8), progressMs: 0));
+
+        await service.DisconnectAsync();
+        var afterDisconnect = published.Count;
+
+        clock.Advance(TimeSpan.FromSeconds(10));
+        service.PromoteDue();
+
+        Assert.Equal(afterDisconnect, published.Count);
+        Assert.Equal(MediaSessionState.Idle, published[^1]);
+        Assert.Equal(MediaSessionState.Idle, service.CurrentState);
+    }
+
+    /// <summary>
+    /// Only the track metadata is scheduled. Playback state, volume, mute and the command set have no
+    /// audible moment of their own and apply the instant they arrive, even while metadata is held.
+    /// </summary>
+    [Fact]
+    public async Task PlaybackStateVolumeAndCommands_ApplyImmediatelyWhileMetadataIsHeld()
+    {
+        using var paths = new TemporaryPaths();
+        var clock = new ManualClock(Second(10));
+        var (service, connection) = await ConnectAsync(paths, clock, new OffsetClockSynchronizer(Second(5)));
+        await using var _ = service;
+
+        connection.Receive(Metadata("One", serverMicros: Second(4), progressMs: 0));
+        connection.Receive(Metadata("Two", serverMicros: Second(8), progressMs: 0));
+
+        connection.Receive("""
+            {"type":"server/state","payload":{"controller":{"volume":37,"muted":true,"supported_commands":["next"]}}}
+            """);
+        connection.Receive("""{"type":"group/update","payload":{"group_id":"g","playback_state":"paused"}}""");
+
+        var state = service.CurrentState;
+        Assert.Equal("One", state.Title);
+        Assert.Equal(37, state.Volume);
+        Assert.True(state.Muted);
+        Assert.True(state.CanGoNext);
+        Assert.False(state.CanGoPrevious);
+        Assert.Equal(MediaPlaybackStatus.Paused, state.Status);
+    }
+
+    private static long Second(double seconds) => (long)(seconds * 1_000_000);
+
+    /// <summary>
+    /// A <c>server/state</c> carrying one track's metadata, stamped in server microseconds, alongside
+    /// a volume so that every metadata message also publishes a state.
+    /// </summary>
+    private static string Metadata(string title, long serverMicros, double progressMs) =>
+        JsonSerializer.Serialize(new
+        {
+            type = "server/state",
+            payload = new
+            {
+                metadata = new
+                {
+                    timestamp = serverMicros,
+                    title,
+                    artist = "A",
+                    album = "X",
+                    progress = new { track_progress = progressMs, track_duration = 200_000, playback_speed = 1000 }
+                },
+                controller = new { volume = 50 }
+            }
+        });
+
+    private static async Task<(SendspinPlayerService Service, RecordingConnection Connection)> ConnectAsync(
+        TemporaryPaths paths,
+        ManualClock? clock = null,
+        IClockSynchronizer? clockSynchronizer = null)
     {
         var connection = new RecordingConnection
         {
@@ -226,6 +396,16 @@ public sealed class PlayerServiceEventTests
         {
             ConnectionFactory = () => connection
         };
+
+        if (clock is not null)
+        {
+            service.LocalClock = () => clock.Now;
+        }
+
+        if (clockSynchronizer is not null)
+        {
+            service.ClockSynchronizerFactory = () => clockSynchronizer;
+        }
 
         await service.ConnectAsync("ws://test.invalid/sendspin");
 

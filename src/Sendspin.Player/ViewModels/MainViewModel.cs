@@ -823,6 +823,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
         State = state;
         Position = state.Position;
+
+        // The published position is already the spec's projection from the current metadata's
+        // timestamp (MediaSessionMapper.ProjectPosition), so this anchors a value that is right at
+        // the moment it arrives; the anchor only carries it between reports.
         _anchoredPosition.Anchor(state.Position, _progressClock.Elapsed);
         Backdrop.SetPlaying(IsPlaying);
 
