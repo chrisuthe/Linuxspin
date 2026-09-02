@@ -92,7 +92,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ConnectionStatus))]
     [NotifyPropertyChangedFor(nameof(HasFooterStatus))]
+    [NotifyPropertyChangedFor(nameof(HasFooter))]
     [NotifyPropertyChangedFor(nameof(IsSearching))]
+    [NotifyPropertyChangedFor(nameof(ShowsNowPlaying))]
+    [NotifyPropertyChangedFor(nameof(ShowsWelcome))]
     [NotifyCanExecuteChangedFor(nameof(DisconnectCommand))]
     [NotifyCanExecuteChangedFor(nameof(PlayPauseCommand))]
     [NotifyCanExecuteChangedFor(nameof(NextCommand))]
@@ -113,6 +116,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasFooterStatus))]
+    [NotifyPropertyChangedFor(nameof(HasFooter))]
     private string? _statusMessage;
 
     [ObservableProperty]
@@ -158,6 +162,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private TimeSpan _position;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowsNowPlaying))]
+    [NotifyPropertyChangedFor(nameof(ShowsWelcome))]
     private bool _isSettingsOpen;
 
     /// <summary>
@@ -228,6 +234,13 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         _progressClock.Tick += OnProgressTick;
     }
 
+    /// <summary>
+    /// Raised when the user asks for the Stats window, whether or not it is already open, so the
+    /// window can come forward either way. <see cref="DiagnosticsViewModel.IsVisible"/> says
+    /// whether it should be open at all.
+    /// </summary>
+    public event EventHandler? StatsRequested;
+
     /// <summary>Gets the settings view model.</summary>
     public SettingsViewModel Settings { get; }
 
@@ -244,6 +257,20 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             ? $"Connected to {ServerName ?? "server"}"
             : "Not connected";
 
+    /// <summary>
+    /// Gets whether Now Playing is on screen: connected, and the settings card is not over it.
+    /// </summary>
+    /// <remarks>
+    /// The card's surface is translucent so the blurred backdrop tints it, and that only reads
+    /// while what is under it is the backdrop: over the art tile and the title the rows were
+    /// illegible. So the body content steps aside while the card is open and the backdrop layers
+    /// stay.
+    /// </remarks>
+    public bool ShowsNowPlaying => IsConnected && !IsSettingsOpen;
+
+    /// <summary>Gets whether Welcome is on screen: not connected, and the settings card is not over it.</summary>
+    public bool ShowsWelcome => !IsConnected && !IsSettingsOpen;
+
     /// <summary>Gets whether either backdrop layer is showing, which is when the veil is needed.</summary>
     public bool HasBackdrop => HasArtBackdrop || HasAmbientBackdrop;
 
@@ -252,6 +279,13 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     /// one, and no connection for the volume row to be about.
     /// </summary>
     public bool HasFooterStatus => !IsConnected && StatusMessage is not null;
+
+    /// <summary>
+    /// Gets whether the footer has anything to show: the volume row while connected, or a
+    /// status message while not. Disconnected with nothing to say, it collapses rather than
+    /// showing a disabled volume row under a screen that has no connection.
+    /// </summary>
+    public bool HasFooter => IsConnected || HasFooterStatus;
 
     /// <summary>Gets whether the group is playing.</summary>
     public bool IsPlaying => State.Status == MediaPlaybackStatus.Playing;
@@ -455,19 +489,56 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private bool CanControl() => IsConnected;
 
     /// <summary>
-    /// Shows or hides the settings pane.
+    /// Shows or hides the settings card.
     /// </summary>
     [RelayCommand]
     private void ToggleSettings() => IsSettingsOpen = !IsSettingsOpen;
 
     /// <summary>
-    /// Shows or hides the diagnostics pane.
+    /// Closes the settings card: the card's Done button. Nothing is applied here, because
+    /// every setting has already been written.
     /// </summary>
     [RelayCommand]
-    private void ToggleDiagnostics()
+    private void CloseSettings() => IsSettingsOpen = false;
+
+    /// <summary>
+    /// Opens the Stats window, or brings it forward when it is already open.
+    /// </summary>
+    [RelayCommand]
+    private void OpenStats()
     {
-        Diagnostics.SetVisible(!Diagnostics.IsVisible);
-        _settings.Update(s => s.ShowDiagnostics = Diagnostics.IsVisible);
+        SetStatsVisible(true);
+        StatsRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Opens or closes the Stats window, and remembers which for the next start.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="DiagnosticsViewModel.IsVisible"/> is the one fact the window follows and the
+    /// one that runs the refresh clock; the window's own close comes back through here so the
+    /// clock, the window and the persisted flag cannot disagree.
+    /// </remarks>
+    internal void SetStatsVisible(bool visible)
+    {
+        Diagnostics.SetVisible(visible);
+        _settings.Update(s => s.ShowDiagnostics = visible);
+    }
+
+    /// <summary>
+    /// Reopens the Stats window if it was open when the player last exited.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="PlayerSettings.ShowDiagnostics"/> is written on every open and close, so at
+    /// start it says whether the window was up at exit. Called from the start-up path, on the
+    /// UI thread; the flag is already right, so only the view model changes.
+    /// </remarks>
+    internal void ReopenStatsIfLeftOpen()
+    {
+        if (_settings.Current.ShowDiagnostics)
+        {
+            Diagnostics.SetVisible(true);
+        }
     }
 
     /// <summary>Answers the auto-connect question with "just once".</summary>
@@ -584,10 +655,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 await _presence.SetEnabledAsync(enabled: true);
             }
 
-            if (_settings.Current.ShowDiagnostics)
-            {
-                await Dispatcher.UIThread.InvokeAsync(() => Diagnostics.SetVisible(true));
-            }
+            await Dispatcher.UIThread.InvokeAsync(ReopenStatsIfLeftOpen);
 
             await _player.StartAsync();
         }

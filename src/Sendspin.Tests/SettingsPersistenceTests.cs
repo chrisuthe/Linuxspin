@@ -35,6 +35,9 @@ public sealed class SettingsPersistenceTests
 
         // Discord is a feature, not a platform integration, and must not be on by default.
         Assert.False(settings.DiscordRichPresence);
+
+        // The group switcher is part of the footer until someone says otherwise.
+        Assert.True(settings.ShowSwitchGroupButton);
     }
 
     [Fact]
@@ -60,6 +63,7 @@ public sealed class SettingsPersistenceTests
             StartMinimizedToTray = true,
             CloseToTray = false,
             DiscordRichPresence = true,
+            ShowSwitchGroupButton = false,
             ShowDiagnostics = true
         };
 
@@ -85,6 +89,7 @@ public sealed class SettingsPersistenceTests
         Assert.Equal(original.StartMinimizedToTray, loaded.StartMinimizedToTray);
         Assert.Equal(original.CloseToTray, loaded.CloseToTray);
         Assert.Equal(original.DiscordRichPresence, loaded.DiscordRichPresence);
+        Assert.Equal(original.ShowSwitchGroupButton, loaded.ShowSwitchGroupButton);
         Assert.Equal(original.ShowDiagnostics, loaded.ShowDiagnostics);
         Assert.Equal(-25.0, loaded.GetManualLatencyOffsetMs("device-abc"));
         Assert.True(loaded.Notifications.TrackChange);

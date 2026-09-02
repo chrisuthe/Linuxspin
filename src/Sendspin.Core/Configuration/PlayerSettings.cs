@@ -155,7 +155,20 @@ public sealed class PlayerSettings
     /// <summary>Gets or sets whether Discord Rich Presence is published. Off by default.</summary>
     public bool DiscordRichPresence { get; set; }
 
-    /// <summary>Gets or sets whether the diagnostics view is shown on startup.</summary>
+    /// <summary>
+    /// Gets or sets whether the footer shows the Switch Group button. On by default; off is for a
+    /// single-room setup with nothing to switch to.
+    /// </summary>
+    public bool ShowSwitchGroupButton { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets whether the Stats window was open when the player last exited, so the next
+    /// start reopens it.
+    /// </summary>
+    /// <remarks>
+    /// Written on every open and close of the window rather than at exit, so a crash leaves the
+    /// same answer a clean exit would.
+    /// </remarks>
     public bool ShowDiagnostics { get; set; }
 
     /// <summary>

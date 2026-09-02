@@ -172,7 +172,7 @@ Reading them by reflection was considered and rejected: a shipping diagnostics p
 another package's private members fails silently and invisibly the first time a name moves.
 
 **First action:** when the pin moves to 10.x (item 1), check whether these are public there and add
-them to `PlayerDiagnosticsSnapshot` and `DiagnosticsView.axaml`. If 10.x also keeps them internal,
+them to `PlayerDiagnosticsSnapshot` and `StatsWindow.axaml`. If 10.x also keeps them internal,
 that is worth an upstream issue alongside item 2.
 
 ---

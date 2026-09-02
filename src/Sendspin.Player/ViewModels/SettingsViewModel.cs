@@ -83,6 +83,9 @@ public sealed partial class SettingsViewModel : ObservableObject, IAsyncDisposab
     [ObservableProperty]
     private bool _discordRichPresence;
 
+    [ObservableProperty]
+    private bool _showSwitchGroupButton;
+
     public SettingsViewModel(
         SettingsService settings,
         SendspinPlayerService player,
@@ -123,6 +126,9 @@ public sealed partial class SettingsViewModel : ObservableObject, IAsyncDisposab
 
     /// <summary>Gets the codecs this build can decode.</summary>
     public IReadOnlyList<string> Codecs { get; } = PlayerCapabilities.SupportedCodecs;
+
+    /// <summary>Gets the version the settings card's footer shows.</summary>
+    public string AppVersion => AppInfo.DisplayVersion;
 
     /// <summary>
     /// Re-reads the available output devices.
@@ -278,6 +284,14 @@ public sealed partial class SettingsViewModel : ObservableObject, IAsyncDisposab
         }
     }
 
+    partial void OnShowSwitchGroupButtonChanged(bool value)
+    {
+        if (!_isLoading)
+        {
+            _settings.Update(s => s.ShowSwitchGroupButton = value);
+        }
+    }
+
     partial void OnDiscordRichPresenceChanged(bool value)
     {
         if (_isLoading)
@@ -319,6 +333,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IAsyncDisposab
             StartMinimizedToTray = settings.StartMinimizedToTray;
             CloseToTray = settings.CloseToTray;
             DiscordRichPresence = settings.DiscordRichPresence;
+            ShowSwitchGroupButton = settings.ShowSwitchGroupButton;
         }
         finally
         {

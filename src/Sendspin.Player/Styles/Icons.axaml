@@ -12,7 +12,7 @@
         - shuffle, repeat, switch-group: Sendspin for Windows (src/Sendspin.Windows/MainWindow.xaml
           in https://github.com/chrisuthe/windowsSpin), same author. Repeat-one adds a "1" to repeat.
         - play, pause, previous (skip-back), next (skip-forward), speaker (volume-2), muted
-          (volume-x), gear (settings), stats (bar-chart-2), music: Feather Icons 4.29.2,
+          (volume-x), gear (settings), stats (bar-chart-2), music, plus, minus: Feather Icons 4.29.2,
           https://github.com/feathericons/feather, Copyright (c) 2013-2023 Cole Bemis.
     -->
 
@@ -28,6 +28,8 @@
     <StreamGeometry x:Key="SwitchGroupIcon">M4.4,3 H8 A1.4,1.4 0 0 1 9.4,4.4 V8 A1.4,1.4 0 0 1 8,9.4 H4.4 A1.4,1.4 0 0 1 3,8 V4.4 A1.4,1.4 0 0 1 4.4,3 Z M15.4,3 H19 A1.4,1.4 0 0 1 20.4,4.4 V8 A1.4,1.4 0 0 1 19,9.4 H15.4 A1.4,1.4 0 0 1 14,8 V4.4 A1.4,1.4 0 0 1 15.4,3 Z M4.4,14 H8 A1.4,1.4 0 0 1 9.4,15.4 V19 A1.4,1.4 0 0 1 8,20.4 H4.4 A1.4,1.4 0 0 1 3,19 V15.4 A1.4,1.4 0 0 1 4.4,14 Z M15.4,14 H19 A1.4,1.4 0 0 1 20.4,15.4 V19 A1.4,1.4 0 0 1 19,20.4 H15.4 A1.4,1.4 0 0 1 14,19 V15.4 A1.4,1.4 0 0 1 15.4,14 Z</StreamGeometry>
     <StreamGeometry x:Key="GearIcon">M15,12 A3,3 0 1 1 9,12 A3,3 0 1 1 15,12 Z M19.4,15 a1.65,1.65 0 0 0 .33,1.82 l.06,.06 a2,2 0 0 1 0,2.83 a2,2 0 0 1 -2.83,0 l-.06,-.06 a1.65,1.65 0 0 0 -1.82,-.33 a1.65,1.65 0 0 0 -1,1.51 V21 a2,2 0 0 1 -2,2 a2,2 0 0 1 -2,-2 v-.09 A1.65,1.65 0 0 0 9,19.4 a1.65,1.65 0 0 0 -1.82,.33 l-.06,.06 a2,2 0 0 1 -2.83,0 a2,2 0 0 1 0,-2.83 l.06,-.06 a1.65,1.65 0 0 0 .33,-1.82 a1.65,1.65 0 0 0 -1.51,-1 H3 a2,2 0 0 1 -2,-2 a2,2 0 0 1 2,-2 h.09 A1.65,1.65 0 0 0 4.6,9 a1.65,1.65 0 0 0 -.33,-1.82 l-.06,-.06 a2,2 0 0 1 0,-2.83 a2,2 0 0 1 2.83,0 l.06,.06 a1.65,1.65 0 0 0 1.82,.33 H9 a1.65,1.65 0 0 0 1,-1.51 V3 a2,2 0 0 1 2,-2 a2,2 0 0 1 2,2 v.09 a1.65,1.65 0 0 0 1,1.51 a1.65,1.65 0 0 0 1.82,-.33 l.06,-.06 a2,2 0 0 1 2.83,0 a2,2 0 0 1 0,2.83 l-.06,.06 a1.65,1.65 0 0 0 -.33,1.82 V9 a1.65,1.65 0 0 0 1.51,1 H21 a2,2 0 0 1 2,2 a2,2 0 0 1 -2,2 h-.09 a1.65,1.65 0 0 0 -1.51,1 Z</StreamGeometry>
     <StreamGeometry x:Key="StatsIcon">M18,20 V10 M12,20 V4 M6,20 V14</StreamGeometry>
+    <StreamGeometry x:Key="PlusIcon">M12,5 V19 M5,12 H19</StreamGeometry>
+    <StreamGeometry x:Key="MinusIcon">M5,12 H19</StreamGeometry>
     <StreamGeometry x:Key="MusicIcon">M9,18 V5 L21,3 V16 M9,18 A3,3 0 1 1 3,18 A3,3 0 1 1 9,18 Z M21,16 A3,3 0 1 1 15,16 A3,3 0 1 1 21,16 Z</StreamGeometry>
 
 </ResourceDictionary>

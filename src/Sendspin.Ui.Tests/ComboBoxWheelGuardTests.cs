@@ -96,6 +96,9 @@ public sealed class ComboBoxWheelGuardTests(HeadlessSession headless)
     [Fact]
     public void EverySettingsComboBoxIsGuarded() => headless.Run(() =>
     {
+        // The panel draws glyphs from Icons.axaml, which the real App merges and this run must.
+        PlayerResources.Merge();
+
         var window = new Window { Width = 340, Height = 600, Content = new SettingsView() };
         window.Show();
         Dispatcher.UIThread.RunJobs();

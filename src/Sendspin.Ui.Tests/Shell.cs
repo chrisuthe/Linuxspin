@@ -61,6 +61,10 @@ internal sealed class Shell : IDisposable
         return Assert.IsAssignableFrom<T>(value);
     }
 
+    /// <summary>The top of a control in <paramref name="root"/>'s coordinates, for "above" and "below".</summary>
+    public static double TopIn(Visual control, Visual root) =>
+        control.TranslatePoint(new Point(0, 0), root)?.Y ?? double.NaN;
+
     public void Dispose()
     {
         Window.Close();
