@@ -44,8 +44,10 @@
     </Styles.Resources>
 
     <!--
-      Surfaces. The toolbar paints nothing of its own so the backdrop can run up behind it; the
-      footer and the settings card sit on the translucent surface token. Both rows use the
+      Surfaces. The toolbar paints nothing of its own so the backdrop can run up behind it — and
+      its Background belongs to MainWindow's code-behind, which makes it the window's drag handle
+      on macOS, so a Background setter added here would be outranked there and clobbered elsewhere;
+      the footer and the settings card sit on the translucent surface token. Both rows use the
       iconButton at 36 px rather than the transport's 48 (see the buttons below), which is what
       keeps them slim.
     -->

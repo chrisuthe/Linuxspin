@@ -13,8 +13,8 @@ using Xunit;
 namespace Sendspin.Ui.Tests;
 
 /// <summary>
-/// Pins the window shell: its geometry, the layer stack, the opaque-root rule, the toolbar, the
-/// footer's two states, and the settings overlay.
+/// Pins the window shell: its geometry, the layer stack, the opaque-root rule, the toolbar and
+/// its drag handle, the footer's two states, and the settings overlay.
 /// </summary>
 /// <remarks>
 /// Everything here is found by name. The names are the contract Phases 3 to 5 fill layers in
@@ -396,10 +396,14 @@ public sealed class MainWindowShellTests(HeadlessSession headless)
     [Fact]
     public void TheToolbarInset_FollowsTheDecorationMargin()
     {
-        var macOS = new Thickness(0, 28, 0, 0);
+        // The strip's height is whatever the window reports: 28 px in the ShellSpike chrome case,
+        // 32 px in this app on the same OS and Avalonia build.
+        var spike = new Thickness(0, 28, 0, 0);
+        var app = new Thickness(0, 32, 0, 0);
 
-        Assert.Equal(default, MainWindow.ToolbarInsetFor(false, macOS));
-        Assert.Equal(new Thickness(MainWindow.TrafficLightsWidth, 28, 0, 0), MainWindow.ToolbarInsetFor(true, macOS));
+        Assert.Equal(default, MainWindow.ToolbarInsetFor(false, spike));
+        Assert.Equal(new Thickness(MainWindow.TrafficLightsWidth, 28, 0, 0), MainWindow.ToolbarInsetFor(true, spike));
+        Assert.Equal(new Thickness(MainWindow.TrafficLightsWidth, 32, 0, 0), MainWindow.ToolbarInsetFor(true, app));
         Assert.Equal(default, MainWindow.ToolbarInsetFor(false, default));
     }
 
@@ -410,5 +414,47 @@ public sealed class MainWindowShellTests(HeadlessSession headless)
 
         Assert.False(shell.Window.IsExtendedIntoWindowDecorations);
         Assert.Equal(default, shell.Find<Grid>("ToolbarContent").Margin);
+    });
+
+    [Fact]
+    public void TheTrafficLightCarveOut_IsTheStripsHeightByTheClusterWidth()
+    {
+        var margin = new Thickness(0, 32, 0, 0);
+
+        Assert.True(MainWindow.IsOverTrafficLights(new Point(0, 0), margin));
+        Assert.True(MainWindow.IsOverTrafficLights(new Point(40, 10), margin));
+
+        // Right of the cluster, and below the strip, are both toolbar rather than a button.
+        Assert.False(MainWindow.IsOverTrafficLights(new Point(MainWindow.TrafficLightsWidth, 10), margin));
+        Assert.False(MainWindow.IsOverTrafficLights(new Point(40, 32), margin));
+    }
+
+    [Fact]
+    public void TheToolbarDrag_NeedsExtendedDecorationsThePrimaryButtonAndAMissOnTheCluster()
+    {
+        var margin = new Thickness(0, 32, 0, 0);
+        var overTheToolbar = new Point(200, 40);
+        var overTheStrip = new Point(200, 10);
+        var overTheCluster = new Point(40, 10);
+
+        // The title strip the inset holds clear drags with the rest of the toolbar: measured on
+        // macOS 26.6.2 / Avalonia 12.1.1, it does not move the window by itself.
+        Assert.True(MainWindow.BeginsWindowDrag(isExtendedIntoDecorations: true, isLeftButton: true, overTheToolbar, margin));
+        Assert.True(MainWindow.BeginsWindowDrag(isExtendedIntoDecorations: true, isLeftButton: true, overTheStrip, margin));
+
+        Assert.False(MainWindow.BeginsWindowDrag(isExtendedIntoDecorations: true, isLeftButton: true, overTheCluster, margin));
+        Assert.False(MainWindow.BeginsWindowDrag(isExtendedIntoDecorations: true, isLeftButton: false, overTheToolbar, margin));
+        Assert.False(MainWindow.BeginsWindowDrag(isExtendedIntoDecorations: false, isLeftButton: true, overTheToolbar, margin));
+        Assert.False(MainWindow.BeginsWindowDrag(isExtendedIntoDecorations: false, isLeftButton: false, overTheToolbar, margin));
+    }
+
+    [Fact]
+    public void TheToolbar_HasNoDragSurfaceWhereDecorationsAreNative() => headless.Run(() =>
+    {
+        using var shell = Shell.Show();
+
+        // A null background is not hit-testable, so there is nothing to begin a drag on.
+        Assert.False(shell.Window.IsExtendedIntoWindowDecorations);
+        Assert.Null(shell.Find<Border>("Toolbar").Background);
     });
 }
