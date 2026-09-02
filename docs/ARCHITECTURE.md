@@ -589,7 +589,7 @@ numbers can go straight there:
 - **The shell** — [reskin phase 1](#system-font--inter-wins-only-because-fluent-asks-for-it-first)
   (system theme, accent and font, the "Decided and shipped" paragraph at the end of the font section)
   and [reskin phase 2](#as-shipped-reskin-phase-2--the-window-shell): the 440×700 native-decorated
-  window, the layer stack, the opaque-root and toolbar-inset rules.
+  window, the layer stack, and the opaque-root, toolbar-inset and drag-handle rules.
 - **The clock** — the "one timer" paragraph under
   [reskin phase 2](#as-shipped-reskin-phase-2--the-window-shell): `UiClock`, the hygiene test that
   keeps `DispatcherTimer` out, and the elapsed-time progress bar.
@@ -978,12 +978,22 @@ works exactly as intended, with no options to set beyond the hint itself:
 | `ActualTransparencyLevel` (empty hint) | `None` |
 
 Reproduced identically across runs. The red 48 px content band runs to the top of the window and the
-traffic lights are drawn on top of it, with the window still moving by that strip — the "art bleeds up
-behind the traffic lights, system buttons stay" arrangement the Linux paragraph above says does not
-exist there. That last sentence is an on-screen observation, not a property read, and no image is
-committed for it (see the screenshot note at the end of this section); the numbers in the table are
-what the row actually rests on. So the intent stands unchanged on macOS and has to be given up on Linux, which makes the
-top strip a per-platform layout decision rather than a shared one.
+traffic lights are drawn on top of it — the "art bleeds up behind the traffic lights, system buttons
+stay" arrangement the Linux paragraph above says does not exist there. So the intent stands unchanged
+on macOS and has to be given up on Linux, which makes the top strip a per-platform layout decision
+rather than a shared one.
+
+**The window does not move by that strip.** This row used to claim it did; re-running `ShellSpike
+chrome` on macOS 26.6.2 with Avalonia 12.1.1 — the property table above unchanged, `Position=840,390`
+— pressing and dragging the strip leaves the window exactly where it is. Extending the client area is
+the whole of it: it leaves no native title bar, and the spike's own opaque content band is
+hit-testable and covers the strip, so Avalonia takes the press and AppKit never sees a window drag.
+Anything that wants the window movable has to call `BeginMoveDrag` itself, which is what the shipped
+shell does (see "As shipped", below); the same reading is what makes that possible, since a press
+being eaten is a press that arrived. The traffic lights are unaffected — AppKit draws them above the
+client area and hit-tests them first. These are on-screen observations, not property reads, and no
+image is committed for them (see the screenshot note at the end of this section); the numbers in the
+table are what the row actually rests on.
 
 **Windows 11 Mica — unmeasured.** Intended: `TransparencyLevelHint="Mica, None"`
 (`WindowTransparencyLevel.Mica` first, `None` as the pre-22H2 fallback — the property is an ordered
@@ -1155,19 +1165,40 @@ code-behind on `OperatingSystem.IsX()`: **Linux** sets nothing (the client-area 
 KWin, above); **Windows** sets `TransparencyLevelHint = [Mica, None]`; **macOS** sets
 `ExtendClientAreaToDecorationsHint = true` and `ExtendClientAreaTitleBarHeightHint = -1` with no custom
 caption buttons, and the client area is deliberately *not* extended on Windows until the system caption
-buttons are known to survive it. Two rules are then read back from the window's own properties as they
+buttons are known to survive it. Three rules are then read back from the window's own properties as they
 change (`OnPropertyChanged`, never `Opened`, where the Wayland head still reports the fallback variant
 and scaling): the **opaque root** — the bottom `Border` of the stack, painted with Fluent's
 `SystemControlBackgroundAltHighBrush`, the colour the veil token derives from — is at 100 % opacity
 unless `ActualTransparencyLevel` settles on `Mica`, when it drops to 35 % so the material shows through;
-and the **toolbar inset** follows `WindowDecorationMargin` and `IsExtendedIntoWindowDecorations`, taking
+the **toolbar inset** follows `WindowDecorationMargin` and `IsExtendedIntoWindowDecorations`, taking
 the strip's height on top plus a fixed 78 px on the left for the traffic lights, which no property
-reports. Both are null-guarded because the Wayland backend raises
+reports. Reading that height rather than assuming it earns its keep: the shipped app reports
+`0,32,0,0` where the spike above measured `0,28,0,0`, in the same OS and Avalonia build. The cause is
+not established — the two differ in bundle and in window size — and nothing here needs it to be, since
+no code carries the figure; and the **drag handle**, because extending the client area leaves no native title bar to move
+the window by and the strip it uncovers does not move the window either (above). The handle is the whole
+toolbar `Border`, given a transparent background — a null one is not hit-testable, which is exactly why
+the toolbar has no drag surface at all where the decorations are native. Its `PointerPressed` handler
+calls `BeginMoveDrag` behind a pure static,
+`BeginsWindowDrag(isExtendedIntoDecorations, isLeftButton, pointer, decorationMargin)`: extended
+decorations, the primary button (macOS opens the window's own menu on a secondary press in the title
+area), and a press outside the traffic-light cluster. That last one is its own static,
+`IsOverTrafficLights`, over the pointer and `WindowDecorationMargin` in the window's own coordinates —
+the strip's height by `TrafficLightsWidth`, so the 78 px lives in one place and the rectangle is not a
+layout margin being read as a region. AppKit hit-tests the buttons first, so a press there should never
+reach the handler; the carve-out does not depend on that. AppKit keeps the resize edges as well:
+with the handle spanning the toolbar down to `y = 0`, dragging the top edge or the top-right corner
+still resizes the window rather than moving it — measured on the shipped app — so a press only ever
+begins a move on a pixel AppKit has already declined. The press is left to
+bubble and is *not* taken `handledEventsToo` or in the tunnel phase, so the settings `ToggleButton` marks
+its own press handled and the gear keeps toggling instead of starting a drag.
+All three are null-guarded because the Wayland backend raises
 `IsExtendedIntoWindowDecorations` from the base `Window` constructor, before the XAML has loaded. Above
 the root, bottom to top: the blurred-art `Image` (Phase 3), the ambient layer (Phase 5, a `Panel` — see there),
 the `VeilBrush` `Border` visible only when either backdrop is, and the content grid of toolbar, body
-and footer. `Sendspin.Ui.Tests/MainWindowShellTests` finds each layer by name and pins the opacity rule
-for both cases. Screenshots: `docs/screenshots/reskin/phase2-{wayland,x11}-{light,dark}.png`.
+and footer. `Sendspin.Ui.Tests/MainWindowShellTests` finds each layer by name, pins the opacity rule
+for both cases, and pins the drag gate and its traffic-light carve-out — `BeginMoveDrag`
+itself cannot be exercised headlessly, the decision in front of it can. Screenshots: `docs/screenshots/reskin/phase2-{wayland,x11}-{light,dark}.png`.
 
 **The one timer.** `Player/Threading/UiClock.cs` is a `System.Threading.Timer` posting one tick to
 `Dispatcher.UIThread` at `Render` priority, dropping a tick while the previous one is still queued

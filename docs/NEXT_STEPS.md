@@ -239,6 +239,26 @@ dotnet run --project scripts/spike/ShellSpike -- clock
 
 ---
 
+## 9. Double-click the macOS toolbar to zoom
+
+The macOS window is movable by its toolbar (`MainWindow.OnToolbarPointerPressed`, and the
+drag-handle rule in `ARCHITECTURE.md`'s "As shipped (reskin phase 2)"). Double-clicking a title bar
+to zoom, the other half of what a native Mac title bar does, was asked for at the same time and
+deliberately left out.
+
+macOS has a system preference for what a title-bar double-click does — zoom, minimise, or nothing
+(`AppleActionOnDoubleClick`) — and Avalonia 12 exposes no way to read it. Setting
+`WindowState = Maximized` on a double-click would hardcode one of those three answers and put an
+unmeasured platform assumption into the one section of `ARCHITECTURE.md` where every other claim is
+a measurement.
+
+**First action:** a `ShellSpike chrome` case that sets `WindowState = Maximized` on macOS and
+records what actually happens to the frame, then the behaviour behind an "As shipped" paragraph
+that says so. Reading the preference itself needs a P/Invoke to `CFPreferencesCopyAppValue`, which
+is only worth it if the spike shows `Maximized` is the wrong answer for two of the three settings.
+
+---
+
 ## Things that are done and should not be reopened
 
 Recorded so the reasoning is not relitigated from scratch:

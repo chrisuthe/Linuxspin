@@ -77,9 +77,13 @@
         <!-- Layer 2: the content. -->
         <Grid Name="ContentLayer" RowDefinitions="Auto,*,Auto">
 
-            <!-- Toolbar: the connection line, and the settings toggle. -->
+            <!--
+              Toolbar: the connection line, and the settings toggle. Its background is the
+              code-behind's — transparent, so hit-testable, where the client area was taken into
+              the decorations, which is what makes the whole toolbar the window's drag handle.
+            -->
             <Border Grid.Row="0" Name="Toolbar" Classes="toolbar">
-                <!-- ToolbarContent's margin is the code-behind's: the macOS title strip inset. -->
+                <!-- ToolbarContent's margin is the code-behind's too: the macOS title strip inset. -->
                 <Grid Name="ToolbarContent" ColumnDefinitions="*,Auto">
                     <TextBlock Grid.Column="0"
                                Name="ConnectionLine"

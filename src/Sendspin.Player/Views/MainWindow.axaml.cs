@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Media;
 using Microsoft.Extensions.DependencyInjection;
 using Sendspin.Core.Configuration;
 using Sendspin.Player.ViewModels;
@@ -28,8 +30,11 @@ namespace Sendspin.Player.Views;
 /// caption buttons survive that is still unverified.
 /// </description></item>
 /// <item><description>
-/// macOS: the client area extends into the title strip (measured 28 px), and the toolbar insets
-/// its content by that strip and leaves room for the traffic lights.
+/// macOS: the client area extends into the title strip, whose height is read from the window
+/// rather than assumed — this app reports 32 px where the spike measured 28 — and the toolbar
+/// insets its content by that strip and leaves room for the traffic lights. The toolbar is also
+/// the window's drag handle: extending the client area leaves no native title bar to move the
+/// window by, and the strip it uncovers does not move the window either.
 /// </description></item>
 /// </list>
 /// <para>
@@ -55,8 +60,7 @@ public sealed partial class MainWindow : Window
     /// <summary>
     /// The width of the traffic-light cluster the toolbar leaves clear when it runs into the
     /// title strip. <see cref="Window.WindowDecorationMargin"/> reports only the strip's height
-    /// (<c>0,28,0,0</c> measured), not the buttons' width, so this is the one figure not read
-    /// from a property.
+    /// not the buttons' width, so this is the one figure not read from a property.
     /// </summary>
     internal const double TrafficLightsWidth = 78;
 
@@ -66,6 +70,9 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        // Wired here rather than in the axaml because the surface it drags by is the code-behind's
+        // too (see UpdateToolbarInset): both halves of the handle stay in one place.
+        Toolbar.PointerPressed += OnToolbarPointerPressed;
         ApplyPlatformHints();
         UpdateRootOpacity();
         UpdateToolbarInset();
@@ -86,6 +93,34 @@ public sealed partial class MainWindow : Window
         isExtendedIntoDecorations
             ? new Thickness(decorationMargin.Left + TrafficLightsWidth, decorationMargin.Top, decorationMargin.Right, 0)
             : default;
+
+    /// <summary>
+    /// Whether <paramref name="pointer"/>, in the window's own coordinates, is over the
+    /// traffic-light cluster: the strip's height by the cluster's width, in the corner
+    /// <paramref name="decorationMargin"/> starts from.
+    /// </summary>
+    /// <remarks>
+    /// AppKit draws the buttons above the client area and hit-tests them first, so a press there
+    /// should never reach this window's handlers at all. Carving the rectangle out costs nothing
+    /// and does not rely on that staying true.
+    /// </remarks>
+    internal static bool IsOverTrafficLights(Point pointer, Thickness decorationMargin) =>
+        pointer.X < decorationMargin.Left + TrafficLightsWidth && pointer.Y < decorationMargin.Top;
+
+    /// <summary>
+    /// Whether a press at <paramref name="pointer"/> should move the window.
+    /// </summary>
+    /// <remarks>
+    /// The client area has to have been taken into the decorations, since that is what leaves no
+    /// native title bar to grab. The press has to be the primary button: macOS opens the window's
+    /// own menu on a secondary press in the title area, and no backend expects a move drag from
+    /// one. And it has to miss the traffic lights.
+    /// </remarks>
+    internal static bool BeginsWindowDrag(
+        bool isExtendedIntoDecorations, bool isLeftButton, Point pointer, Thickness decorationMargin) =>
+        isExtendedIntoDecorations
+        && isLeftButton
+        && !IsOverTrafficLights(pointer, decorationMargin);
 
     /// <summary>
     /// Hides to the tray, or asks the application to shut down, depending on the user's choice.
@@ -262,9 +297,37 @@ public sealed partial class MainWindow : Window
 
     private void UpdateToolbarInset()
     {
-        if (ToolbarContent is { } toolbar)
+        if (ToolbarContent is { } content)
         {
-            toolbar.Margin = ToolbarInsetFor(IsExtendedIntoWindowDecorations, WindowDecorationMargin);
+            content.Margin = ToolbarInsetFor(IsExtendedIntoWindowDecorations, WindowDecorationMargin);
+        }
+
+        // The drag surface is the whole toolbar Border, not the inset content: the title strip is
+        // the part of it the inset holds clear, and the strip does not drag by itself either. A
+        // null background is not hit-testable, so where the decorations are native the toolbar has
+        // no drag surface at all. The surface and the inset are one fact, so they move together.
+        if (Toolbar is { } toolbar)
+        {
+            toolbar.Background = IsExtendedIntoWindowDecorations ? Brushes.Transparent : null;
+        }
+    }
+
+    /// <summary>
+    /// Moves the window by its toolbar. Bubbling, and without <c>handledEventsToo</c>, so that
+    /// <see cref="SettingsButton"/> — a <see cref="Primitives.ToggleButton"/>, which marks the
+    /// press handled — keeps toggling Settings instead of starting a drag.
+    /// </summary>
+    private void OnToolbarPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        var pointer = e.GetCurrentPoint(this);
+
+        if (BeginsWindowDrag(
+                IsExtendedIntoWindowDecorations,
+                pointer.Properties.IsLeftButtonPressed,
+                pointer.Position,
+                WindowDecorationMargin))
+        {
+            BeginMoveDrag(e);
         }
     }
 }
