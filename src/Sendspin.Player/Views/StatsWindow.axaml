@@ -1,0 +1,207 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:Sendspin.Player.ViewModels"
+        mc:Ignorable="d"
+        x:Class="Sendspin.Player.Views.StatsWindow"
+        x:DataType="vm:DiagnosticsViewModel"
+        Title="Stats for Nerds"
+        Width="480" Height="640"
+        MinWidth="360" MinHeight="400"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource SystemControlBackgroundAltHighBrush}">
+
+    <!--
+      Stats for Nerds: the numbers needed to tell a real timing problem from a correction
+      artefact, over DiagnosticsViewModel. A plain window on the same opaque root colour as the
+      main window, with the platform's own decorations and the system theme, like everything
+      else. Each section is a card; the values are right-aligned so a column of them reads down.
+    -->
+
+    <ScrollViewer>
+        <StackPanel Classes="statsBody">
+
+            <!--
+              Timing first, and warned about, because it decides whether anything below it means
+              anything: "wall-clock" means the platform backend is not supplying a hardware audio
+              clock and every sync figure here is resting on the OS timer.
+            -->
+            <Border Name="TimingCard" Classes="card">
+                <StackPanel Classes="statsSection">
+                    <TextBlock Text="TIMING" Classes="sectionCaption" />
+                    <Grid ColumnDefinitions="Auto,*">
+                        <TextBlock Text="Timing source" Classes="caption statLabel" />
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
+                            <TextBlock Name="TimingSourceValue"
+                                       Text="{Binding Snapshot.TimingSource, TargetNullValue='—'}"
+                                       Classes="body" />
+                            <TextBlock Name="TimingSourceWarning"
+                                       Text="(not a hardware clock)"
+                                       Classes="warning"
+                                       VerticalAlignment="Center"
+                                       IsVisible="{Binding !IsUsingAudioClock}" />
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <Border Name="SyncCard" Classes="card">
+                <StackPanel Classes="statsSection">
+                    <TextBlock Text="SYNC STATUS" Classes="sectionCaption" />
+
+                    <Grid ColumnDefinitions="Auto,*">
+                        <TextBlock Text="Sync error" Classes="caption statLabel" />
+                        <TextBlock Grid.Column="1" Name="SyncErrorValue" Classes="body statValue">
+                            <TextBlock.Text>
+                                <MultiBinding StringFormat="{}{0:+0.000;-0.000;0.000} ms, {1}">
+                                    <Binding Path="SyncErrorMs" />
+                                    <Binding Path="CorrectionBand" />
+                                </MultiBinding>
+                            </TextBlock.Text>
+                        </TextBlock>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="Auto,*">
+                        <TextBlock Text="Correction mode" Classes="caption statLabel" />
+                        <TextBlock Grid.Column="1"
+                                   Name="CorrectionModeValue"
+                                   Text="{Binding Snapshot.CorrectionMode, TargetNullValue='—'}"
+                                   Classes="body statValue" />
+                    </Grid>
+
+                    <Grid ColumnDefinitions="Auto,*">
+                        <TextBlock Text="Playback rate" Classes="caption statLabel" />
+                        <TextBlock Grid.Column="1" Name="PlaybackRateValue" Classes="body statValue">
+                            <TextBlock.Text>
+                                <MultiBinding StringFormat="{}{0:F6} ({1:+0;-0;0} ppm, ceiling ±500)">
+                                    <Binding Path="Snapshot.PlaybackRate" />
+                                    <Binding Path="PlaybackRatePpm" />
+                                </MultiBinding>
+                            </TextBlock.Text>
+                        </TextBlock>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <Border Name="BufferCard" Classes="card">
+                <StackPanel Classes="statsSection">
+                    <TextBlock Text="BUFFER" Classes="sectionCaption" />
+
+                    <Grid ColumnDefinitions="Auto,*">
+                        <TextBlock Text="Buffered" Classes="caption statLabel" />
+                        <TextBlock Grid.Column="1"
+                                   Name="BufferedValue"
+                                   Text="{Binding Snapshot.BufferedMilliseconds, StringFormat='{}{0:F1} ms'}"
+                                   Classes="body statValue" />
+                    </Grid>
+
+                    <Grid ColumnDefinitions="Auto,*">
+                        <TextBlock Text="Static delay" Classes="caption statLabel" />
+                        <TextBlock Grid.Column="1"
+                                   Name="StaticDelayValue"
+                                   Text="{Binding Snapshot.StaticDelayMs, StringFormat='{}{0:F1} ms'}"
+                                   Classes="body statValue" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <Border Name="ClockCard" Classes="card">
+                <StackPanel Classes="statsSection">
+                    <TextBlock Text="CLOCK SYNC" Classes="sectionCaption" />
+
+                    <Grid ColumnDefinitions="Auto,*">
+                        <TextBlock Text="Offset" Classes="caption statLabel" />
+                        <TextBlock Grid.Column="1"
+                                   Name="ClockOffsetValue"
+                                   Text="{Binding Snapshot.ClockOffsetMilliseconds, StringFormat='{}{0:F3} ms'}"
+                                   Classes="body statValue" />
+                    </Grid>
+
+                    <Grid ColumnDefinitions="Auto,*">
+                        <TextBlock Text="Drift" Classes="caption statLabel" />
+                        <TextBlock Grid.Column="1"
+                                   Name="ClockDriftValue"
+                                   Text="{Binding Snapshot.ClockDriftMicrosecondsPerSecond, StringFormat='{}{0:F1} µs/s'}"
+                                   Classes="body statValue" />
+                    </Grid>
+
+                    <Grid ColumnDefinitions="Auto,*">
+                        <TextBlock Text="Uncertainty" Classes="caption statLabel" />
+                        <TextBlock Grid.Column="1"
+                                   Name="ClockUncertaintyValue"
+                                   Text="{Binding Snapshot.ClockOffsetUncertaintyMicroseconds, StringFormat='±{0:F0} µs'}"
+                                   Classes="body statValue" />
+                    </Grid>
+
+                    <Grid ColumnDefinitions="Auto,*">
+                        <TextBlock Text="Converged" Classes="caption statLabel" />
+                        <TextBlock Grid.Column="1"
+                                   Name="ClockConvergedValue"
+                                   Text="{Binding Snapshot.ClockConverged}"
+                                   Classes="body statValue" />
+                    </Grid>
+
+                    <Grid ColumnDefinitions="Auto,*">
+                        <TextBlock Text="Post-anchor drift" Classes="caption statLabel" />
+                        <TextBlock Grid.Column="1"
+                                   Name="PostAnchorValue"
+                                   Text="{Binding Snapshot.ClockDriftMs, StringFormat='{}{0:F3} ms'}"
+                                   Classes="body statValue" />
+                    </Grid>
+
+                    <Grid ColumnDefinitions="Auto,*">
+                        <TextBlock Text="Round trip" Classes="caption statLabel" />
+                        <TextBlock Grid.Column="1"
+                                   Name="RoundTripValue"
+                                   Text="{Binding Snapshot.RoundTripMicroseconds, StringFormat='{}{0:F0} µs'}"
+                                   Classes="body statValue" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <Border Name="OutputCard" Classes="card">
+                <StackPanel Classes="statsSection">
+                    <TextBlock Text="OUTPUT" Classes="sectionCaption" />
+
+                    <Grid ColumnDefinitions="Auto,*">
+                        <TextBlock Text="Output latency" Classes="caption statLabel" />
+                        <TextBlock Grid.Column="1" Name="OutputLatencyValue" Classes="body statValue">
+                            <TextBlock.Text>
+                                <MultiBinding StringFormat="{}{0} ms measured + {1:F1} ms manual = {2:F1} ms">
+                                    <Binding Path="Snapshot.OutputLatencyMs" />
+                                    <Binding Path="Snapshot.ManualLatencyOffsetMs" />
+                                    <Binding Path="TotalLatencyMs" />
+                                </MultiBinding>
+                            </TextBlock.Text>
+                        </TextBlock>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="Auto,*">
+                        <TextBlock Text="Stream" Classes="caption statLabel" />
+                        <TextBlock Grid.Column="1"
+                                   Name="StreamValue"
+                                   Text="{Binding FormatSummary}"
+                                   Classes="body statValue" />
+                    </Grid>
+
+                    <Grid ColumnDefinitions="Auto,*">
+                        <TextBlock Text="Output device" Classes="caption statLabel" />
+                        <TextBlock Grid.Column="1"
+                                   Name="OutputDeviceValue"
+                                   Text="{Binding Snapshot.AudioDeviceName, TargetNullValue='—'}"
+                                   Classes="body statValue" />
+                    </Grid>
+
+                    <Grid ColumnDefinitions="Auto,*">
+                        <TextBlock Text="Platform" Classes="caption statLabel" />
+                        <TextBlock Grid.Column="1"
+                                   Name="PlatformValue"
+                                   Text="{Binding Snapshot.PlatformName, TargetNullValue='—'}"
+                                   Classes="body statValue" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Window>

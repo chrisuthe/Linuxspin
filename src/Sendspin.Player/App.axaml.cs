@@ -1,4 +1,3 @@
-using System.Reflection;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -76,7 +75,7 @@ public sealed partial class App : Application
 
         var logger = _services.GetRequiredService<ILogger<App>>();
         logger.LogInformation("Sendspin Player {Version} starting on {Platform}",
-            AppVersion, platform.PlatformName);
+            AppInfo.Version, platform.PlatformName);
 
         _services.GetRequiredService<IPlatformPaths>().EnsureDirectoriesExist();
 
@@ -165,14 +164,6 @@ public sealed partial class App : Application
     }
 
     /// <summary>
-    /// Gets this build's informational version, for the protocol's <c>device_info</c>.
-    /// </summary>
-    private static string AppVersion =>
-        typeof(App).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
-        ?? typeof(App).Assembly.GetName().Version?.ToString()
-        ?? "1.0.0";
-
-    /// <summary>
     /// Builds the service container.
     /// </summary>
     /// <remarks>
@@ -213,7 +204,7 @@ public sealed partial class App : Application
             provider.GetRequiredService<Sendspin.SDK.Audio.IAudioPlayer>,
             provider.GetRequiredService<ArtworkCache>(),
             provider.GetRequiredService<SyncCorrectionPolicy>(),
-            AppVersion));
+            AppInfo.Version));
 
         services.AddSingleton<IPlayerCommandSink>(p => p.GetRequiredService<SendspinPlayerService>());
         services.AddSingleton<IDiagnosticsProvider>(p => p.GetRequiredService<SendspinPlayerService>());

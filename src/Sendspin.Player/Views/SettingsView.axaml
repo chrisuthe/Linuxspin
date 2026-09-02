@@ -3,131 +3,275 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:Sendspin.Player.ViewModels"
+             xmlns:audio="using:Sendspin.Core.Audio"
              xmlns:behaviors="using:Sendspin.Player.Behaviors"
+             xmlns:controls="using:Sendspin.Player.Controls"
              mc:Ignorable="d"
              x:Class="Sendspin.Player.Views.SettingsView"
-             x:DataType="vm:SettingsViewModel">
+             x:DataType="vm:MainViewModel">
+
+    <!--
+      The settings card's body. Its context is the main view model, as Welcome's is: the
+      Connection section binds Disconnect and the connection line straight off it, and every
+      setting binds through Settings to the settings view model, so nothing is duplicated to put
+      the two side by side. The card's chrome — header, scroll, footer with the version and Done
+      — is in MainWindow.axaml around this.
+
+      Every control writes straight through to settings.json. There is no Save and no Cancel.
+    -->
 
     <UserControl.Styles>
         <!--
-          Every control in this panel writes straight through to settings.json, so a wheel notch
-          that lands on a closed ComboBox must not edit it. Stated once, as a style over the whole
-          panel, so a ComboBox added below inherits the guard instead of having to remember it.
+          A wheel notch that lands on a closed ComboBox must not edit it. Stated once, as a style
+          over the whole panel, so a ComboBox added below inherits the guard instead of having to
+          remember it.
         -->
         <Style Selector="ComboBox">
             <Setter Property="behaviors:ComboBoxWheelGuard.IsEnabled" Value="True" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
         </Style>
     </UserControl.Styles>
 
-    <StackPanel Classes="settings" Spacing="14">
+    <StackPanel Classes="settingsBody">
 
-        <TextBlock Text="Settings" Classes="h2" />
+        <!-- General -->
+        <StackPanel Classes="settingsSection">
+            <TextBlock Name="GeneralHeading" Text="GENERAL" Classes="sectionCaption" />
 
-        <StackPanel Spacing="4">
-            <TextBlock Text="Player name" Classes="fieldLabel" />
-            <TextBox Text="{Binding PlayerName}" />
-        </StackPanel>
-
-        <StackPanel Spacing="4">
-            <TextBlock Text="Connection mode" Classes="fieldLabel" />
-            <ComboBox ItemsSource="{Binding ConnectionModes}"
-                      SelectedItem="{Binding ConnectionMode}"
-                      HorizontalAlignment="Stretch" />
-            <TextBlock Text="Takes effect after a restart."
-                       Classes="warning"
-                       IsVisible="{Binding ConnectionModeNeedsRestart}" />
-        </StackPanel>
-
-        <StackPanel Spacing="4">
-            <TextBlock Text="Auto-connect" Classes="fieldLabel" />
-            <ComboBox ItemsSource="{Binding AutoConnectPolicies}"
-                      SelectedItem="{Binding AutoConnect}"
-                      HorizontalAlignment="Stretch" />
-        </StackPanel>
-
-        <Separator />
-
-        <StackPanel Spacing="4">
-            <TextBlock Text="Output device" Classes="fieldLabel" />
-            <ComboBox ItemsSource="{Binding AudioDevices}"
-                      SelectedItem="{Binding SelectedDevice}"
-                      HorizontalAlignment="Stretch">
-                <ComboBox.ItemTemplate>
-                    <DataTemplate>
-                        <TextBlock Text="{Binding Name}" />
-                    </DataTemplate>
-                </ComboBox.ItemTemplate>
-            </ComboBox>
-            <Button Content="Refresh devices" Command="{Binding RefreshDevicesCommand}" />
-        </StackPanel>
-
-        <StackPanel Spacing="4">
-            <TextBlock Text="Preferred codec" Classes="fieldLabel" />
-            <ComboBox ItemsSource="{Binding Codecs}"
-                      SelectedItem="{Binding PreferredCodec}"
-                      HorizontalAlignment="Stretch" />
-            <TextBlock Text="Offered first; the server still chooses from everything this device supports."
-                       Classes="subtle" TextWrapping="Wrap" />
-        </StackPanel>
-
-        <Separator />
-
-        <!--
-          The only two calibration controls the app exposes, and both are here because they are
-          physical facts rather than preferences: a static delay is this room's alignment against
-          the rest of the group, and the manual offset is the Bluetooth, AirPlay or analog tail
-          that no platform API reports. Buffer depths and correction limits are deliberately not
-          exposed — they have correct answers, and a knob only invites making the player worse.
-        -->
-        <StackPanel Spacing="4">
-            <TextBlock Text="Static delay" Classes="fieldLabel" />
+            <!--
+              The boolean control, used for every boolean row: a ToggleSwitch, right-aligned on
+              the title line, with no On/Off label of its own (the "setting" style) — the title is
+              the label.
+            -->
             <Grid ColumnDefinitions="*,Auto">
-                <Slider Grid.Column="0" Value="{Binding StaticDelayMs}" Minimum="0" Maximum="2000"
-                        TickFrequency="50" />
-                <TextBlock Grid.Column="1" Text="{Binding StaticDelayMs, StringFormat='{}{0:F0} ms'}"
-                           VerticalAlignment="Center" Width="70" TextAlignment="Right" />
+                <StackPanel Classes="settingText">
+                    <TextBlock Text="Notify on track changes" Classes="body" />
+                    <TextBlock Text="Off by default: neither KDE nor GNOME hides a now-playing toast that duplicates this app's own media entry."
+                               Classes="caption" />
+                </StackPanel>
+                <ToggleSwitch Grid.Column="1"
+                              Name="NotifyTrackChangeSwitch"
+                              Classes="setting"
+                              IsChecked="{Binding Settings.NotifyTrackChange}" />
             </Grid>
-            <TextBlock Text="Delays this player relative to the group. Survives a restart."
-                       Classes="subtle" TextWrapping="Wrap" />
-        </StackPanel>
 
-        <StackPanel Spacing="4">
-            <TextBlock Text="This device's latency offset" Classes="fieldLabel" />
             <Grid ColumnDefinitions="*,Auto">
-                <Slider Grid.Column="0" Value="{Binding ManualLatencyOffsetMs}" Minimum="-200" Maximum="500"
-                        TickFrequency="10" />
-                <TextBlock Grid.Column="1" Text="{Binding ManualLatencyOffsetMs, StringFormat='{}{0:F0} ms'}"
-                           VerticalAlignment="Center" Width="70" TextAlignment="Right" />
+                <StackPanel Classes="settingText">
+                    <TextBlock Text="Notify on play and pause" Classes="body" />
+                </StackPanel>
+                <ToggleSwitch Grid.Column="1"
+                              Name="NotifyPlaybackStateSwitch"
+                              Classes="setting"
+                              IsChecked="{Binding Settings.NotifyPlaybackState}" />
             </Grid>
-            <TextBlock Text="Added to the measured latency. Needed for Bluetooth and AirPlay outputs, whose delay no API reports."
-                       Classes="subtle" TextWrapping="Wrap" />
+
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Classes="settingText">
+                    <TextBlock Text="Notify on connect and disconnect" Classes="body" />
+                </StackPanel>
+                <ToggleSwitch Grid.Column="1"
+                              Name="NotifyConnectionStateSwitch"
+                              Classes="setting"
+                              IsChecked="{Binding Settings.NotifyConnectionState}" />
+            </Grid>
+
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Classes="settingText">
+                    <TextBlock Text="Include artwork in notifications" Classes="body" />
+                </StackPanel>
+                <ToggleSwitch Grid.Column="1"
+                              Name="IncludeArtworkSwitch"
+                              Classes="setting"
+                              IsChecked="{Binding Settings.IncludeArtworkInNotifications}" />
+            </Grid>
+
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Classes="settingText">
+                    <TextBlock Text="Discord Rich Presence" Classes="body" />
+                    <TextBlock Text="Show what is playing as your Discord activity." Classes="caption" />
+                </StackPanel>
+                <ToggleSwitch Grid.Column="1"
+                              Name="DiscordSwitch"
+                              Classes="setting"
+                              IsChecked="{Binding Settings.DiscordRichPresence}" />
+            </Grid>
+
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Classes="settingText">
+                    <TextBlock Text="Start hidden in the tray" Classes="body" />
+                </StackPanel>
+                <ToggleSwitch Grid.Column="1"
+                              Name="StartMinimizedSwitch"
+                              Classes="setting"
+                              IsChecked="{Binding Settings.StartMinimizedToTray}" />
+            </Grid>
+
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Classes="settingText">
+                    <TextBlock Text="Closing the window keeps playing" Classes="body" />
+                    <TextBlock Text="The window hides to the tray; Quit is in the tray menu." Classes="caption" />
+                </StackPanel>
+                <ToggleSwitch Grid.Column="1"
+                              Name="CloseToTraySwitch"
+                              Classes="setting"
+                              IsChecked="{Binding Settings.CloseToTray}" />
+            </Grid>
+
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Classes="settingText">
+                    <TextBlock Text="Show the Switch Group button" Classes="body" />
+                    <TextBlock Text="Turn off for a single-room setup with nothing to switch to." Classes="caption" />
+                </StackPanel>
+                <ToggleSwitch Grid.Column="1"
+                              Name="ShowSwitchGroupSwitch"
+                              Classes="setting"
+                              IsChecked="{Binding Settings.ShowSwitchGroupButton}" />
+            </Grid>
+
+            <StackPanel Classes="settingRow">
+                <StackPanel Classes="settingText">
+                    <TextBlock Text="Player name" Classes="body" />
+                    <TextBlock Text="Shown on servers and controllers. Also on the Welcome screen." Classes="caption" />
+                </StackPanel>
+                <TextBox Name="PlayerNameBox" Text="{Binding Settings.PlayerName}" />
+            </StackPanel>
         </StackPanel>
 
-        <Separator />
+        <!-- Connection -->
+        <StackPanel Classes="settingsSection">
+            <TextBlock Name="ConnectionHeading" Text="CONNECTION" Classes="sectionCaption" />
 
-        <StackPanel Spacing="6">
-            <TextBlock Text="Notifications" Classes="fieldLabel" />
-            <CheckBox Content="Track changes" IsChecked="{Binding NotifyTrackChange}" />
-            <TextBlock Text="Off by default: neither KDE nor GNOME hides a now-playing toast that duplicates this app's own media entry."
-                       Classes="subtle" TextWrapping="Wrap" />
-            <CheckBox Content="Play and pause" IsChecked="{Binding NotifyPlaybackState}" />
-            <CheckBox Content="Connect and disconnect" IsChecked="{Binding NotifyConnectionState}" />
-            <CheckBox Content="Include artwork" IsChecked="{Binding IncludeArtworkInNotifications}" />
+            <Grid ColumnDefinitions="Auto,*">
+                <Button Grid.Column="0"
+                        Name="DisconnectButton"
+                        Content="Disconnect"
+                        Command="{Binding DisconnectCommand}" />
+                <TextBlock Grid.Column="1"
+                           Name="SettingsConnectionLine"
+                           Text="{Binding ConnectionStatus}"
+                           Classes="caption"
+                           Margin="12,0,0,0"
+                           VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis" />
+            </Grid>
+
+            <StackPanel Classes="settingRow">
+                <StackPanel Classes="settingText">
+                    <TextBlock Text="Connection mode" Classes="body" />
+                </StackPanel>
+                <ComboBox Name="ConnectionModeBox"
+                          ItemsSource="{Binding Settings.ConnectionModes}"
+                          SelectedItem="{Binding Settings.ConnectionMode}" />
+                <TextBlock Name="RestartNote"
+                           Text="Takes effect after a restart."
+                           Classes="warning"
+                           IsVisible="{Binding Settings.ConnectionModeNeedsRestart}" />
+            </StackPanel>
+
+            <StackPanel Classes="settingRow">
+                <StackPanel Classes="settingText">
+                    <TextBlock Text="Auto-connect" Classes="body" />
+                </StackPanel>
+                <ComboBox Name="AutoConnectBox"
+                          ItemsSource="{Binding Settings.AutoConnectPolicies}"
+                          SelectedItem="{Binding Settings.AutoConnect}" />
+            </StackPanel>
         </StackPanel>
 
-        <Separator />
+        <!-- Audio -->
+        <StackPanel Classes="settingsSection">
+            <TextBlock Name="AudioHeading" Text="AUDIO" Classes="sectionCaption" />
 
-        <StackPanel Spacing="6">
-            <TextBlock Text="Window" Classes="fieldLabel" />
-            <CheckBox Content="Start hidden in the tray" IsChecked="{Binding StartMinimizedToTray}" />
-            <CheckBox Content="Closing the window keeps playing" IsChecked="{Binding CloseToTray}" />
+            <StackPanel Classes="settingRow">
+                <StackPanel Classes="settingText">
+                    <TextBlock Text="Output device" Classes="body" />
+                </StackPanel>
+                <Grid ColumnDefinitions="*,Auto">
+                    <ComboBox Grid.Column="0"
+                              Name="OutputDeviceBox"
+                              ItemsSource="{Binding Settings.AudioDevices}"
+                              SelectedItem="{Binding Settings.SelectedDevice}">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="audio:AudioDeviceInfo">
+                                <TextBlock Text="{Binding Name}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <Button Grid.Column="1"
+                            Name="RefreshDevicesButton"
+                            Content="Refresh"
+                            Command="{Binding Settings.RefreshDevicesCommand}"
+                            Margin="8,0,0,0" />
+                </Grid>
+            </StackPanel>
+
+            <StackPanel Classes="settingRow">
+                <StackPanel Classes="settingText">
+                    <TextBlock Text="Preferred codec" Classes="body" />
+                    <TextBlock Text="Offered first; the server still chooses from everything this device supports."
+                               Classes="caption" />
+                </StackPanel>
+                <ComboBox Name="CodecBox"
+                          ItemsSource="{Binding Settings.Codecs}"
+                          SelectedItem="{Binding Settings.PreferredCodec}" />
+            </StackPanel>
         </StackPanel>
 
-        <Separator />
+        <!-- Audio sync -->
+        <StackPanel Classes="settingsSection">
+            <TextBlock Name="AudioSyncHeading" Text="AUDIO SYNC" Classes="sectionCaption" />
 
-        <StackPanel Spacing="6">
-            <TextBlock Text="Integrations" Classes="fieldLabel" />
-            <CheckBox Content="Discord Rich Presence" IsChecked="{Binding DiscordRichPresence}" />
+            <!--
+              The only two calibration controls the app exposes, and both are here because they are
+              physical facts rather than preferences: a static delay is this room's alignment against
+              the rest of the group, and the manual offset is the Bluetooth, AirPlay or analog tail
+              that no platform API reports. Buffer depths and correction limits are deliberately not
+              exposed — they have correct answers, and a knob only invites making the player worse.
+
+              Both rows are steppers: the range comes before the value in each, which is the order
+              the control needs to see them in (StepperRow's remarks say why).
+            -->
+            <StackPanel Classes="settingRow">
+                <StackPanel Classes="settingText">
+                    <TextBlock Text="Static delay" Classes="body" />
+                    <TextBlock Text="Delays this player relative to the group. Survives a restart." Classes="caption" />
+                </StackPanel>
+                <controls:StepperRow Name="StaticDelayStepper"
+                                     Minimum="0" Maximum="2000" Step="10" Unit="ms"
+                                     Value="{Binding Settings.StaticDelayMs}" />
+            </StackPanel>
+
+            <StackPanel Classes="settingRow">
+                <StackPanel Classes="settingText">
+                    <TextBlock Text="This device's latency offset" Classes="body" />
+                    <TextBlock Text="Added to the measured latency. Needed for Bluetooth and AirPlay outputs, whose delay no API reports."
+                               Classes="caption" />
+                </StackPanel>
+                <controls:StepperRow Name="LatencyOffsetStepper"
+                                     Minimum="-200" Maximum="500" Step="10" Unit="ms"
+                                     Value="{Binding Settings.ManualLatencyOffsetMs}" />
+            </StackPanel>
+        </StackPanel>
+
+        <!-- Diagnostics -->
+        <StackPanel Classes="settingsSection">
+            <TextBlock Name="DiagnosticsHeading" Text="DIAGNOSTICS" Classes="sectionCaption" />
+
+            <Button Name="OpenStatsButton"
+                    Classes="settingsRowButton"
+                    Command="{Binding OpenStatsCommand}">
+                <Grid ColumnDefinitions="Auto,*">
+                    <PathIcon Grid.Column="0"
+                              Data="{StaticResource StatsIcon}"
+                              Width="20" Height="20"
+                              Margin="0,0,12,0"
+                              VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="1" Classes="settingText">
+                        <TextBlock Text="Stats for Nerds" Classes="body" />
+                        <TextBlock Text="Real-time audio sync diagnostics" Classes="caption" />
+                    </StackPanel>
+                </Grid>
+            </Button>
         </StackPanel>
     </StackPanel>
 </UserControl>

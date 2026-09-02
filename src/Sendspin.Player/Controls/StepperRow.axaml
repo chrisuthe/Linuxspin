@@ -1,0 +1,43 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Sendspin.Player.Controls.StepperRow">
+
+    <!--
+      A stepper row: step down, the slider, step up, the value as editable text, the unit.
+      Nothing in here is bound: the code-behind keeps the slider and the box in step with Value,
+      so the slider's own clamping can never write a value back into the setting behind it (see
+      the class remarks).
+    -->
+
+    <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
+        <Button Grid.Column="0"
+                Name="DecrementButton"
+                Classes="stepper"
+                ToolTip.Tip="Step down">
+            <PathIcon Data="{StaticResource MinusIcon}" />
+        </Button>
+
+        <Slider Grid.Column="1"
+                Name="ValueSlider"
+                VerticalAlignment="Center"
+                Margin="8,0" />
+
+        <Button Grid.Column="2"
+                Name="IncrementButton"
+                Classes="stepper"
+                ToolTip.Tip="Step up">
+            <PathIcon Data="{StaticResource PlusIcon}" />
+        </Button>
+
+        <TextBox Grid.Column="3"
+                 Name="ValueBox"
+                 Classes="stepperValue"
+                 Margin="8,0,0,0" />
+
+        <TextBlock Grid.Column="4"
+                   Name="UnitText"
+                   Classes="caption"
+                   VerticalAlignment="Center"
+                   Margin="6,0,0,0" />
+    </Grid>
+</UserControl>

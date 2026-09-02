@@ -1214,3 +1214,72 @@ to `Never` before it connects, and the server it connects to has already been as
 `Sendspin.Ui.Tests/AutoConnectPromptTests` walks each answer and the once-per-server rule.
 Screenshots: `docs/screenshots/reskin/phase3-{narrow,wide}-{light,dark}.png` and
 `phase3-welcome-{advertise,discover}.png`.
+
+### As shipped (reskin phase 4) — the settings card and the Stats window
+
+**The settings card** is the Phase 2 `SettingsOverlay` border with, inside it, a header row (the
+gear glyph and "Settings" at `subtitle`), a `ScrollViewer` over `Views/SettingsView.axaml`, and a
+footer row with the version at `caption` on the left and a **Done** button on the right. Done only
+closes the card (`MainViewModel.CloseSettingsCommand`); there is no Save and no Cancel, because every
+control writes through `SettingsService.Update` the moment it changes, as it did before. The view's
+context is `MainViewModel`, exactly as Welcome's is: the Connection section binds `DisconnectCommand`
+and `ConnectionStatus` straight off it, and every setting binds through `Settings.` to
+`SettingsViewModel`, so Disconnect and the connection line sit inside the card's section order
+without any state being duplicated. The version is read from the assembly once, in `AppInfo`
+(`Version` for the protocol's `device_info`, `DisplayVersion` — the same string without its
+`+commit` metadata — for the footer). Five sections, each a `sectionCaption` over rows: General
+(the four notification events, Discord Rich Presence, start hidden in the tray, closing keeps
+playing, **show the Switch Group button**, player name), Connection (Disconnect with the connection
+line beside it, connection mode with its restart note, auto-connect), Audio (output device with
+Refresh, preferred codec), Audio sync (the two calibration steppers), Diagnostics (the Stats for
+Nerds row). A row is a title at `body`, an optional caption beneath it, and the control; a boolean
+row is a `ToggleSwitch` right-aligned on the title line with `OnContent` and `OffContent` null (the
+`setting` style), so the title is its label. The `ComboBoxWheelGuard` style still covers the whole
+panel, and `EverySettingsComboBoxIsGuarded` still counts four.
+
+**The stepper row** (`Controls/StepperRow.axaml`) is a step-down button, a slider, a step-up button,
+the value in a `TextBox` and the unit. The buttons move `Value` by `Step` (10 for both rows) and clamp
+to `[Minimum, Maximum]`; a typed value is clamped the same way on Enter or on leaving the box, and
+text that is not a number puts the value back. The slider is deliberately *not* bound two-way to
+`Value`: a slider clamps to its own range, and a two-way binding writes the clamped value back, so a
+value that arrived before the range did — attribute order in the XAML — would be rewritten into the
+setting on load (a 500 ms static delay becoming 100). The code-behind pushes `Value` into the slider
+while ignoring what the slider says, and takes the slider's value only when the user moves it;
+`Value` itself is never coerced, so an out-of-range persisted value is shown as it is and the first
+step brings it inside. `Sendspin.Ui.Tests/StepperRowTests` pins each of these, including the
+value-before-range case.
+
+**The Stats window** (`Views/StatsWindow.axaml`) replaces the inline diagnostics panel, which is
+gone. A plain 480×640 resizable `Window` with native decorations, titled "Stats for Nerds", on the
+same `SystemControlBackgroundAltHighBrush` root as the main window, following the theme as every
+window does. Five cards in this order: Timing (the timing source with its "(not a hardware clock)"
+warning, first because it decides whether anything below it means anything), Sync status (error and
+band, correction mode, playback rate and ppm), Buffer (buffered, static delay), Clock sync (offset,
+drift, uncertainty, converged, post-anchor, round trip), Output (measured + manual = total latency,
+stream format, output device, platform). Every value the inline panel showed is here and nothing is
+new. It is over the same `DiagnosticsViewModel`, whose `IsVisible` is the one fact everything
+follows: `MainViewModel.SetStatsVisible` sets it and writes `PlayerSettings.ShowDiagnostics` in the
+same call, the view model's `SetVisible` starts and stops the 500 ms `UiClock`, and
+`MainWindow` shows the window while `IsVisible` is set and hides it otherwise. `MainWindow` keeps the
+one instance for its own lifetime: the Diagnostics row's `OpenStatsCommand` sets the flag and raises
+`StatsRequested`, which activates the window if it was already open; the user's close is cancelled
+by `StatsWindow.OnClosing` and turned into a hide, with `MainWindow` recording it through
+`SetStatsVisible(false)` (a programmatic close, which is what shutdown does, is let through). The
+window is deliberately **not** an owned window: Avalonia hides owned windows with their owner and
+never re-shows them, so instead the rule is *visible iff the main window is visible and `IsVisible`
+is set* — hiding to the tray takes it along, showing again brings it back, and a start hidden in the
+tray does not leave a stray stats window on the desktop. **`ShowDiagnostics` now means "open at
+exit"**: it is written on every open and close, and the start-up path's `ReopenStatsIfLeftOpen`
+reads it after the platform is up, so the window comes back on the next start if it was up on the
+last. `Sendspin.Ui.Tests/StatsWindowTests` drives the desktop's close through the headless impl's
+`Closing` callback, which is the only non-programmatic path.
+
+**Toolbar and footer.** The Phase 2 stats toggle is gone from the toolbar; the gear is alone beside
+the connection line. Disconnect is gone from the footer, which now shows the volume row while
+connected, the status message while disconnected with one to show, and collapses to nothing
+otherwise (`MainViewModel.HasFooter`). The Switch Group button binds its visibility to the new
+`PlayerSettings.ShowSwitchGroupButton` (default true) through `SettingsViewModel`. The legacy text
+classes (`h1`/`h2`/`h3`/`subtle`/`fieldLabel`/`metricLabel`/`metricValue`) had no users left and are
+gone; `PlayerStyles.axaml` is the one scale plus `warning`. Screenshots:
+`docs/screenshots/reskin/phase4-settings-{light,dark}.png` and `phase4-stats-{light,dark}.png`,
+Wayland head.

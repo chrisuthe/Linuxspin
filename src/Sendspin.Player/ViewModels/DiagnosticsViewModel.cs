@@ -98,6 +98,9 @@ public sealed partial class DiagnosticsViewModel : ObservableObject, IDisposable
     /// </summary>
     public double TotalLatencyMs => Snapshot.OutputLatencyMs + Snapshot.ManualLatencyOffsetMs;
 
+    /// <summary>Gets whether the refresh clock is ticking, which it should be only while the window is open.</summary>
+    internal bool IsRefreshing => _clock.IsRunning;
+
     /// <summary>
     /// Starts or stops polling to match <paramref name="visible"/>.
     /// </summary>
@@ -105,7 +108,7 @@ public sealed partial class DiagnosticsViewModel : ObservableObject, IDisposable
     {
         if (_isDisposed)
         {
-            // Startup shows this pane through a dispatcher invoke that can land after shutdown
+            // Startup reopens the window through a dispatcher invoke that can land after shutdown
             // has disposed the clock; there is nothing left to poll for.
             return;
         }

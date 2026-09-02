@@ -133,7 +133,7 @@ public sealed class MainWindowShellTests(HeadlessSession headless)
         Assert.InRange(MainWindow.MicaRootOpacity, 0.25, 0.45);
 
     [Fact]
-    public void TheToolbar_ShowsTheConnectionLineAndBothIconButtons() => headless.Run(() =>
+    public void TheToolbar_ShowsTheConnectionLineAndTheGearOnly() => headless.Run(() =>
     {
         using var shell = Shell.Show();
 
@@ -141,20 +141,18 @@ public sealed class MainWindowShellTests(HeadlessSession headless)
         Assert.Equal("Not connected", line.Text);
         Assert.Contains("caption", line.Classes);
 
-        var stats = shell.Find<ToggleButton>("StatsButton");
         var gear = shell.Find<ToggleButton>("SettingsButton");
+        Assert.Contains("iconButton", gear.Classes);
+        Assert.IsType<PathIcon>(gear.Content);
+        Assert.True(gear.IsVisible);
+        Assert.True(gear.Bounds.Width > 0);
+        Assert.True(line.Bounds.Right <= gear.Bounds.Left);
 
-        foreach (var button in new[] { stats, gear })
-        {
-            Assert.Contains("iconButton", button.Classes);
-            Assert.IsType<PathIcon>(button.Content);
-            Assert.True(button.IsVisible);
-            Assert.True(button.Bounds.Width > 0);
-        }
-
-        Assert.True(stats.Bounds.Left < gear.Bounds.Left);
-        Assert.True(line.Bounds.Right <= stats.Bounds.Left);
-        Assert.Same(shell.Window.FindControl<Border>("Toolbar"), stats.FindAncestorOfType<Border>());
+        // The Phase 2 stats toggle is gone: diagnostics open from Settings now.
+        var toolbar = shell.Find<Border>("Toolbar");
+        Assert.Same(toolbar, gear.FindAncestorOfType<Border>());
+        Assert.Null(shell.Window.FindControl<ToggleButton>("StatsButton"));
+        Assert.Single(toolbar.GetLogicalDescendants().OfType<ToggleButton>());
     });
 
     [Fact]
@@ -183,26 +181,6 @@ public sealed class MainWindowShellTests(HeadlessSession headless)
     });
 
     [Fact]
-    public void TheStatsButton_TogglesDiagnostics() => headless.Run(() =>
-    {
-        using var shell = Shell.Show();
-
-        var stats = shell.Find<ToggleButton>("StatsButton");
-        Assert.False(shell.ViewModel.Diagnostics.IsVisible);
-
-        stats.Command!.Execute(null);
-        Dispatcher.UIThread.RunJobs();
-
-        Assert.True(shell.ViewModel.Diagnostics.IsVisible);
-        Assert.True(stats.IsChecked);
-
-        stats.Command!.Execute(null);
-        Dispatcher.UIThread.RunJobs();
-
-        Assert.False(shell.ViewModel.Diagnostics.IsVisible);
-    });
-
-    [Fact]
     public void TheFooter_ShowsTheVolumeRowWhenConnected() => headless.Run(() =>
     {
         using var shell = Shell.Show();
@@ -223,14 +201,16 @@ public sealed class MainWindowShellTests(HeadlessSession headless)
         var slider = shell.Find<Slider>("VolumeSlider");
         var percent = shell.Find<TextBlock>("VolumeText");
         var switchGroup = shell.Find<Button>("SwitchGroupButton");
-        var disconnect = shell.Find<Button>("DisconnectButton");
 
         Assert.Contains("iconButton", mute.Classes);
         Assert.Contains("iconButton", switchGroup.Classes);
         Assert.Equal(HorizontalAlignment.Stretch, slider.HorizontalAlignment);
         Assert.Equal("100%", percent.Text);
         Assert.Contains("caption", percent.Classes);
-        Assert.Equal("Disconnect", disconnect.Content);
+
+        // Disconnect moved to Settings' Connection section; the footer has no button for it.
+        Assert.Null(shell.Window.FindControl<Button>("DisconnectButton"));
+        Assert.DoesNotContain(footer.GetLogicalDescendants().OfType<Button>(), b => Equals(b.Content, "Disconnect"));
 
         // Slim: the footer's icon buttons are the 36 px size, not the transport's 48.
         Assert.Equal(36, mute.Bounds.Width);
@@ -240,7 +220,6 @@ public sealed class MainWindowShellTests(HeadlessSession headless)
         Assert.True(mute.Bounds.Right <= slider.Bounds.Left);
         Assert.True(slider.Bounds.Right <= percent.Bounds.Left);
         Assert.True(percent.Bounds.Right <= switchGroup.Bounds.Left);
-        Assert.True(switchGroup.Bounds.Right <= disconnect.Bounds.Left);
 
         // Stretched: the slider takes whatever the buttons and the percentage leave, so widening
         // the window widens the slider by the same amount — not the old fixed 140.
@@ -277,14 +256,68 @@ public sealed class MainWindowShellTests(HeadlessSession headless)
         Assert.True(shell.Find<Grid>("VolumeRow").IsVisible);
         Assert.False(status.IsVisible);
 
-        // And a disconnect with nothing to say shows the (disabled) volume row, not an empty line.
+        // And a disconnect with nothing to say collapses the footer: no disabled volume row.
         shell.ViewModel.IsConnected = false;
         shell.ViewModel.StatusMessage = null;
         Dispatcher.UIThread.RunJobs();
 
+        Assert.False(shell.ViewModel.HasFooter);
+        Assert.False(shell.Find<Border>("Footer").IsVisible);
+        Assert.False(shell.Find<Grid>("VolumeRow").IsEffectivelyVisible);
+        Assert.False(status.IsEffectivelyVisible);
+    });
+
+    [Fact]
+    public void TheFooter_CollapsesWhileDisconnectedWithNothingToSay() => headless.Run(() =>
+    {
+        using var shell = Shell.Show();
+
+        var footer = shell.Find<Border>("Footer");
+        var body = shell.Find<Panel>("Body");
+
+        Assert.False(shell.ViewModel.IsConnected);
+        Assert.Null(shell.ViewModel.StatusMessage);
+        Assert.False(footer.IsVisible);
+        Assert.Equal(0, footer.Bounds.Height);
+
+        // The body takes the room the footer gave up.
+        Assert.Equal(shell.Window.ClientSize.Height, body.Bounds.Bottom, 1.0);
+
+        shell.ViewModel.IsConnected = true;
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.True(footer.IsVisible);
+        Assert.True(footer.Bounds.Height >= 52);
         Assert.True(shell.Find<Grid>("VolumeRow").IsVisible);
-        Assert.False(shell.Find<Grid>("VolumeRow").IsEnabled);
-        Assert.False(status.IsVisible);
+        Assert.True(shell.Find<Grid>("VolumeRow").IsEnabled);
+    });
+
+    [Fact]
+    public void TheSwitchGroupButton_FollowsTheSetting() => headless.Run(() =>
+    {
+        using var shell = Shell.Show();
+
+        shell.ViewModel.IsConnected = true;
+        Dispatcher.UIThread.RunJobs();
+
+        var switchGroup = shell.Find<Button>("SwitchGroupButton");
+        Assert.True(shell.Settings.Current.ShowSwitchGroupButton);
+        Assert.True(switchGroup.IsVisible);
+
+        shell.ViewModel.Settings.ShowSwitchGroupButton = false;
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.False(shell.Settings.Current.ShowSwitchGroupButton);
+        Assert.False(switchGroup.IsVisible);
+
+        // The rest of the row stays; the slider takes the space.
+        Assert.True(shell.Find<Grid>("VolumeRow").IsVisible);
+        Assert.True(shell.Find<Slider>("VolumeSlider").Bounds.Width > 0);
+
+        shell.ViewModel.Settings.ShowSwitchGroupButton = true;
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.True(switchGroup.IsVisible);
     });
 
     [Fact]
@@ -306,8 +339,8 @@ public sealed class MainWindowShellTests(HeadlessSession headless)
         // Below the art and the text, above the footer.
         var art = shell.FindIn<Border>(nowPlaying, "ArtBreath");
         var footer = shell.Find<Border>("Footer");
-        Assert.True(TopIn(transport, shell.Window) > TopIn(art, shell.Window) + art.Bounds.Height);
-        Assert.True(TopIn(transport, shell.Window) < TopIn(footer, shell.Window));
+        Assert.True(Shell.TopIn(transport, shell.Window) > Shell.TopIn(art, shell.Window) + art.Bounds.Height);
+        Assert.True(Shell.TopIn(transport, shell.Window) < Shell.TopIn(footer, shell.Window));
     });
 
     [Fact]
@@ -355,7 +388,4 @@ public sealed class MainWindowShellTests(HeadlessSession headless)
         Assert.False(shell.Window.IsExtendedIntoWindowDecorations);
         Assert.Equal(default, shell.Find<Grid>("ToolbarContent").Margin);
     });
-
-    private static double TopIn(Visual control, Visual root) =>
-        control.TranslatePoint(new Point(0, 0), root)?.Y ?? double.NaN;
 }

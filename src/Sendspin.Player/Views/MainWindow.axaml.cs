@@ -1,7 +1,9 @@
+using System.ComponentModel;
 using Avalonia;
 using Avalonia.Controls;
 using Microsoft.Extensions.DependencyInjection;
 using Sendspin.Core.Configuration;
+using Sendspin.Player.ViewModels;
 
 namespace Sendspin.Player.Views;
 
@@ -34,6 +36,13 @@ namespace Sendspin.Player.Views;
 /// Nothing here reads the theme variant or the render scaling at <c>Opened</c>: on the Wayland
 /// head both can still be the fallback then.
 /// </para>
+/// <para>
+/// This window also keeps the one <see cref="StatsWindow"/>. It is shown while
+/// <see cref="DiagnosticsViewModel.IsVisible"/> is set and this window is itself visible, and
+/// hidden otherwise — so hiding to the tray takes it along and showing again brings it back, and
+/// a start hidden in the tray does not leave a stray stats window on the desktop. It is not an
+/// owned window: Avalonia hides owned windows with their owner but never re-shows them.
+/// </para>
 /// </remarks>
 public sealed partial class MainWindow : Window
 {
@@ -51,6 +60,9 @@ public sealed partial class MainWindow : Window
     /// </summary>
     internal const double TrafficLightsWidth = 78;
 
+    private MainViewModel? _viewModel;
+    private StatsWindow? _stats;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -58,6 +70,9 @@ public sealed partial class MainWindow : Window
         UpdateRootOpacity();
         UpdateToolbarInset();
     }
+
+    /// <summary>Gets the Stats window, once it has been asked for.</summary>
+    internal StatsWindow? Stats => _stats;
 
     /// <summary>The opaque root's opacity for what the platform granted.</summary>
     internal static double RootOpacityFor(WindowTransparencyLevel level) =>
@@ -112,7 +127,7 @@ public sealed partial class MainWindow : Window
     /// <summary>
     /// Keeps the layer stack in step with what the platform granted, whenever it settles: the
     /// transparency level after the compositor answers, the decoration margin after the first
-    /// configure.
+    /// configure. And keeps the Stats window with this one as it is shown and hidden.
     /// </summary>
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
@@ -126,6 +141,96 @@ public sealed partial class MainWindow : Window
                  || change.Property == IsExtendedIntoWindowDecorationsProperty)
         {
             UpdateToolbarInset();
+        }
+        else if (change.Property == IsVisibleProperty)
+        {
+            UpdateStatsWindow();
+        }
+    }
+
+    protected override void OnDataContextChanged(EventArgs e)
+    {
+        base.OnDataContextChanged(e);
+
+        if (_viewModel is { } previous)
+        {
+            previous.Diagnostics.PropertyChanged -= OnDiagnosticsPropertyChanged;
+            previous.StatsRequested -= OnStatsRequested;
+        }
+
+        _viewModel = DataContext as MainViewModel;
+
+        if (_viewModel is { } current)
+        {
+            current.Diagnostics.PropertyChanged += OnDiagnosticsPropertyChanged;
+            current.StatsRequested += OnStatsRequested;
+        }
+
+        UpdateStatsWindow();
+    }
+
+    /// <summary>
+    /// Closes the Stats window with this one. Only a real close gets here: hiding to the tray
+    /// goes through <see cref="OnClosing"/> and leaves both windows alive.
+    /// </summary>
+    protected override void OnClosed(EventArgs e)
+    {
+        base.OnClosed(e);
+
+        if (_stats is { } stats)
+        {
+            stats.Closing -= OnStatsClosing;
+            _stats = null;
+            stats.Close();
+        }
+    }
+
+    private void OnDiagnosticsPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(DiagnosticsViewModel.IsVisible))
+        {
+            UpdateStatsWindow();
+        }
+    }
+
+    private void OnStatsRequested(object? sender, EventArgs e) => _stats?.Activate();
+
+    /// <summary>
+    /// Records that the user closed the Stats window. The window itself cancels the close and
+    /// hides (see <see cref="StatsWindow"/>); what has to happen here is the view model learning
+    /// of it, so the refresh clock stops and the next start does not reopen it.
+    /// </summary>
+    private void OnStatsClosing(object? sender, WindowClosingEventArgs e)
+    {
+        if (!e.IsProgrammatic)
+        {
+            _viewModel?.SetStatsVisible(false);
+        }
+    }
+
+    private void UpdateStatsWindow()
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        if (IsVisible && _viewModel.Diagnostics.IsVisible)
+        {
+            if (_stats is null)
+            {
+                _stats = new StatsWindow { DataContext = _viewModel.Diagnostics };
+                _stats.Closing += OnStatsClosing;
+            }
+
+            if (!_stats.IsVisible)
+            {
+                _stats.Show();
+            }
+        }
+        else if (_stats is { IsVisible: true })
+        {
+            _stats.Hide();
         }
     }
 

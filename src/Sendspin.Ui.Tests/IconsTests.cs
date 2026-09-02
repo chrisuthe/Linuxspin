@@ -14,7 +14,7 @@ public sealed class IconsTests(HeadlessSession session)
     private static readonly string[] Required =
     [
         "PlayIcon", "PauseIcon", "PreviousIcon", "NextIcon", "ShuffleIcon", "RepeatIcon", "RepeatOneIcon",
-        "SpeakerIcon", "MutedIcon", "SwitchGroupIcon", "GearIcon", "StatsIcon",
+        "SpeakerIcon", "MutedIcon", "SwitchGroupIcon", "GearIcon", "StatsIcon", "PlusIcon", "MinusIcon",
     ];
 
     [Fact]
@@ -47,7 +47,8 @@ public sealed class IconsTests(HeadlessSession session)
             var geometry = Assert.IsAssignableFrom<Geometry>(value);
             var bounds = geometry.Bounds;
 
-            Assert.True(bounds.Width > 0 && bounds.Height > 0, $"{key} is empty");
+            // A straight line, like minus, has one zero dimension and is still a glyph.
+            Assert.True(bounds.Width > 0 || bounds.Height > 0, $"{key} is empty");
             Assert.True(box.Contains(bounds.TopLeft) && box.Contains(bounds.BottomRight), $"{key} spans {bounds}");
         }
     });

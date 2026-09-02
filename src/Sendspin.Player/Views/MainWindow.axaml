@@ -61,10 +61,10 @@
         <!-- Layer 2: the content. -->
         <Grid Name="ContentLayer" RowDefinitions="Auto,*,Auto">
 
-            <!-- Toolbar: the connection line, and the panel toggles. -->
+            <!-- Toolbar: the connection line, and the settings toggle. -->
             <Border Grid.Row="0" Name="Toolbar" Classes="toolbar">
                 <!-- ToolbarContent's margin is the code-behind's: the macOS title strip inset. -->
-                <Grid Name="ToolbarContent" ColumnDefinitions="*,Auto,Auto">
+                <Grid Name="ToolbarContent" ColumnDefinitions="*,Auto">
                     <TextBlock Grid.Column="0"
                                Name="ConnectionLine"
                                Text="{Binding ConnectionStatus}"
@@ -72,17 +72,7 @@
                                VerticalAlignment="Center"
                                TextTrimming="CharacterEllipsis" />
 
-                    <!-- Temporary: Phase 4 moves diagnostics into Settings and this button goes. -->
                     <ToggleButton Grid.Column="1"
-                                  Name="StatsButton"
-                                  Classes="iconButton"
-                                  IsChecked="{Binding Diagnostics.IsVisible, Mode=OneWay}"
-                                  Command="{Binding ToggleDiagnosticsCommand}"
-                                  ToolTip.Tip="Stats">
-                        <PathIcon Data="{StaticResource StatsIcon}" />
-                    </ToggleButton>
-
-                    <ToggleButton Grid.Column="2"
                                   Name="SettingsButton"
                                   Classes="iconButton"
                                   IsChecked="{Binding IsSettingsOpen, Mode=OneWay}"
@@ -95,39 +85,59 @@
 
             <!-- Body: Now Playing or Welcome, with the settings card and the prompt over it. -->
             <Panel Grid.Row="1" Name="Body">
-                <Grid RowDefinitions="*,Auto">
 
-                    <!--
-                      Now Playing fills the body rather than scrolling in it: it sizes its art to
-                      the room it has, which needs a real height to size against.
-                    -->
-                    <views:NowPlayingView Grid.Row="0"
-                                          Name="NowPlaying"
-                                          IsVisible="{Binding IsConnected}" />
+                <!--
+                  Now Playing fills the body rather than scrolling in it: it sizes its art to
+                  the room it has, which needs a real height to size against.
+                -->
+                <views:NowPlayingView Name="NowPlaying"
+                                      IsVisible="{Binding IsConnected}" />
 
-                    <ScrollViewer Grid.Row="0" IsVisible="{Binding !IsConnected}">
-                        <views:WelcomeView Name="Welcome" />
-                    </ScrollViewer>
-
-                    <!-- Temporary: Phase 4 moves diagnostics into Settings and this row goes. -->
-                    <ScrollViewer Grid.Row="1"
-                                  MaxHeight="240"
-                                  IsVisible="{Binding Diagnostics.IsVisible}">
-                        <views:DiagnosticsView DataContext="{Binding Diagnostics}"
-                                               Margin="16,0,16,8" />
-                    </ScrollViewer>
-                </Grid>
+                <ScrollViewer IsVisible="{Binding !IsConnected}">
+                    <views:WelcomeView Name="Welcome" />
+                </ScrollViewer>
 
                 <!--
                   Settings, as a card over the whole body rather than a side column: at 440 px a
-                  340 px pane would swallow the window. Its contents are Phase 4's.
+                  340 px pane would swallow the window. The card is a header, the scrolling body
+                  (SettingsView, over this same view model) and a footer with the version and
+                  Done. Done only closes the card: every setting has already been written.
                 -->
                 <Border Name="SettingsOverlay"
                         Classes="settingsOverlay"
                         IsVisible="{Binding IsSettingsOpen}">
-                    <ScrollViewer>
-                        <views:SettingsView DataContext="{Binding Settings}" />
-                    </ScrollViewer>
+                    <Grid RowDefinitions="Auto,*,Auto">
+                        <StackPanel Grid.Row="0"
+                                    Name="SettingsHeader"
+                                    Orientation="Horizontal"
+                                    Spacing="10"
+                                    Margin="0,0,0,12">
+                            <PathIcon Data="{StaticResource GearIcon}"
+                                      Width="20" Height="20"
+                                      VerticalAlignment="Center" />
+                            <TextBlock Name="SettingsTitle"
+                                       Text="Settings"
+                                       Classes="subtitle"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+
+                        <ScrollViewer Grid.Row="1">
+                            <views:SettingsView Name="SettingsBody" Margin="0,0,4,0" />
+                        </ScrollViewer>
+
+                        <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="0,12,0,0">
+                            <TextBlock Grid.Column="0"
+                                       Name="VersionText"
+                                       Text="{Binding Settings.AppVersion, StringFormat='Sendspin Player {0}'}"
+                                       Classes="caption"
+                                       VerticalAlignment="Center" />
+                            <Button Grid.Column="1"
+                                    Name="DoneButton"
+                                    Content="Done"
+                                    Classes="primary"
+                                    Command="{Binding CloseSettingsCommand}" />
+                        </Grid>
+                    </Grid>
                 </Border>
 
                 <!--
@@ -164,13 +174,16 @@
                 </Border>
             </Panel>
 
-            <!-- Footer: volume, or the status message while disconnected with one to show. -->
-            <Border Grid.Row="2" Name="Footer" Classes="footer">
+            <!--
+              Footer: the volume row while connected, the status message while disconnected with
+              one to show, and nothing at all otherwise — a disabled volume row under a screen
+              with no connection said nothing.
+            -->
+            <Border Grid.Row="2" Name="Footer" Classes="footer" IsVisible="{Binding HasFooter}">
                 <Panel>
                     <Grid Name="VolumeRow"
-                          ColumnDefinitions="Auto,*,Auto,Auto,Auto"
-                          IsVisible="{Binding !HasFooterStatus}"
-                          IsEnabled="{Binding IsConnected}">
+                          ColumnDefinitions="Auto,*,Auto,Auto"
+                          IsVisible="{Binding IsConnected}">
                         <ToggleButton Grid.Column="0"
                                       Name="MuteButton"
                                       Classes="iconButton"
@@ -198,21 +211,15 @@
                                    TextAlignment="Right"
                                    VerticalAlignment="Center" />
 
+                        <!-- Off for a single-room setup; Disconnect lives in Settings' Connection section. -->
                         <Button Grid.Column="3"
                                 Name="SwitchGroupButton"
                                 Classes="iconButton"
                                 Command="{Binding SwitchGroupCommand}"
+                                IsVisible="{Binding Settings.ShowSwitchGroupButton}"
                                 ToolTip.Tip="Switch group">
                             <PathIcon Data="{StaticResource SwitchGroupIcon}" />
                         </Button>
-
-                        <!-- Phase 4 moves this into Settings' Connection section. -->
-                        <Button Grid.Column="4"
-                                Name="DisconnectButton"
-                                Content="Disconnect"
-                                Command="{Binding DisconnectCommand}"
-                                VerticalAlignment="Center"
-                                Margin="8,0,0,0" />
                     </Grid>
 
                     <TextBlock Name="FooterStatus"
