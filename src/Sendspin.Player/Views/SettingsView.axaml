@@ -8,6 +8,7 @@
              xmlns:controls="using:Sendspin.Player.Controls"
              xmlns:converters="using:Sendspin.Player.Converters"
              xmlns:config="using:Sendspin.Core.Configuration"
+             xmlns:sdk="using:Sendspin.SDK.Client"
              mc:Ignorable="d"
              x:Class="Sendspin.Player.Views.SettingsView"
              x:DataType="vm:MainViewModel">
@@ -216,7 +217,13 @@
                 </StackPanel>
                 <ComboBox Name="ConnectionModeBox"
                           ItemsSource="{Binding Settings.ConnectionModes}"
-                          SelectedItem="{Binding Settings.ConnectionMode}" />
+                          SelectedItem="{Binding Settings.ConnectionMode}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="sdk:ConnectionMode">
+                            <TextBlock Text="{Binding, Converter={x:Static converters:ConnectionModeLabel.Instance}}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
                 <TextBlock Name="RestartNote"
                            Text="Takes effect after a restart."
                            Classes="warning"
@@ -229,7 +236,13 @@
                 </StackPanel>
                 <ComboBox Name="AutoConnectBox"
                           ItemsSource="{Binding Settings.AutoConnectPolicies}"
-                          SelectedItem="{Binding Settings.AutoConnect}" />
+                          SelectedItem="{Binding Settings.AutoConnect}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="config:AutoConnectPolicy">
+                            <TextBlock Text="{Binding, Converter={x:Static converters:AutoConnectPolicyLabel.Instance}}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
             </StackPanel>
         </StackPanel>
 

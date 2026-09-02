@@ -1,6 +1,7 @@
 using Avalonia;
 using Sendspin.Core.Platform;
 using Sendspin.Platform.MacOS.Platform;
+using SkiaSharp;
 
 namespace Sendspin.Player;
 
@@ -40,14 +41,36 @@ internal static class PlatformSelection
     /// answer.
     /// </summary>
     /// <remarks>
-    /// Null for now, and measured: <c>FontManager.DefaultFontFamily</c> resolves to
-    /// <c>Helvetica</c> on macOS 26 (Avalonia 12.1.1), not the system UI font (SF Pro). So
-    /// <c>$Default</c> is the wrong face here and a per-platform name will be needed; which
-    /// family name Skia resolves to SF is still being measured, and guessing one would be worse
-    /// than Helvetica. The SF override is a follow-up once the resolvable name is known
-    /// (<c>dotnet run --project scripts/spike/ShellSpike -- font</c>, with the candidate names).
+    /// <para>
+    /// The platform's own answer is Helvetica (measured on macOS 26, Avalonia 12.1.1), so the
+    /// system face is named: <c>.AppleSystemUIFont</c>, the one name that resolved to it. The
+    /// name is guarded, because an unresolvable <c>DefaultFamilyName</c> kills the process in
+    /// the first layout pass — the rule and the measurement are on <see cref="MacSystemFont"/>.
+    /// Skia's font manager is the resolver: it is what Avalonia asks at start-up, and it is
+    /// already loaded through Avalonia.Skia.
+    /// </para>
+    /// <para>
+    /// This runs before the container exists, so a miss goes to standard error rather than the
+    /// logger; the start-up <c>UI font:</c> log line then shows what <c>$Default</c> became.
+    /// </para>
     /// </remarks>
-    public static string? ReadDesktopFontFamily() => null;
+    public static string? ReadDesktopFontFamily()
+    {
+        var family = MacSystemFont.Select(Resolves);
+
+        if (family is null)
+        {
+            Console.Error.WriteLine($"{MacSystemFont.FamilyName} does not resolve here; leaving the UI font to the platform.");
+        }
+
+        return family;
+
+        static bool Resolves(string name)
+        {
+            using var typeface = SKFontManager.Default.MatchFamily(name);
+            return typeface is not null;
+        }
+    }
 
     /// <summary>
     /// Selects the windowing backend.

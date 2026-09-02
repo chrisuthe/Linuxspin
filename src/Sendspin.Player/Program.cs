@@ -62,13 +62,14 @@ internal static class Program
     /// and App.axaml overrides that resource to <c>$Default</c>. <c>DefaultFamilyName</c> is what
     /// <c>$Default</c> resolves to: on Linux it is the desktop's interface font read from the
     /// Settings portal (fontconfig's own default is DejaVu Sans inside the Flatpak, which is not
-    /// the desktop's font); on Windows and macOS it is left null, which means "ask the platform".
-    /// On Windows that answer is measured: plain Segoe UI, the face the WPF reference app uses.
-    /// On macOS it is measured too, and wrong: Helvetica rather than SF Pro. The SF override is
-    /// a follow-up once the family name Skia resolves to SF is known — see
-    /// <see cref="PlatformSelection.ReadDesktopFontFamily"/> on each head. The pair was measured
-    /// in the "System font" section of docs/ARCHITECTURE.md; macOS also confirmed that the
-    /// embedded <c>fonts:Inter#Inter</c> is the only way Inter resolves on a box without it
+    /// the desktop's font); on Windows it is left null, which means "ask the platform", and that
+    /// answer is measured: plain Segoe UI, the face the WPF reference app uses. On macOS the
+    /// platform's answer is Helvetica, so the head names the system face,
+    /// <c>.AppleSystemUIFont</c>, guarded by a resolve check because an unresolvable name kills
+    /// the process before a window appears — see
+    /// <see cref="PlatformSelection.ReadDesktopFontFamily"/> on each head. All three were
+    /// measured in the "System font" section of docs/ARCHITECTURE.md; macOS also confirmed that
+    /// the embedded <c>fonts:Inter#Inter</c> is the only way Inter resolves on a box without it
     /// installed, which is why <c>WithInterFont()</c> stays.
     /// </para>
     /// </remarks>

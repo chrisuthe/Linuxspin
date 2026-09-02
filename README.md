@@ -29,16 +29,34 @@ the obvious answer, and each one cost real effort to establish.
 - **Native OS media integration** — the Windows 11 media flyout, MPRIS on Plasma 6 and GNOME, and
   Now Playing / Control Center on macOS — so hardware media keys work without the app being
   focused.
-- **Tray / status item**, start-minimized, single-instance, and notifications with per-event
-  toggles.
+- **Tray / status item** with the transport, Switch Group, mute and a volume readout in its menu;
+  start-minimized, single-instance, and notifications with per-event toggles.
 - **Real measured output latency** per platform, not a constant, plus a per-device manual offset
   for the Bluetooth and AirPlay tail that no API reports.
-- **A diagnostics view** showing sync error, correction band, playback rate in ppm, buffer depth,
-  clock offset and drift, and — the most useful single field — whether the timing source is
-  actually the audio hardware clock.
+- **Stats for Nerds**, a separate window showing sync error, correction band, playback rate in
+  ppm, buffer depth, clock offset and drift, and — the most useful single field — whether the
+  timing source is actually the audio hardware clock. It reopens where it was left.
 - **Native shell, system theme and accent, platform font.** Resizable, with the OS's own
   decorations; follows the desktop's light/dark setting and accent live. The layout inside the
   window comes from Sendspin for Windows; the colours do not.
+- **A living backdrop.** The player advertises the `color@v1` and `visualizer@v1` roles, and the
+  server's palette and loudness/beat frames drive the window: **Ambient Glow** (colour blobs
+  behind the veil), **Breathing Art** (the album art breathes with the music) or **Off**, with an
+  intensity slider. A box drawing without a GPU gets Off automatically, because the effect costs
+  too much in software rendering.
+- **A settings card** over the backdrop rather than a dialog: every control writes through the
+  moment it changes, so there is no Save. Pickers show plain names, not enum members.
+
+## Screenshots
+
+Taken on Fedora / KDE Plasma under Wayland, following the desktop's theme and accent.
+
+| | |
+|---|---|
+| ![Now Playing, narrow, dark](docs/screenshots/reskin/phase3-narrow-dark.png) | ![Now Playing, wide, light](docs/screenshots/reskin/phase3-wide-light.png) |
+| Now Playing, the narrow composition, dark | Now Playing, the wide composition, light |
+| ![Ambient Glow](docs/screenshots/reskin/phase5-glow-dark.png) | ![The settings card](docs/screenshots/reskin/phase4-settings-dark.png) |
+| Ambient Glow, driven by the server's palette and loudness | The settings card |
 
 ## Requirements
 

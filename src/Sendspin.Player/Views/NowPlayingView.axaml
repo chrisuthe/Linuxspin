@@ -83,8 +83,8 @@
     <Grid Name="Composition" ColumnDefinitions="Auto,*" RowDefinitions="Auto,*" Margin="24">
 
         <!--
-          ArtBreath carries no transform today: Phase 5's Breathing Art animates this wrapper, so
-          the tile's own shadow and clip are untouched by it.
+          ArtBreath is the wrapper Breathing Art scales, so the tile's own shadow and clip are
+          untouched by the animation.
         -->
         <Border Name="ArtBreath">
             <Border Name="ArtTile" Classes="artTile">

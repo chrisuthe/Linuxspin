@@ -12,8 +12,8 @@
       than being a snapshot. That is also why the glow default is a brush and not a Color: a
       Color resource cannot follow the accent. Read .Color off it for a BoxShadow.
 
-      The dictionaries are split by variant so Phase 5 can tune each side of the veil and the
-      glow on its own; today the only per-variant difference is the glow, which has to be darker
+      The dictionaries are split by variant so each side of the veil and the glow can be tuned on
+      its own; today the only per-variant difference is the glow, which has to be darker
       than a light page and lighter than a dark one to read at all.
     -->
 
