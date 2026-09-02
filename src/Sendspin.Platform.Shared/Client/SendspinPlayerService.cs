@@ -1094,6 +1094,13 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
                 held = _metadata.Offer(metadata, due, now) == ScheduledOffer.Held;
                 aheadMicros = due - now;
                 RearmPromotion(now);
+
+                _logger.LogDebug(
+                    "Metadata for {Track} stamped {Timestamp} is {AheadMs} ms ahead: {Outcome}",
+                    metadata,
+                    metadata.Timestamp,
+                    aheadMicros / 1000,
+                    held ? "held" : "applied");
             }
         }
 
@@ -1178,6 +1185,14 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
             held = slot.Offer(path, due, now) == ScheduledOffer.Held;
             aheadMicros = due - now;
             RearmPromotion(now);
+
+            _logger.LogDebug(
+                "Artwork on channel {Channel} ({Path}) stamped {Timestamp} is {AheadMs} ms ahead: {Outcome}",
+                channel,
+                path is null ? "clear" : Path.GetFileName(path),
+                serverTimestamp,
+                aheadMicros / 1000,
+                held ? "held" : "applied");
         }
 
         if (held)
