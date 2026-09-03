@@ -59,6 +59,106 @@ public sealed class MediaSessionMapperTests
     }
 
     /// <summary>
+    /// The position is the spec's formula run from the metadata's own timestamp, so a state published
+    /// some time after the metadata took effect reports where the track is now.
+    /// </summary>
+    [Fact]
+    public void FromGroupState_ProjectsThePositionForwardFromTheMetadataTimestamp()
+    {
+        var metadata = new TrackMetadata
+        {
+            Title = "Sonata",
+            Progress = new PlaybackProgress { TrackDuration = 245_000.0, TrackProgress = 30_000.0, PlaybackSpeed = 1000 }
+        };
+        var group = new GroupState { PlaybackState = PlaybackState.Playing, Metadata = metadata };
+
+        var state = MediaSessionMapper.FromGroupState(group, metadata, "/tmp/art.jpg", elapsedMicrosSinceMetadata: 2_500_000);
+
+        Assert.Equal(TimeSpan.FromSeconds(32.5), state.Position);
+        Assert.Equal(TimeSpan.FromSeconds(245), state.Duration);
+    }
+
+    /// <summary>
+    /// The metadata argument, not the group's own, is what is projected: the group's is whatever the
+    /// server sent last, which may be a scheduled update for the next track.
+    /// </summary>
+    [Fact]
+    public void FromGroupState_ProjectsTheMetadataItIsGivenNotTheGroups()
+    {
+        var current = new TrackMetadata { Title = "One", Progress = new PlaybackProgress { TrackProgress = 1_000.0 } };
+        var scheduled = new TrackMetadata { Title = "Two", Progress = new PlaybackProgress { TrackProgress = 0.0 } };
+        var group = new GroupState { PlaybackState = PlaybackState.Playing, Metadata = scheduled };
+
+        var state = MediaSessionMapper.FromGroupState(group, current, artworkFilePath: null, elapsedMicrosSinceMetadata: 0);
+
+        Assert.Equal("One", state.Title);
+        Assert.Equal(TimeSpan.FromSeconds(1), state.Position);
+    }
+
+    [Fact]
+    public void ProjectPosition_AdvancesAtNormalSpeed()
+    {
+        var progress = new PlaybackProgress { TrackProgress = 30_000.0, TrackDuration = 245_000.0, PlaybackSpeed = 1000 };
+
+        Assert.Equal(TimeSpan.FromSeconds(33), MediaSessionMapper.ProjectPosition(progress, elapsedMicros: 3_000_000));
+    }
+
+    /// <summary>A speed of 0 is the spec's paused: the position holds at the reported one.</summary>
+    [Fact]
+    public void ProjectPosition_WhenPaused_HoldsStill()
+    {
+        var progress = new PlaybackProgress { TrackProgress = 30_000.0, TrackDuration = 245_000.0, PlaybackSpeed = 0 };
+
+        Assert.Equal(TimeSpan.FromSeconds(30), MediaSessionMapper.ProjectPosition(progress, elapsedMicros: 3_000_000));
+    }
+
+    [Fact]
+    public void ProjectPosition_AtOneAndAHalfSpeed_AdvancesOneAndAHalfTimesAsFast()
+    {
+        var progress = new PlaybackProgress { TrackProgress = 30_000.0, TrackDuration = 245_000.0, PlaybackSpeed = 1500 };
+
+        Assert.Equal(TimeSpan.FromSeconds(34.5), MediaSessionMapper.ProjectPosition(progress, elapsedMicros: 3_000_000));
+    }
+
+    [Fact]
+    public void ProjectPosition_IsClampedToTheDuration()
+    {
+        var progress = new PlaybackProgress { TrackProgress = 240_000.0, TrackDuration = 245_000.0, PlaybackSpeed = 1000 };
+
+        Assert.Equal(TimeSpan.FromSeconds(245), MediaSessionMapper.ProjectPosition(progress, elapsedMicros: 60_000_000));
+    }
+
+    /// <summary>A zero duration is the protocol's unbounded stream, so there is nothing to clamp to.</summary>
+    [Fact]
+    public void ProjectPosition_WithNoDuration_IsNotClamped()
+    {
+        var progress = new PlaybackProgress { TrackProgress = 240_000.0, TrackDuration = 0.0, PlaybackSpeed = 1000 };
+
+        Assert.Equal(TimeSpan.FromSeconds(300), MediaSessionMapper.ProjectPosition(progress, elapsedMicros: 60_000_000));
+    }
+
+    [Fact]
+    public void ProjectPosition_AssumesNormalSpeedWhenNoneIsGiven()
+    {
+        var progress = new PlaybackProgress { TrackProgress = 1_000.0 };
+
+        Assert.Equal(TimeSpan.FromSeconds(2), MediaSessionMapper.ProjectPosition(progress, elapsedMicros: 1_000_000));
+    }
+
+    [Fact]
+    public void ProjectPosition_IsNeverNegative()
+    {
+        var progress = new PlaybackProgress { TrackProgress = -5_000.0, PlaybackSpeed = 1000 };
+
+        Assert.Equal(TimeSpan.Zero, MediaSessionMapper.ProjectPosition(progress, elapsedMicros: 0));
+        Assert.Equal(TimeSpan.FromSeconds(1), MediaSessionMapper.ProjectPosition(new PlaybackProgress { TrackProgress = 1_000.0 }, elapsedMicros: -3_000_000));
+    }
+
+    [Fact]
+    public void ProjectPosition_WithNoProgress_IsZero() =>
+        Assert.Equal(TimeSpan.Zero, MediaSessionMapper.ProjectPosition(progress: null, elapsedMicros: 5_000_000));
+
+    /// <summary>
     /// Seek is never offered, because the player role has no seek command.
     /// </summary>
     /// <remarks>

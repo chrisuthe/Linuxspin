@@ -230,6 +230,37 @@ Still true on 9.3.2, checked rather than assumed: 9.3.0 reworked the filter's pr
 that stays noisy now falls back to the steady-state interval and withholds `IsClockSynced` — but the
 timeout string above is byte-identical in both assemblies.
 
+### The SDK surfaces the artwork and metadata timestamps but holds nothing pending
+
+Both roles carry a server-clock timestamp saying *when* the value takes effect, and the spec has a
+client keep a **current** value plus at most one **pending** one per channel: a future timestamp is
+held and applied when the local clock reaches it, a past one applies at once and discards the pending
+one, a new future one replaces it (`roles/artwork/v1.md`, `roles/metadata/v1.md`). The SDK exposes
+the timestamps — `ArtworkReceivedEventArgs.Timestamp`, `ArtworkClearedEventArgs.Timestamp`,
+`TrackMetadata.Timestamp` — and then applies everything on arrival: `GroupState.Metadata` is
+whatever came last, and there is no pending slot anywhere. With a queue that put the next track's
+cover and title on screen seconds before the audible change.
+
+The pending model therefore lives here, in `Sendspin.Core.MediaSession.ScheduledValue<T>`: one per
+artwork channel and one for the track metadata, owned by `SendspinPlayerService`, which converts each
+timestamp with `IClockSynchronizer.ServerToClientTime` (the current best estimate — the spec says
+not to wait for convergence — and inclusive of this player's static delay, so the display changes
+when *this* player's audio does) and promotes on a `System.Threading.Timer`. Playback state, volume
+and the command set apply immediately; only the track metadata is scheduled. Position is the spec's
+formula run from the *current* metadata's timestamp (`MediaSessionMapper.ProjectPosition`), never
+from arrival time and never from a pending update. `PlayerServiceEventTests` drives the whole path
+with a known clock offset and a hand-cranked clock.
+
+Two SDK facts that shape it. The SDK builds a **new `TrackMetadata` instance** for every
+`server/state` that carries a metadata object and leaves the instance alone for one that does not
+(it mutates the one `GroupState` in place), so reference identity is what distinguishes a metadata
+update from a volume change. And the SDK raises **no event for `stream/end`**, although the spec
+discards pending values there; they are discarded on disconnect, and otherwise survive a stream end
+until their timestamp — at most the 20 s the spec lets a server schedule ahead. The spec also changed
+artwork transfers on 2026-09-02 to an announce-and-parts sequence with an explicit cancel; 9.3.2
+still raises one event per complete image, and the scheduler is built on that event rather than on
+the wire shape, so the coming SDK bump changes only where "transfer complete" comes from.
+
 ### Other SDK API facts worth not rediscovering
 
 - `IStaticDelayStore` is the SDK's persistence seam for `static_delay_ms`. It must be backed by the

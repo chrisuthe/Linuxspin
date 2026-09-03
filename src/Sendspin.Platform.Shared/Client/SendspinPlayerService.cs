@@ -46,6 +46,39 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
     private readonly BackgroundTaskSet _background;
     private readonly Lock _sessionGate = new();
 
+    /// <summary>
+    /// The channel whose picture is published as the track's artwork. <see cref="PlayerCapabilities"/>
+    /// advertises exactly one channel, the album one, so this is 0; the schedulers are still kept per
+    /// channel so a second channel (artist art) cannot clear or replace the album's picture.
+    /// </summary>
+    private const int AlbumArtworkChannel = 0;
+
+    /// <summary>
+    /// Scheduled artwork by channel, and scheduled track metadata. The spec's pending model
+    /// (<see cref="ScheduledValue{T}"/>): what is shown is the current value, and the next track's
+    /// picture and metadata wait here until their timestamps, converted to this machine's clock.
+    /// Guarded by <see cref="_sessionGate"/>.
+    /// </summary>
+    private readonly Dictionary<int, ScheduledValue<string>> _artwork = [];
+    private readonly ScheduledValue<TrackMetadata> _metadata = new();
+
+    /// <summary>
+    /// Fires <see cref="PromoteDue"/> when the earliest pending value falls due. A thread-pool timer
+    /// rather than a UI one: promotion is session state, and the view model marshals what it
+    /// publishes as it does for every other state change.
+    /// </summary>
+    private readonly Timer _promotion;
+
+    /// <summary>
+    /// The metadata instance last offered to the scheduler. The SDK builds a new
+    /// <see cref="TrackMetadata"/> for every <c>server/state</c> that carries a metadata object and
+    /// leaves the instance alone for one that does not, so reference identity is what tells a
+    /// metadata update apart from a volume change on the same group.
+    /// </summary>
+    private TrackMetadata? _offeredMetadata;
+    private bool _loggedHeldArtwork;
+    private bool _loggedHeldMetadata;
+
     private MdnsServerDiscovery? _discovery;
     private SendspinHostService? _host;
     private SendspinClientService? _client;
@@ -62,11 +95,25 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
     /// </summary>
     internal Func<ISendspinConnection> ConnectionFactory { get; set; }
 
+    /// <summary>
+    /// Makes the clock synchroniser the session converts server timestamps with. The real one is
+    /// the SDK's Kalman filter; the tests substitute one with a known offset so that "held until its
+    /// timestamp" can be asserted against a clock they control.
+    /// </summary>
+    internal Func<IClockSynchronizer> ClockSynchronizerFactory { get; set; }
+
+    /// <summary>
+    /// Reads this machine's clock in microseconds, in the domain
+    /// <see cref="IClockSynchronizer.ServerToClientTime"/> converts into: the SDK's
+    /// <see cref="HighPrecisionTimer.Shared"/>, which also stamps its <c>client/time</c> probes and
+    /// schedules its audio. The tests substitute a clock they advance by hand.
+    /// </summary>
+    internal Func<long> LocalClock { get; set; } = HighPrecisionTimer.Shared.GetCurrentTimeMicroseconds;
+
     private string? _adoptedServerId;
     private GroupState? _group;
     private MediaSessionState _mediaState = MediaSessionState.Idle;
     private string? _serverName;
-    private string? _artworkPath;
     private bool _isDisposed;
 
     public SendspinPlayerService(
@@ -98,9 +145,12 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
         _syncPolicy = syncPolicy;
         _softwareVersion = softwareVersion;
         _background = new BackgroundTaskSet(_logger);
+        _promotion = new Timer(_ => OnPromotionDue(), state: null, Timeout.Infinite, Timeout.Infinite);
         ConnectionFactory = () => new SendspinConnection(
             _loggerFactory.CreateLogger<SendspinConnection>(),
             new ConnectionOptions());
+        ClockSynchronizerFactory = () =>
+            new KalmanClockSynchronizer(_loggerFactory.CreateLogger<KalmanClockSynchronizer>());
     }
 
     /// <summary>Raised when the connection comes up or goes down.</summary>
@@ -236,6 +286,7 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
             _group = null;
             _mediaState = MediaSessionState.Idle;
             _serverName = null;
+            ResetSchedules();
         }
 
         if (client is not null)
@@ -494,6 +545,10 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
             _sampleSource = null;
             _clockSync = null;
             _activePlayer = null;
+
+            // Under the gate so a promotion or re-arm racing the shutdown cannot touch a disposed
+            // timer.
+            _promotion.Dispose();
         }
 
         if (pipeline is not null)
@@ -773,10 +828,8 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
                 return (existingClock, existingPipeline);
             }
 
-            var clockSync = new KalmanClockSynchronizer(_loggerFactory.CreateLogger<KalmanClockSynchronizer>())
-            {
-                StaticDelayMs = _settings.Current.StaticDelayMs
-            };
+            var clockSync = ClockSynchronizerFactory();
+            clockSync.StaticDelayMs = _settings.Current.StaticDelayMs;
 
             var pipeline = CreatePipeline(clockSync, device);
 
@@ -986,6 +1039,7 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
             _serverName = null;
             _group = null;
             _mediaState = MediaSessionState.Idle;
+            ResetSchedules();
         }
 
         _logger.LogInformation("Server {ServerId} disconnected", serverId);
@@ -1004,6 +1058,7 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
                 _serverName = null;
                 _group = null;
                 _mediaState = MediaSessionState.Idle;
+                ResetSchedules();
             }
 
             RaiseConnectionChanged(connected: false, serverName: null);
@@ -1011,16 +1066,52 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
         }
     }
 
+    /// <summary>
+    /// Takes a group state: playback state, volume, mute and commands apply at once; the track
+    /// metadata is scheduled for its timestamp.
+    /// </summary>
+    /// <remarks>
+    /// Only the metadata carries a timestamp, and only the metadata describes something that has an
+    /// audible moment. The SDK holds nothing pending — <see cref="GroupState.Metadata"/> is whatever
+    /// arrived last — so the scheduling happens here, and <see cref="PublishState"/> reads the
+    /// current metadata from the scheduler rather than from the group.
+    /// </remarks>
     private void OnGroupStateChanged(object? sender, GroupState group)
     {
+        var held = false;
+        long aheadMicros = 0;
+
         lock (_sessionGate)
         {
             _group = group;
+
+            if (group.Metadata is { } metadata && !ReferenceEquals(metadata, _offeredMetadata))
+            {
+                _offeredMetadata = metadata;
+
+                var now = LocalClock();
+                var due = metadata.Timestamp is { } timestamp ? ToLocalTime(timestamp, now) : now;
+                held = _metadata.Offer(metadata, due, now) == ScheduledOffer.Held;
+                aheadMicros = due - now;
+                RearmPromotion(now);
+
+                _logger.LogDebug(
+                    "Metadata for {Track} stamped {Timestamp} is {AheadMs} ms ahead: {Outcome}",
+                    metadata,
+                    metadata.Timestamp,
+                    aheadMicros / 1000,
+                    held ? "held" : "applied");
+            }
         }
 
         // Volume is server-authoritative: this is where the value that actually took effect
         // arrives, so this is where it is persisted for the next connection's initial state.
         PersistVolumeIfChanged(group.Volume, group.Muted);
+
+        if (held)
+        {
+            LogFirstHold(ref _loggedHeldMetadata, "metadata", aheadMicros);
+        }
 
         PublishState();
     }
@@ -1057,28 +1148,196 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
         });
     }
 
-    // Deliberately not keyed on the group's current metadata, which can lag the picture: see
+    // Written to disk on arrival, published at its timestamp. The file is named by its bytes rather
+    // than by the group's current metadata, which can lag the picture: see
     // MediaSessionMapper.ArtworkFileName.
-    private void OnArtworkReceived(object? sender, ArtworkReceivedEventArgs e)
+    private void OnArtworkReceived(object? sender, ArtworkReceivedEventArgs e) =>
+        ScheduleArtwork(e.Channel, _artworkCache.Write(e.ImageData), e.Timestamp);
+
+    // A clear is an empty image and keeps the same timing, so a future timestamp schedules it.
+    private void OnArtworkCleared(object? sender, ArtworkClearedEventArgs e) =>
+        ScheduleArtwork(e.Channel, path: null, e.Timestamp);
+
+    /// <summary>
+    /// Offers a picture (or a clear, when <paramref name="path"/> is null) to its channel's
+    /// scheduler for the server time <paramref name="serverTimestamp"/>.
+    /// </summary>
+    /// <remarks>
+    /// Built on the SDK's one-event-per-complete-image surface rather than on the wire format.
+    /// The spec now transfers an image as an announce and parts, which 9.3.2 predates; when an SDK
+    /// bump adopts it, "transfer complete" moves into the SDK and this method is unchanged.
+    /// </remarks>
+    private void ScheduleArtwork(int channel, string? path, long serverTimestamp)
     {
-        var path = _artworkCache.Write(e.ImageData);
+        bool held;
+        long aheadMicros;
 
         lock (_sessionGate)
         {
-            _artworkPath = path;
+            if (!_artwork.TryGetValue(channel, out var slot))
+            {
+                slot = new ScheduledValue<string>();
+                _artwork[channel] = slot;
+            }
+
+            var now = LocalClock();
+            var due = ToLocalTime(serverTimestamp, now);
+            held = slot.Offer(path, due, now) == ScheduledOffer.Held;
+            aheadMicros = due - now;
+            RearmPromotion(now);
+
+            _logger.LogDebug(
+                "Artwork on channel {Channel} ({Path}) stamped {Timestamp} is {AheadMs} ms ahead: {Outcome}",
+                channel,
+                path is null ? "clear" : Path.GetFileName(path),
+                serverTimestamp,
+                aheadMicros / 1000,
+                held ? "held" : "applied");
+        }
+
+        if (held)
+        {
+            LogFirstHold(ref _loggedHeldArtwork, "artwork", aheadMicros);
+            return;
         }
 
         PublishState();
     }
 
-    private void OnArtworkCleared(object? sender, ArtworkClearedEventArgs e)
+    /// <summary>
+    /// Converts a server-clock timestamp to this machine's clock with the synchroniser's current
+    /// best estimate — the spec asks for exactly that, not for convergence.
+    /// </summary>
+    /// <remarks>
+    /// The conversion includes this player's static delay, which is right: the display should change
+    /// when this player's audio does. With no synchroniser there is no session for the timestamp to
+    /// belong to, so the value applies at once rather than being held for a conversion that will
+    /// never come — a scheduled update is never held indefinitely. In practice the synchroniser
+    /// exists before any event can arrive, because <see cref="EnsureAudioSession"/> runs before a
+    /// connection is made in either mode.
+    /// </remarks>
+    private long ToLocalTime(long serverTimestamp, long nowLocalMicros) =>
+        _clockSync?.ServerToClientTime(serverTimestamp) ?? nowLocalMicros;
+
+    /// <summary>
+    /// Arms the promotion timer for the earliest pending value, or disarms it when nothing is
+    /// pending. Call under <see cref="_sessionGate"/>.
+    /// </summary>
+    private void RearmPromotion(long nowLocalMicros)
     {
-        lock (_sessionGate)
+        if (_isDisposed)
         {
-            _artworkPath = null;
+            return;
         }
 
-        PublishState();
+        long? next = _metadata.NextDue;
+
+        foreach (var slot in _artwork.Values)
+        {
+            if (slot.NextDue is { } due && (next is null || due < next))
+            {
+                next = due;
+            }
+        }
+
+        if (next is null)
+        {
+            _promotion.Change(Timeout.Infinite, Timeout.Infinite);
+            return;
+        }
+
+        // Rounded up: a timer that fires a fraction early finds nothing due and has to re-arm. Capped
+        // because Timer.Change rejects anything past ~49 days, and only a broken clock conversion
+        // could ask for it; the callback re-evaluates and re-arms, so a cap costs nothing.
+        var delayMs = Math.Clamp((next.Value - nowLocalMicros + 999) / 1000, 0, MaxPromotionDelayMs);
+        _promotion.Change(delayMs, Timeout.Infinite);
+    }
+
+    /// <summary>Longest single arm of the promotion timer; see <see cref="RearmPromotion"/>.</summary>
+    private const long MaxPromotionDelayMs = 60 * 60 * 1000;
+
+    private void OnPromotionDue()
+    {
+        try
+        {
+            PromoteDue();
+        }
+        catch (Exception ex)
+        {
+            // A timer callback has no caller to throw to; an unhandled exception here takes the
+            // process down. The SDK's receive loop guards its handlers the same way.
+            _logger.LogError(ex, "Promoting a scheduled update failed");
+        }
+    }
+
+    /// <summary>
+    /// Makes every pending value whose time has come current, and publishes if anything changed.
+    /// </summary>
+    /// <remarks>
+    /// The timer's callback, and the tests' hand crank: they advance <see cref="LocalClock"/> past
+    /// a due time and call this rather than waiting real seconds for the timer.
+    /// </remarks>
+    internal void PromoteDue()
+    {
+        var promoted = false;
+
+        lock (_sessionGate)
+        {
+            if (_isDisposed)
+            {
+                return;
+            }
+
+            var now = LocalClock();
+            promoted |= _metadata.Promote(now);
+
+            foreach (var slot in _artwork.Values)
+            {
+                promoted |= slot.Promote(now);
+            }
+
+            RearmPromotion(now);
+        }
+
+        if (promoted)
+        {
+            PublishState();
+        }
+    }
+
+    /// <summary>
+    /// Forgets every current and pending value: the stream they belonged to is gone. Call under
+    /// <see cref="_sessionGate"/>.
+    /// </summary>
+    /// <remarks>
+    /// Called on disconnect. The spec also discards pending values on <c>stream/end</c>, but SDK
+    /// 9.3.2 raises no event for it, so a pending value survives a stream end here until its
+    /// timestamp — at most the 20 s the spec lets a server schedule ahead — and then promotes.
+    /// </remarks>
+    private void ResetSchedules()
+    {
+        _metadata.Reset();
+        _offeredMetadata = null;
+        _artwork.Clear();
+        RearmPromotion(LocalClock());
+    }
+
+    /// <summary>
+    /// Logs the first time an update is held, so the start-up log shows the schedule being honoured
+    /// the way the backdrop's first-frame lines show it running.
+    /// </summary>
+    private void LogFirstHold(ref bool logged, string what, long aheadMicros)
+    {
+        if (logged)
+        {
+            return;
+        }
+
+        logged = true;
+        _logger.LogInformation(
+            "Holding the first scheduled {What} update for {AheadMs} ms until its timestamp",
+            what,
+            aheadMicros / 1000);
     }
 
     // Both forwarded as they arrive, on the SDK's thread. There is nothing to merge or persist:
@@ -1089,7 +1348,8 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
         VisualizerFrameReceived?.Invoke(this, frame);
 
     /// <summary>
-    /// Rebuilds the media-session snapshot from the server's group state and announces it.
+    /// Rebuilds the media-session snapshot from the server's group state, the metadata and artwork
+    /// currently in effect, and the time since that metadata took effect, and announces it.
     /// </summary>
     private void PublishState()
     {
@@ -1097,7 +1357,11 @@ public sealed class SendspinPlayerService : IPlayerCommandSink, IDiagnosticsProv
 
         lock (_sessionGate)
         {
-            state = MediaSessionMapper.FromGroupState(_group, _artworkPath);
+            var metadata = _metadata.Current;
+            var elapsed = metadata is null ? 0 : LocalClock() - _metadata.CurrentSince;
+            var artwork = _artwork.TryGetValue(AlbumArtworkChannel, out var slot) ? slot.Current : null;
+
+            state = MediaSessionMapper.FromGroupState(_group, metadata, artwork, elapsed);
             _mediaState = state;
         }
 
