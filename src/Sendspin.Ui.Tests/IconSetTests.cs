@@ -116,31 +116,34 @@ public sealed class IconSetTests
     }
 
     /// <summary>
-    /// The point of the centralization: one raster per size in the tree, not the three
-    /// byte-identical copies of the mark this replaced.
+    /// The point of the centralization: one raster per size, not the three byte-identical
+    /// copies of the mark this replaced.
     /// </summary>
     /// <remarks>
-    /// Asked of git rather than of the filesystem, because the rule is about what is
-    /// <em>committed</em>: walking the working tree would also find the icons a local
-    /// <c>build.sh</c> run leaves under <c>artifacts/</c> and report them as duplicates.
+    /// Over <c>packaging/</c> and <c>src/</c>, which is where all three copies lived and is
+    /// narrow enough to stay out of <c>artifacts/</c> — a local <c>build.sh</c> run installs
+    /// the theme there, and those copies are the point rather than a defect.
     /// </remarks>
     [Fact]
-    public void NoTwoCommittedPngs_AreTheSameImage()
+    public void NoTwoPngs_InThePackagedTreeAreTheSameImage()
     {
+        var root = PlayerSource.Root();
         var byContent = new Dictionary<string, List<string>>(StringComparer.Ordinal);
 
-        foreach (var path in CommittedFiles(".png"))
+        foreach (var directory in new[] { "packaging", "src" })
         {
-            var hash = Convert.ToHexString(
-                System.Security.Cryptography.SHA256.HashData(
-                    File.ReadAllBytes(Path.Combine(PlayerSource.Root(), path))));
-
-            if (!byContent.TryGetValue(hash, out var paths))
+            foreach (var path in SourcePngs(Path.Combine(root, directory)))
             {
-                byContent[hash] = paths = [];
-            }
+                var hash = Convert.ToHexString(
+                    System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(path)));
 
-            paths.Add(path);
+                if (!byContent.TryGetValue(hash, out var paths))
+                {
+                    byContent[hash] = paths = [];
+                }
+
+                paths.Add(Path.GetRelativePath(root, path));
+            }
         }
 
         Assert.NotEmpty(byContent);
@@ -151,6 +154,22 @@ public sealed class IconSetTests
             duplicated.Count == 0,
             "The same image is committed more than once: "
                 + string.Join("; ", duplicated.Select(p => string.Join(" == ", p))));
+    }
+
+    /// <summary>
+    /// The menu bar pair, whose wrong size is the one failure nothing else here would show:
+    /// AppKit scales a mismatched template image rather than refusing it, so the only symptom
+    /// is a status item that looks subtly wrong next to the SF Symbols beside it.
+    /// </summary>
+    [Theory]
+    [InlineData("sendspin-menubar.png", 22)]
+    [InlineData("sendspin-menubar@2x.png", 44)]
+    public void MenuBarTemplate_IsTheSizeAppKitExpects(string name, int size)
+    {
+        var bytes = File.ReadAllBytes(Path.Combine(IconsDirectory, name));
+
+        Assert.Equal(size, PngWidth(bytes));
+        Assert.Equal(size, PngHeight(bytes));
     }
 
     /// <summary>
@@ -173,26 +192,11 @@ public sealed class IconSetTests
         }
     }
 
-    /// <summary>Repository-relative paths of every committed file with the given extension.</summary>
-    private static IEnumerable<string> CommittedFiles(string extension)
-    {
-        using var git = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-        {
-            FileName = "git",
-            ArgumentList = { "ls-files", "--", $"*{extension}" },
-            WorkingDirectory = PlayerSource.Root(),
-            RedirectStandardOutput = true,
-        });
-
-        Assert.NotNull(git);
-
-        var output = git!.StandardOutput.ReadToEnd();
-        git.WaitForExit();
-
-        Assert.True(git.ExitCode == 0, $"git ls-files exited {git.ExitCode}");
-
-        return output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-    }
+    /// <summary>Every PNG under a source directory, build output excluded.</summary>
+    private static IEnumerable<string> SourcePngs(string directory) =>
+        Directory.EnumerateFiles(directory, "*.png", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
+                && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"));
 
     private static ushort Read16(byte[] bytes, int offset) =>
         BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(offset));

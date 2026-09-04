@@ -202,9 +202,8 @@ public sealed class StatusItemPresenter : IStatusItemPresenter
             // Both fallbacks are kept, in order. ImageNamed returns null when the bundle has no
             // such resource, which is what running from a bare publish directory rather than the
             // .app looks like; the SF Symbol then stands in, and a title stands in for that.
-            var image = NSImage.ImageNamed(MenuBarImageName);
-            var symbol = image is null ? NSImage.GetSystemSymbol("music.note", "Sendspin") : null;
-            var icon = image ?? symbol;
+            var icon = NSImage.ImageNamed(MenuBarImageName)
+                ?? NSImage.GetSystemSymbol("music.note", "Sendspin");
 
             if (icon is not null)
             {

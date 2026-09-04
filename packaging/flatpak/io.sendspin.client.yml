@@ -98,8 +98,10 @@ modules:
         path: ../../publish/linux-x64
         dest: app-files
 
+      # The one desktop entry, shared with the AppImage and the deb rather than copied
+      # here. flatpak-builder resolves a relative source against this file's directory.
       - type: file
-        path: io.sendspin.client.desktop
+        path: ../io.sendspin.client.desktop
 
       - type: file
         path: io.sendspin.client.appdata.xml

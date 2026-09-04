@@ -98,13 +98,17 @@ rsvg-convert --width=44 --height=44 \
     --output="$ICONS_DIR/sendspin-menubar@2x.png" "$MENUBAR_MASTER"
 
 # ---------------------------------------------------------------------------
-# The drift guard.
+# The drift guard: every input and every output, hashed here and committed with
+# the files they describe.
 #
-# This records the INPUTS, not the outputs. A regenerate-and-diff check would be
-# checking that two rasterizer builds agree, which they do not have to, and would
-# then fail for a reason no contributor could act on. Hashing the masters and the
-# generator catches the thing that actually goes wrong: a master edited without
-# the committed set being regenerated.
+# Written at generation time rather than checked by regenerating, which is the
+# distinction that matters. A regenerate-and-diff check would be asserting that
+# two builds of librsvg agree on edge antialiasing, which they need not, and
+# would fail whenever a runner image moved for a reason no contributor could act
+# on. Recording the hashes here instead asserts something the tool version
+# cannot affect: that this set is exactly what the generator last wrote, from
+# these masters. It catches a master edited without regenerating, an output
+# hand-edited afterwards, and a regeneration only half committed.
 # ---------------------------------------------------------------------------
 echo "Writing .source-hash..."
 
@@ -122,7 +126,12 @@ fi
         packaging/icons/sendspin.svg \
         packaging/icons/sendspin-menubar.svg \
         scripts/generate-icons.sh \
-        scripts/pack-icons.py
+        scripts/pack-icons.py \
+        packaging/icons/sendspin.ico \
+        packaging/icons/sendspin.icns \
+        packaging/icons/sendspin-menubar.png \
+        'packaging/icons/sendspin-menubar@2x.png' \
+        packaging/icons/hicolor/*/apps/io.sendspin.client.*
 ) > "$ICONS_DIR/.source-hash"
 
 echo "Done. Commit everything under packaging/icons/."

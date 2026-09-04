@@ -507,7 +507,12 @@ if $BUILD_FLATPAK; then
         FLATPAK_DIR="$ARTIFACTS_DIR/flatpak"
         mkdir -p "$FLATPAK_DIR"
 
-        # Create manifest
+        # This writes its own manifest, and packaging/flatpak/io.sendspin.client.yml — the
+        # one CI builds — is the real one. The two have already drifted (this names runtime
+        # 23.08 against that file's 25.08) and reconciling them is its own task: the checked-in
+        # manifest hardcodes publish/linux-x64, so pointing this at it would drop --runtime
+        # linux-arm64. What is kept in step here is only what this change is about, the icon
+        # and the desktop entry.
         cat > "$FLATPAK_DIR/io.sendspin.client.yml" << EOF
 app-id: io.sendspin.client
 runtime: org.freedesktop.Platform
