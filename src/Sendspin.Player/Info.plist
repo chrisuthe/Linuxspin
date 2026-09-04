@@ -14,6 +14,15 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
 
+    <!--
+        Names Contents/Resources/sendspin.icns, which the csproj puts there as a BundleResource.
+        The extension is optional and left off, which is the conventional spelling. Without this
+        key the bundle gets the generic application icon in Finder, the Dock and alt-tab, and
+        nothing reports that anything is missing.
+    -->
+    <key>CFBundleIconFile</key>
+    <string>sendspin</string>
+
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
 

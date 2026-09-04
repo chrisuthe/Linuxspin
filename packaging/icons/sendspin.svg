@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The Sendspin mark: the single source of truth for every app icon in this repository.
+
+  A record seen from above — a full-bleed disc lit from the upper left, with the spindle
+  hole knocked out of the centre. Everything under packaging/icons/ is generated from this
+  file by scripts/generate-icons.sh; nothing else here is hand-authored.
+
+  The geometry is stated in user units on a 256 grid so the numbers read as the design
+  rather than as percentages of whatever box the renderer computes. The gradient's radius
+  reaches past the disc on purpose: only the near half of the ramp is ever visible, which
+  is what keeps the falloff gentle across the face.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <radialGradient id="face" gradientUnits="userSpaceOnUse" cx="89.6" cy="89.6" r="256">
+      <stop offset="0" stop-color="#5EE98D"/>
+      <stop offset="1" stop-color="#1C9951"/>
+    </radialGradient>
+  </defs>
+
+  <circle cx="128" cy="128" r="128" fill="url(#face)"/>
+  <circle cx="128" cy="128" r="42.7" fill="#0C2D18"/>
+</svg>

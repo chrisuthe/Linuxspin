@@ -3,7 +3,7 @@ using Xunit;
 namespace Sendspin.Ui.Tests;
 
 /// <summary>
-/// The app project's source tree, for the grep-shaped rules that are tests rather than scripts
+/// The repository's source tree, for the grep-shaped rules that are tests rather than scripts
 /// because a script is not run by CI and a test is.
 /// </summary>
 /// <remarks>
@@ -12,8 +12,8 @@ namespace Sendspin.Ui.Tests;
 /// </remarks>
 internal static class PlayerSource
 {
-    /// <summary>The app project directory.</summary>
-    public static string Directory()
+    /// <summary>The repository root, for the rules that are about files outside src/.</summary>
+    public static string Root()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
 
@@ -24,8 +24,11 @@ internal static class PlayerSource
 
         Assert.True(directory is not null, "Source tree not found: the test binary is running outside the repository.");
 
-        return Path.Combine(directory!.FullName, "src", "Sendspin.Player");
+        return directory!.FullName;
     }
+
+    /// <summary>The app project directory.</summary>
+    public static string Directory() => Path.Combine(Root(), "src", "Sendspin.Player");
 
     /// <summary>Every axaml file in the app project, build output excluded.</summary>
     public static IEnumerable<string> AxamlFiles() => Files(".axaml");

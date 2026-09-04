@@ -27,6 +27,12 @@ namespace Sendspin.Platform.MacOS.MediaSession;
 /// </remarks>
 public sealed class StatusItemPresenter : IStatusItemPresenter
 {
+    /// <summary>
+    /// The menu bar silhouette, as named in Contents/Resources. AppKit resolves the @2x
+    /// representation beside it on its own, so only the base name is given here.
+    /// </summary>
+    private const string MenuBarImageName = "sendspin-menubar";
+
     private readonly ILogger<StatusItemPresenter> _logger;
 
     private NSStatusItem? _statusItem;
@@ -189,12 +195,20 @@ public sealed class StatusItemPresenter : IStatusItemPresenter
         {
             // A template image is what lets the menu bar recolour it for light, dark and the
             // highlighted state; a plain image stays one colour and looks wrong in two of the
-            // three. Title is the fallback for a system with no such symbol.
-            var symbol = NSImage.GetSystemSymbol("music.note", "Sendspin");
-            if (symbol is not null)
+            // three. So the bundled mark is a silhouette with the spindle hole punched out of
+            // it rather than a copy of the app icon: macOS reads its alpha and paints the shape
+            // itself, and a green disc would come back a green disc in a black menu bar.
+            //
+            // Both fallbacks are kept, in order. ImageNamed returns null when the bundle has no
+            // such resource, which is what running from a bare publish directory rather than the
+            // .app looks like; the SF Symbol then stands in, and a title stands in for that.
+            var icon = NSImage.ImageNamed(MenuBarImageName)
+                ?? NSImage.GetSystemSymbol("music.note", "Sendspin");
+
+            if (icon is not null)
             {
-                symbol.Template = true;
-                button.Image = symbol;
+                icon.Template = true;
+                button.Image = icon;
             }
             else
             {

@@ -46,6 +46,14 @@
   <PropertyGroup Condition="$(TargetFramework.Contains('-windows'))">
     <!-- A Win32 manifest only means anything on Windows; the other heads must not embed one. -->
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!--
+      Conditioned for the same reason as the manifest: an ApplicationIcon is a Win32 resource, and
+      the other two heads have nowhere to put one. This single property carries the icon in three
+      places at once — Explorer, the taskbar and alt-tab all read the executable's icon resource,
+      and so does ShellBalloonNotificationService, which calls ExtractIconEx on the running
+      executable and falls through to the stock IDI_APPLICATION glyph when it finds nothing.
+    -->
+    <ApplicationIcon>..\..\packaging\icons\sendspin.ico</ApplicationIcon>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(TargetFramework)' != '' And '$(TargetFramework)' != 'net10.0-macos'">
@@ -144,6 +152,28 @@
 
   <ItemGroup>
     <AvaloniaResource Include="Assets\**" />
+    <!--
+      The tray icon's raster, linked rather than copied. The mark is generated once into the
+      hicolor tree from packaging/icons/sendspin.svg, and Link is what keeps the resource URI
+      that TrayIconController already asks for — avares://Sendspin.Player/Assets/sendspin.png —
+      pointing at that one file instead of at a second copy that could drift from it.
+    -->
+    <AvaloniaResource Include="..\..\packaging\icons\hicolor\256x256\apps\io.sendspin.client.png"
+                      Link="Assets\sendspin.png" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0-macos'">
+    <!--
+      Lands at Contents/Resources/sendspin.icns, which is what Info.plist's CFBundleIconFile
+      names. Finder, the Dock and alt-tab all read that one key.
+    -->
+    <BundleResource Include="..\..\packaging\icons\sendspin.icns" Link="sendspin.icns" />
+    <!--
+      The menu bar silhouette, in both representations. NSImage.ImageNamed("sendspin-menubar")
+      finds the @2x file beside the 1x one by name, so the pair has to keep that spelling.
+    -->
+    <BundleResource Include="..\..\packaging\icons\sendspin-menubar.png" Link="sendspin-menubar.png" />
+    <BundleResource Include="..\..\packaging\icons\sendspin-menubar@2x.png" Link="sendspin-menubar@2x.png" />
   </ItemGroup>
 
 </Project>

@@ -48,7 +48,6 @@ rm -rf "${BUILD_DIR}"
 mkdir -p "${BUILD_DIR}/usr/bin"
 mkdir -p "${BUILD_DIR}/usr/lib"
 mkdir -p "${BUILD_DIR}/usr/share/applications"
-mkdir -p "${BUILD_DIR}/usr/share/icons/hicolor/256x256/apps"
 mkdir -p "${BUILD_DIR}/usr/share/metainfo"
 
 # Copy application files
@@ -62,28 +61,26 @@ chmod +x "${BUILD_DIR}/usr/bin/Sendspin.Player"
 cp "${PROJECT_ROOT}/packaging/appimage/AppRun" "${BUILD_DIR}/"
 chmod +x "${BUILD_DIR}/AppRun"
 
-# Copy desktop file to root (required by AppImage)
-cp "${PROJECT_ROOT}/packaging/appimage/sendspin.desktop" "${BUILD_DIR}/sendspin.desktop"
-cp "${PROJECT_ROOT}/packaging/appimage/sendspin.desktop" "${BUILD_DIR}/usr/share/applications/"
+# The checked-in desktop file, the same one CI and build.sh install. appimagetool reads the
+# copy at the AppDir root; the one under applications/ is what lands on the user's system.
+cp "${PROJECT_ROOT}/packaging/io.sendspin.client.desktop" \
+   "${BUILD_DIR}/io.sendspin.client.desktop"
+cp "${PROJECT_ROOT}/packaging/io.sendspin.client.desktop" \
+   "${BUILD_DIR}/usr/share/applications/"
 
-# Create a placeholder icon if none exists
-ICON_SRC="${PROJECT_ROOT}/src/Sendspin.Player/Assets/sendspin.png"
-if [ -f "${ICON_SRC}" ]; then
-    cp "${ICON_SRC}" "${BUILD_DIR}/sendspin.png"
-    cp "${ICON_SRC}" "${BUILD_DIR}/usr/share/icons/hicolor/256x256/apps/sendspin.png"
-else
-    echo "Warning: No icon found, creating placeholder..."
-    # Create a simple placeholder icon using ImageMagick if available
-    if command -v convert &> /dev/null; then
-        convert -size 256x256 xc:#6366f1 -fill white -gravity center \
-                -pointsize 72 -annotate 0 "S" "${BUILD_DIR}/sendspin.png"
-        cp "${BUILD_DIR}/sendspin.png" "${BUILD_DIR}/usr/share/icons/hicolor/256x256/apps/"
-    else
-        echo "  (install ImageMagick for auto-generated placeholder icon)"
-        # Create minimal 1x1 PNG as fallback
-        echo -ne '\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82' > "${BUILD_DIR}/sendspin.png"
-    fi
-fi
+# The committed icon theme, every size. There is no fallback for a missing icon because
+# there is no case for one: the set is generated from packaging/icons/sendspin.svg and
+# committed, so an absent file means a broken checkout, which install exits on.
+echo "Installing icons..."
+for dir in "${PROJECT_ROOT}"/packaging/icons/hicolor/*/apps; do
+    size_dir="$(basename "$(dirname "${dir}")")"
+    install -Dm644 "${dir}"/io.sendspin.client.* \
+        -t "${BUILD_DIR}/usr/share/icons/hicolor/${size_dir}/apps"
+done
+
+# appimagetool wants the Icon= key's file at the AppDir root as well.
+cp "${PROJECT_ROOT}/packaging/icons/hicolor/256x256/apps/io.sendspin.client.png" \
+   "${BUILD_DIR}/io.sendspin.client.png"
 
 # Create output directory
 mkdir -p "${OUTPUT_DIR}"

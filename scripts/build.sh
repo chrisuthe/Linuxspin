@@ -70,6 +70,24 @@ error() {
     exit 1
 }
 
+# Installs the committed hicolor icon theme into a $prefix/share directory.
+#
+# Every size, not just 256x256: a panel, a switcher and a notification each ask for a
+# different one, and a desktop given only 256 downscales it itself, which is where the
+# soft, off-centre icon in a 24px tray comes from. The tree is generated from
+# packaging/icons/sendspin.svg by scripts/generate-icons.sh.
+install_hicolor_icons() {
+    local share_dir="$1"
+    local src="$REPO_ROOT/packaging/icons/hicolor"
+    local dir size_dir
+
+    for dir in "$src"/*/apps; do
+        size_dir="$(basename "$(dirname "$dir")")"
+        install -Dm644 "$dir"/io.sendspin.client.* \
+            -t "$share_dir/icons/hicolor/$size_dir/apps"
+    done
+}
+
 usage() {
     cat << EOF
 Usage: $(basename "$0") [OPTIONS]
@@ -366,32 +384,19 @@ if $BUILD_APPIMAGE; then
     # Create AppDir structure
     mkdir -p "$APPDIR/usr/bin"
     mkdir -p "$APPDIR/usr/share/applications"
-    mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps"
     mkdir -p "$APPDIR/usr/share/metainfo"
 
     # Copy binary
     cp -r "$ARTIFACTS_DIR/$RUNTIME"/* "$APPDIR/usr/bin/"
     chmod +x "$APPDIR/usr/bin/Sendspin.Player"
 
-    # Create desktop entry
-    cat > "$APPDIR/usr/share/applications/sendspin.desktop" << 'EOF'
-[Desktop Entry]
-Name=Sendspin
-Comment=Synchronized multi-room audio playback
-Exec=sendspin
-Icon=sendspin
-Type=Application
-Categories=Audio;AudioVideo;Player;
-Keywords=audio;music;sync;multiroom;
-StartupNotify=true
-Terminal=false
-EOF
+    # The checked-in desktop entry, not a third inline copy of one — the same reason the AppRun
+    # below is copied rather than written here. An inline copy is what let the icon basename
+    # drift out of sync with the one the icons are actually installed under.
+    cp "$REPO_ROOT/packaging/io.sendspin.client.desktop" \
+       "$APPDIR/usr/share/applications/io.sendspin.client.desktop"
 
-    # Copy icon if exists
-    if [[ -f "$REPO_ROOT/src/Sendspin.Player/Assets/sendspin.png" ]]; then
-        cp "$REPO_ROOT/src/Sendspin.Player/Assets/sendspin.png" \
-           "$APPDIR/usr/share/icons/hicolor/256x256/apps/"
-    fi
+    install_hicolor_icons "$APPDIR/usr/share"
 
     # Use the checked-in AppRun rather than writing a second copy here. The inline version this
     # replaces exec'd a binary no publish produces, behind an `exec A || exec B` that could never
@@ -399,9 +404,11 @@ EOF
     cp "$REPO_ROOT/packaging/appimage/AppRun" "$APPDIR/AppRun"
     chmod +x "$APPDIR/AppRun"
 
-    # Symlinks
-    ln -sf usr/share/applications/sendspin.desktop "$APPDIR/sendspin.desktop"
-    ln -sf usr/share/icons/hicolor/256x256/apps/sendspin.png "$APPDIR/sendspin.png" 2>/dev/null || true
+    # appimagetool reads both of these from the AppDir root, and the icon's basename has to be
+    # the desktop entry's Icon= key.
+    ln -sf usr/share/applications/io.sendspin.client.desktop "$APPDIR/io.sendspin.client.desktop"
+    ln -sf usr/share/icons/hicolor/256x256/apps/io.sendspin.client.png \
+           "$APPDIR/io.sendspin.client.png"
 
     # Download appimagetool if not present
     APPIMAGETOOL="$APPIMAGE_DIR/appimagetool"
@@ -448,7 +455,6 @@ if $BUILD_DEB; then
     mkdir -p "$PKG_DIR/DEBIAN"
     mkdir -p "$PKG_DIR/usr/bin"
     mkdir -p "$PKG_DIR/usr/share/applications"
-    mkdir -p "$PKG_DIR/usr/share/icons/hicolor/256x256/apps"
     mkdir -p "$PKG_DIR/usr/share/doc/sendspin"
 
     # Copy binary
@@ -473,25 +479,11 @@ Description: Synchronized multi-room audio playback client
 Homepage: https://github.com/chrisuthe/sendspin-player
 EOF
 
-    # Create desktop file
-    cat > "$PKG_DIR/usr/share/applications/sendspin.desktop" << 'EOF'
-[Desktop Entry]
-Name=Sendspin
-Comment=Synchronized multi-room audio playback
-Exec=/usr/bin/sendspin
-Icon=sendspin
-Type=Application
-Categories=Audio;AudioVideo;Player;
-Keywords=audio;music;sync;multiroom;
-StartupNotify=true
-Terminal=false
-EOF
+    # The checked-in desktop entry, as above.
+    cp "$REPO_ROOT/packaging/io.sendspin.client.desktop" \
+       "$PKG_DIR/usr/share/applications/io.sendspin.client.desktop"
 
-    # Copy icon if exists
-    if [[ -f "$REPO_ROOT/src/Sendspin.Player/Assets/sendspin.png" ]]; then
-        cp "$REPO_ROOT/src/Sendspin.Player/Assets/sendspin.png" \
-           "$PKG_DIR/usr/share/icons/hicolor/256x256/apps/"
-    fi
+    install_hicolor_icons "$PKG_DIR/usr/share"
 
     # Build package
     dpkg-deb --build --root-owner-group "$PKG_DIR"
@@ -515,7 +507,12 @@ if $BUILD_FLATPAK; then
         FLATPAK_DIR="$ARTIFACTS_DIR/flatpak"
         mkdir -p "$FLATPAK_DIR"
 
-        # Create manifest
+        # This writes its own manifest, and packaging/flatpak/io.sendspin.client.yml — the
+        # one CI builds — is the real one. The two have already drifted (this names runtime
+        # 23.08 against that file's 25.08) and reconciling them is its own task: the checked-in
+        # manifest hardcodes publish/linux-x64, so pointing this at it would drop --runtime
+        # linux-arm64. What is kept in step here is only what this change is about, the icon
+        # and the desktop entry.
         cat > "$FLATPAK_DIR/io.sendspin.client.yml" << EOF
 app-id: io.sendspin.client
 runtime: org.freedesktop.Platform
@@ -536,22 +533,21 @@ modules:
     buildsystem: simple
     build-commands:
       - install -Dm755 sendspin /app/bin/sendspin || install -Dm755 Sendspin.Player /app/bin/sendspin
-      - install -Dm644 sendspin.desktop /app/share/applications/io.sendspin.client.desktop
+      - install -Dm644 io.sendspin.client.desktop /app/share/applications/io.sendspin.client.desktop
+      - mkdir -p /app/share/icons
+      - cp -r icons/hicolor /app/share/icons/
     sources:
       - type: dir
         path: ../$RUNTIME
+      - type: dir
+        path: $REPO_ROOT/packaging/icons/hicolor
+        dest: icons/hicolor
 EOF
 
-        # Create desktop file for Flatpak
-        cat > "$ARTIFACTS_DIR/$RUNTIME/sendspin.desktop" << 'EOF'
-[Desktop Entry]
-Name=Sendspin
-Comment=Synchronized multi-room audio playback
-Exec=sendspin
-Icon=io.sendspin.client
-Type=Application
-Categories=Audio;AudioVideo;Player;
-EOF
+        # The checked-in desktop entry, so this path cannot disagree with the others about the
+        # icon name or the WM_CLASS the desktop matches the window on.
+        cp "$REPO_ROOT/packaging/io.sendspin.client.desktop" \
+           "$ARTIFACTS_DIR/$RUNTIME/io.sendspin.client.desktop"
 
         # Build Flatpak
         cd "$FLATPAK_DIR"

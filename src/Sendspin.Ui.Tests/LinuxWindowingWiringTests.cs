@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.X11;
 using Sendspin.Core.Platform;
 using Sendspin.Player;
 using Xunit;
@@ -63,6 +64,41 @@ public sealed class LinuxWindowingWiringTests
                 PlatformSelection.ConfigureWindowing(AppBuilder.Configure<TestApp>(), backend)
                     .WindowingSubsystemInitializer);
         }
+    }
+
+    /// <remarks>
+    /// <para>
+    /// The identity the X11 branch hands to Avalonia, asserted through the factory rather than
+    /// through the builder: <c>With</c> defers the binding to <c>Setup()</c>, which wants a
+    /// display, so there is nothing to read back from a headless test.
+    /// </para>
+    /// <para>
+    /// The string is the one every desktop file names in <c>StartupWMClass</c>. The two are a
+    /// pair, and <see cref="IconSetTests.EveryDesktopFile_NamesTheSameApplicationIdentity"/>
+    /// pins the other half.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void CreateX11Options_NamesTheDesktopEntryAsTheWindowClass()
+    {
+        Assert.Equal("io.sendspin.client", PlatformSelection.CreateX11Options().WmClass);
+    }
+
+    /// <remarks>
+    /// Wiring the options must not cost the backend its rendering stack, which is the failure
+    /// the tests above exist for; the X11 arm now has an extra call in it.
+    /// </remarks>
+    [Fact]
+    public void ConfigureWindowing_StillWiresX11AfterTheOptionsAreApplied()
+    {
+        var builder = PlatformSelection.ConfigureWindowing(
+            AppBuilder.Configure<TestApp>(), LinuxWindowingBackend.X11);
+
+        Assert.Equal(
+            "Avalonia.X11",
+            builder.WindowingSubsystemInitializer!.Method.DeclaringType!.Assembly.GetName().Name);
+        Assert.NotNull(builder.RenderingSubsystemInitializer);
+        Assert.NotNull(builder.TextShapingSubsystemInitializer);
     }
 
     /// <remarks>

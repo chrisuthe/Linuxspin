@@ -88,19 +88,26 @@ modules:
           /app/share/applications/io.sendspin.client.desktop
       - install -Dm644 io.sendspin.client.appdata.xml
           /app/share/metainfo/io.sendspin.client.appdata.xml
-      - install -Dm644 sendspin-256.png
-          /app/share/icons/hicolor/256x256/apps/io.sendspin.client.png
+      # The whole icon theme, not just 256x256: the shell, the switcher and a notification
+      # each ask for a different size, and a runtime given only 256 downscales it itself.
+      - mkdir -p /app/share/icons
+      - cp -r icons/hicolor /app/share/icons/
 
     sources:
       - type: dir
         path: ../../publish/linux-x64
         dest: app-files
 
+      # The one desktop entry, shared with the AppImage and the deb rather than copied
+      # here. flatpak-builder resolves a relative source against this file's directory.
       - type: file
-        path: io.sendspin.client.desktop
+        path: ../io.sendspin.client.desktop
 
       - type: file
         path: io.sendspin.client.appdata.xml
 
-      - type: file
-        path: sendspin-256.png
+      # Generated from packaging/icons/sendspin.svg by scripts/generate-icons.sh, and shared
+      # with the AppImage, the deb and the Avalonia resource the tray icon loads.
+      - type: dir
+        path: ../icons/hicolor
+        dest: icons/hicolor
