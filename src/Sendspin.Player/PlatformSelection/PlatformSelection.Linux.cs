@@ -75,6 +75,14 @@ internal static class PlatformSelection
     internal static AppBuilder ConfigureWindowing(AppBuilder builder, LinuxWindowingBackend backend) =>
         (backend switch
         {
+            // No app identity to give Wayland: Avalonia.Wayland has no equivalent of the X11
+            // options below, and never sends xdg_toplevel.set_app_id at all, so the compositor
+            // sees an empty app id and cannot match the window to io.sendspin.client.desktop.
+            // StartupWMClass does not cover this — it is X11-only. Avalonia#21783 asks for
+            // WaylandPlatformOptions.AppId and Avalonia#21982 implements it; the API was
+            // accepted at review on 2026-08-28 but has not shipped, and 12.1.2 still has
+            // nothing. When it does, this arm takes the same one line the X11 arm has:
+            //     builder.UseWayland().With(new WaylandPlatformOptions { AppId = DesktopEntryName })
             LinuxWindowingBackend.Wayland => builder.UseWayland(),
             LinuxWindowingBackend.X11 => builder.UseX11().With(CreateX11Options()),
             _ => throw new ArgumentOutOfRangeException(nameof(backend), backend, "No windowing call for this backend."),

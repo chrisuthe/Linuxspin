@@ -168,11 +168,13 @@ SENDSPIN_X11=1 ./Sendspin.Player      # force X11 (XWayland under a Wayland sess
 SENDSPIN_WAYLAND=1 ./Sendspin.Player  # force Wayland past a session this cannot detect
 ```
 
-`SENDSPIN_X11` wins if both are set. Nothing else changes with the backend: every desktop
-integration here (MPRIS, StatusNotifierItem, notifications, portals) is D-Bus and identical either
-way, and the two protocols the Wayland backend does not bind are already routed around —
-screensaver inhibition goes through `org.freedesktop.portal.Inhibit`, and raising the window goes
-through the activation token the notification daemon hands back.
+`SENDSPIN_X11` wins if both are set. One thing changes with the backend, and it is the window icon:
+X11 carries an application identity that ties the window to its desktop entry, and Wayland has no way
+to (see Known limitations). Nothing else does: every desktop integration here (MPRIS,
+StatusNotifierItem, notifications, portals) is D-Bus and identical either way, and the two protocols
+the Wayland backend does not bind are already routed around — screensaver inhibition goes through
+`org.freedesktop.portal.Inhibit`, and raising the window goes through the activation token the
+notification daemon hands back.
 
 ## Configuration
 
@@ -203,6 +205,12 @@ correct answers, and a knob only invites making the player worse.
   not even reached, so on vanilla GNOME the icon simply does not appear with no error. Ubuntu ships
   the extension; Fedora, Debian GNOME and vanilla do not. `org.freedesktop.portal.Background` is the
   alternative surface, and Plasma 6.7 renders it as "Background Apps".
+- **The window icon does not appear under Wayland.** A compositor matches a window to its desktop
+  entry by `app_id`, and Avalonia's Wayland backend never sends `xdg_toplevel.set_app_id`, so it
+  sees an empty one. `StartupWMClass` does not cover it — that key is X11-only. Nothing in the app
+  can set it: the upstream API (`WaylandPlatformOptions.AppId`, Avalonia#21783 / Avalonia#21982) was
+  accepted at API review but has not shipped. X11 is unaffected, and `SENDSPIN_X11=1` is the
+  workaround until it lands.
 - **Windows 11 hides notification-area icons by default** and Microsoft documents that this cannot
   be controlled programmatically, so the tray is not a dependable transport surface there. A taskbar
   overlay badge carries the always-visible affordance instead.

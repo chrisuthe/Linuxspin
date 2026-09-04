@@ -584,6 +584,18 @@ needs the AppIndicator extension on every version in range; Avalonia's X11 fallb
 logs "not implemented" and is not even reached, because `IsActive` goes true as soon as a session bus
 exists.
 
+**Linux app identity.** A desktop matches a running window to its `.desktop` entry by an identity
+the window carries, and shows a generic icon when it cannot — however many sizes are installed under
+`hicolor`. Under X11 that identity is `WM_CLASS`, set from `X11PlatformOptions.WmClass` and matched by
+the entry's `StartupWMClass`; both name `io.sendspin.client`. **Under Wayland it is `app_id`, and
+Avalonia cannot set it.** `Avalonia.Wayland` 12.1.2 contains no `set_app_id` call at all — the
+compositor sees an empty app id — and `StartupWMClass` is no help because it is X11-only. The
+upstream fix is `WaylandPlatformOptions.AppId` (Avalonia#21783, implemented by Avalonia#21982, API
+accepted at review 2026-08-28, unreleased); when it ships, the Wayland arm of `ConfigureWindowing`
+takes the same one-line `.With(...)` the X11 arm already has. Avalonia#21910 tracks
+`xdg-toplevel-icon-v1`, the runtime protocol that would set an icon without a desktop file at all;
+only KWin and labwc implement it compositor-side.
+
 **Windows.** SMTC needs no package and no MSIX — `SystemMediaTransportControlsInterop` comes from the
 TFM. `DisplayUpdater.Type = MediaPlaybackType.Music` is required; the timeline needs
 `MinSeekTime`/`MaxSeekTime` or `PlaybackPositionChangeRequested` never fires; `ButtonPressed` arrives
