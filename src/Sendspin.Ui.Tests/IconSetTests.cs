@@ -116,24 +116,41 @@ public sealed class IconSetTests
     }
 
     /// <summary>
-    /// The point of the centralization: one raster of the mark in the tree, not three copies
-    /// that drift.
+    /// The point of the centralization: one raster per size in the tree, not the three
+    /// byte-identical copies of the mark this replaced.
     /// </summary>
+    /// <remarks>
+    /// Asked of git rather than of the filesystem, because the rule is about what is
+    /// <em>committed</em>: walking the working tree would also find the icons a local
+    /// <c>build.sh</c> run leaves under <c>artifacts/</c> and report them as duplicates.
+    /// </remarks>
     [Fact]
-    public void TheMark_IsCommittedOnlyUnderPackagingIcons()
+    public void NoTwoCommittedPngs_AreTheSameImage()
     {
-        var root = PlayerSource.Root();
-        var strays = Directory
-            .EnumerateFiles(root, "*.png", SearchOption.AllDirectories)
-            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}.git{Path.DirectorySeparatorChar}"))
-            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}"))
-            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"))
-            .Where(f => !f.StartsWith(IconsDirectory, StringComparison.Ordinal))
-            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}docs{Path.DirectorySeparatorChar}"))
-            .Where(IsTheMark)
-            .ToList();
+        var byContent = new Dictionary<string, List<string>>(StringComparer.Ordinal);
 
-        Assert.True(strays.Count == 0, $"The mark is committed outside packaging/icons/: {string.Join(", ", strays)}");
+        foreach (var path in CommittedFiles(".png"))
+        {
+            var hash = Convert.ToHexString(
+                System.Security.Cryptography.SHA256.HashData(
+                    File.ReadAllBytes(Path.Combine(PlayerSource.Root(), path))));
+
+            if (!byContent.TryGetValue(hash, out var paths))
+            {
+                byContent[hash] = paths = [];
+            }
+
+            paths.Add(path);
+        }
+
+        Assert.NotEmpty(byContent);
+
+        var duplicated = byContent.Values.Where(p => p.Count > 1).ToList();
+
+        Assert.True(
+            duplicated.Count == 0,
+            "The same image is committed more than once: "
+                + string.Join("; ", duplicated.Select(p => string.Join(" == ", p))));
     }
 
     /// <summary>
@@ -156,15 +173,25 @@ public sealed class IconSetTests
         }
     }
 
-    private static bool IsTheMark(string path)
+    /// <summary>Repository-relative paths of every committed file with the given extension.</summary>
+    private static IEnumerable<string> CommittedFiles(string extension)
     {
-        var bytes = File.ReadAllBytes(path);
+        using var git = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = "git",
+            ArgumentList = { "ls-files", "--", $"*{extension}" },
+            WorkingDirectory = PlayerSource.Root(),
+            RedirectStandardOutput = true,
+        });
 
-        // Square, and one of the sizes the mark is generated at. Cheap enough to be a filter
-        // rather than a hash, and a false positive here is a screenshot that wants moving.
-        return bytes.Length > 24
-            && PngWidth(bytes) == PngHeight(bytes)
-            && HicolorSizes.Contains(PngWidth(bytes));
+        Assert.NotNull(git);
+
+        var output = git!.StandardOutput.ReadToEnd();
+        git.WaitForExit();
+
+        Assert.True(git.ExitCode == 0, $"git ls-files exited {git.ExitCode}");
+
+        return output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     }
 
     private static ushort Read16(byte[] bytes, int offset) =>
