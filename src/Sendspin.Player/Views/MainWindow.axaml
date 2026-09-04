@@ -9,6 +9,7 @@
         x:Class="Sendspin.Player.Views.MainWindow"
         x:DataType="vm:MainViewModel"
         Title="Sendspin Player"
+        Icon="avares://Sendspin.Player/Assets/sendspin.png"
         Width="440" Height="700"
         MinWidth="400" MinHeight="560"
         WindowStartupLocation="CenterScreen"

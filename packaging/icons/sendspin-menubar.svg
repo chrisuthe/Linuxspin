@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The macOS menu-bar silhouette: the same record, flattened to one colour.
+
+  A template image carries shape only — macOS reads the alpha channel and paints it itself,
+  so the fill here is a placeholder that never reaches the screen. The hole is punched with
+  fill-rule="evenodd" rather than drawn in the background colour, because a menu bar the
+  status item does not know the colour of would otherwise show a solid dot.
+
+  Drawn on a 44 unit grid: 22pt is the menu bar's usable height, and the mark is inset to
+  18 so it sits on the same optical baseline as the SF Symbols beside it.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 44 44">
+  <path fill="#000000" fill-rule="evenodd"
+        d="M22 4a18 18 0 1 0 0 36 18 18 0 1 0 0-36zm0 12a6 6 0 1 1 0 12 6 6 0 1 1 0-12z"/>
+</svg>

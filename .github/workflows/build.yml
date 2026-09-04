@@ -65,6 +65,32 @@ jobs:
           retention-days: 14
 
   # ---------------------------------------------------------------------------
+  # The icon set under packaging/icons/ is generated from one SVG master and committed,
+  # because a plain `dotnet build` needs the .ico and no build machine should have to own
+  # a rasterizer. This checks the two cannot drift.
+  #
+  # It hashes the INPUTS rather than regenerating and diffing the outputs. Regenerating
+  # would be checking that two builds of librsvg agree on edge antialiasing, which they
+  # do not have to; the job would eventually fail whenever the runner image moved, for a
+  # reason no contributor could act on. What actually goes wrong is a master edited
+  # without the set being regenerated, and that is exactly what this catches.
+  # ---------------------------------------------------------------------------
+  icons:
+    name: Icon set is current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Check packaging/icons/.source-hash
+        run: |
+          set -euo pipefail
+          if ! shasum -a 256 -c packaging/icons/.source-hash; then
+            echo "::error::An icon master or the generator changed without the icon set being regenerated"
+            echo "Run ./scripts/generate-icons.sh and commit everything under packaging/icons/."
+            exit 1
+          fi
+
+  # ---------------------------------------------------------------------------
   # Dependency audit. NU1903 already fails the build through TreatWarningsAsErrors;
   # this reports the detail rather than leaving a maintainer to decode a restore
   # error, and covers transitive packages explicitly.
@@ -217,9 +243,7 @@ jobs:
       - name: Create AppImage
         run: |
           set -euo pipefail
-          mkdir -p AppDir/usr/bin \
-                   AppDir/usr/share/applications \
-                   AppDir/usr/share/icons/hicolor/256x256/apps
+          mkdir -p AppDir/usr/bin AppDir/usr/share/applications
 
           cp -r ./publish/linux-x64/* AppDir/usr/bin/
           chmod +x AppDir/usr/bin/Sendspin.Player
@@ -230,9 +254,17 @@ jobs:
 
           cp packaging/io.sendspin.client.desktop AppDir/
           cp packaging/io.sendspin.client.desktop AppDir/usr/share/applications/
-          cp packaging/icons/io.sendspin.client.png AppDir/
-          cp packaging/icons/io.sendspin.client.png \
-             AppDir/usr/share/icons/hicolor/256x256/apps/
+
+          # Every size the theme carries, not just 256x256: a panel and a switcher ask for
+          # different ones, and a desktop given only 256 downscales it itself.
+          for dir in packaging/icons/hicolor/*/apps; do
+            size_dir="$(basename "$(dirname "$dir")")"
+            install -Dm644 "$dir"/io.sendspin.client.* \
+              -t "AppDir/usr/share/icons/hicolor/$size_dir/apps"
+          done
+
+          # appimagetool reads the Icon= key's file from the AppDir root too.
+          cp packaging/icons/hicolor/256x256/apps/io.sendspin.client.png AppDir/
 
           ARCH=x86_64 ./appimagetool AppDir Sendspin-Player-x86_64.AppImage
 
@@ -374,6 +406,20 @@ jobs:
               exit 1
             fi
           done
+
+          # The icon is the third thing that is silently wrong rather than loudly wrong: with
+          # either half of this missing the bundle just shows the generic application icon in
+          # Finder, the Dock and alt-tab, and nothing reports it.
+          icon="$(/usr/libexec/PlistBuddy -c "Print :CFBundleIconFile" "$plist" 2>/dev/null || true)"
+          if [ -z "$icon" ]; then
+            echo "::error::Info.plist is missing CFBundleIconFile; the bundle would show the generic icon"
+            exit 1
+          fi
+          if [ ! -f "$app/Contents/Resources/${icon%.icns}.icns" ]; then
+            echo "::error::CFBundleIconFile names ${icon}, but Contents/Resources/${icon%.icns}.icns is missing"
+            ls -la "$app/Contents/Resources" || true
+            exit 1
+          fi
 
       - name: Create dmg
         run: |

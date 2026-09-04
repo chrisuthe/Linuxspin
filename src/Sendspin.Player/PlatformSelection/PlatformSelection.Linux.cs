@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.X11;
 using Sendspin.Core.Platform;
 using Sendspin.Platform.Linux.Platform;
 using Sendspin.Platform.Linux.Portals;
@@ -17,6 +18,12 @@ namespace Sendspin.Player;
 /// </remarks>
 internal static class PlatformSelection
 {
+    /// <summary>
+    /// The desktop file's basename, which is also the application identity a Linux desktop
+    /// matches a window against.
+    /// </summary>
+    internal const string DesktopEntryName = "io.sendspin.client";
+
     /// <summary>
     /// Creates this build's platform initializer.
     /// </summary>
@@ -69,9 +76,28 @@ internal static class PlatformSelection
         (backend switch
         {
             LinuxWindowingBackend.Wayland => builder.UseWayland(),
-            LinuxWindowingBackend.X11 => builder.UseX11(),
+            LinuxWindowingBackend.X11 => builder.UseX11().With(CreateX11Options()),
             _ => throw new ArgumentOutOfRangeException(nameof(backend), backend, "No windowing call for this backend."),
         })
         .UseSkia()
         .UseHarfBuzz();
+
+    /// <summary>
+    /// The X11 options, which exist to give the window an application identity.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>WM_CLASS</c> is the only thing that ties a running window to its desktop file under
+    /// X11, and Avalonia's default is the process name. That does not match
+    /// <c>io.sendspin.client.desktop</c>, so the taskbar and the switcher find no entry and fall
+    /// back to a generic icon however many sizes are installed under <c>hicolor</c>. The desktop
+    /// files name the same string in <c>StartupWMClass</c>, which is the matching key.
+    /// </para>
+    /// <para>
+    /// Built here rather than inlined so a test can assert the identity without standing up an
+    /// X server: <c>With</c> defers the binding to <c>AppBuilder.Setup()</c>, which needs a
+    /// display, so the value is unreachable from a headless test once it has been handed over.
+    /// </para>
+    /// </remarks>
+    internal static X11PlatformOptions CreateX11Options() => new() { WmClass = DesktopEntryName };
 }

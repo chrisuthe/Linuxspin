@@ -8,5 +8,9 @@ Type=Application
 Categories=Audio;AudioVideo;Player;
 Keywords=audio;music;sync;multiroom;pipewire;
 StartupNotify=true
+# The X11 window's WM_CLASS, which PlatformSelection.Linux.cs sets to the same string.
+# Without this pair a desktop cannot match a running window to this entry, and shows a
+# generic icon however many sizes are installed under hicolor.
+StartupWMClass=io.sendspin.client
 Terminal=false
 MimeType=audio/mpeg;audio/flac;audio/ogg;audio/wav;
