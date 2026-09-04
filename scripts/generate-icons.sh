@@ -107,9 +107,18 @@ rsvg-convert --width=44 --height=44 \
 # the committed set being regenerated.
 # ---------------------------------------------------------------------------
 echo "Writing .source-hash..."
+
+# sha256sum on Linux, shasum on macOS, which has no sha256sum. The two write the same
+# format, so a file written on either platform verifies on the other.
+if command -v sha256sum &> /dev/null; then
+    sha256() { sha256sum "$@"; }
+else
+    sha256() { shasum -a 256 "$@"; }
+fi
+
 (
     cd "$REPO_ROOT"
-    shasum -a 256 \
+    sha256 \
         packaging/icons/sendspin.svg \
         packaging/icons/sendspin-menubar.svg \
         scripts/generate-icons.sh \

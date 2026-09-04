@@ -84,7 +84,7 @@ jobs:
       - name: Check packaging/icons/.source-hash
         run: |
           set -euo pipefail
-          if ! shasum -a 256 -c packaging/icons/.source-hash; then
+          if ! sha256sum -c packaging/icons/.source-hash; then
             echo "::error::An icon master or the generator changed without the icon set being regenerated"
             echo "Run ./scripts/generate-icons.sh and commit everything under packaging/icons/."
             exit 1

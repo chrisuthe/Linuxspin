@@ -68,9 +68,9 @@ cp "${PROJECT_ROOT}/packaging/io.sendspin.client.desktop" \
 cp "${PROJECT_ROOT}/packaging/io.sendspin.client.desktop" \
    "${BUILD_DIR}/usr/share/applications/"
 
-# The committed icon theme, every size. There is no placeholder branch any more: the icons
-# are generated from packaging/icons/sendspin.svg and committed, so a missing one is a
-# broken checkout rather than a case to paper over with a generated letter S.
+# The committed icon theme, every size. There is no fallback for a missing icon because
+# there is no case for one: the set is generated from packaging/icons/sendspin.svg and
+# committed, so an absent file means a broken checkout, which install exits on.
 echo "Installing icons..."
 for dir in "${PROJECT_ROOT}"/packaging/icons/hicolor/*/apps; do
     size_dir="$(basename "$(dirname "${dir}")")"
